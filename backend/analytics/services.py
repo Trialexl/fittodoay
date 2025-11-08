@@ -17,16 +17,28 @@ def _compute_load(log: WorkoutSetLog) -> float:
     defaults = {}
     if log.template_exercise:
         defaults = resolve_defaults(log.template_exercise)
-    reps = log.actual_reps or defaults.get("reps") or 0
-    weight = float(log.actual_weight or defaults.get("weight") or 0)
-    time_sec = log.actual_time or defaults.get("time") or 0
+    reps = log.actual_reps
+    weight = log.actual_weight
+    time_sec = log.actual_time
 
     if weight and reps:
-        return weight * reps
+        return float(weight) * reps
+
     if reps:
-        return reps
+        return float(reps)
+
     if time_sec:
         return time_sec / TIME_COEFFICIENT
+
+    if defaults.get("weight") and defaults.get("reps"):
+        return float(defaults["weight"]) * defaults["reps"]
+
+    if defaults.get("reps"):
+        return float(defaults["reps"])
+
+    if defaults.get("time"):
+        return defaults["time"] / TIME_COEFFICIENT
+
     return 0.0
 
 

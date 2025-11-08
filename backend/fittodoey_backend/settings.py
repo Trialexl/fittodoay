@@ -67,18 +67,25 @@ WSGI_APPLICATION = "fittodoey_backend.wsgi.application"
 ASGI_APPLICATION = "fittodoey_backend.asgi.application"
 
 # Database (Postgres by default)
-DATABASES = {
-    "default": {
-        "ENGINE": os.environ.get(
-            "DJANGO_DB_ENGINE", "django.db.backends.postgresql"
-        ),
-        "NAME": os.environ.get("DJANGO_DB_NAME", "fittodoey"),
-        "USER": os.environ.get("DJANGO_DB_USER", "fittodoey"),
-        "PASSWORD": os.environ.get("DJANGO_DB_PASSWORD", "fittodoey"),
-        "HOST": os.environ.get("DJANGO_DB_HOST", "localhost"),
-        "PORT": os.environ.get("DJANGO_DB_PORT", "5432"),
+DEFAULT_DB_ENGINE = os.environ.get("DJANGO_DB_ENGINE", "django.db.backends.sqlite3")
+if DEFAULT_DB_ENGINE == "django.db.backends.sqlite3":
+    DATABASES = {
+        "default": {
+            "ENGINE": DEFAULT_DB_ENGINE,
+            "NAME": os.environ.get("DJANGO_DB_NAME", BASE_DIR / "db.sqlite3"),
+        }
     }
-}
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": DEFAULT_DB_ENGINE,
+            "NAME": os.environ.get("DJANGO_DB_NAME", "fittodoey"),
+            "USER": os.environ.get("DJANGO_DB_USER", "fittodoey"),
+            "PASSWORD": os.environ.get("DJANGO_DB_PASSWORD", "fittodoey"),
+            "HOST": os.environ.get("DJANGO_DB_HOST", "localhost"),
+            "PORT": os.environ.get("DJANGO_DB_PORT", "5432"),
+        }
+    }
 
 AUTH_PASSWORD_VALIDATORS = [
     {

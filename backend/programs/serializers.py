@@ -69,9 +69,13 @@ class TemplateExerciseSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         exercise = attrs.get("exercise")
         custom_exercise = attrs.get("custom_exercise")
-        if bool(exercise) == bool(custom_exercise):
+        if exercise and custom_exercise:
             raise serializers.ValidationError(
-                "Укажите либо системное упражнение, либо кастомное, но не оба."
+                "Укажите только один источник упражнения."
+            )
+        if not exercise and not custom_exercise:
+            raise serializers.ValidationError(
+                "Выберите системное упражнение или кастомное."
             )
         return attrs
 
@@ -112,8 +116,4 @@ class DayTemplateSerializer(serializers.ModelSerializer):
 
     def _sync_exercises(self, template: DayTemplate, exercises_payload: list[dict]):
         for payload in exercises_payload:
-            serializer = TemplateExerciseSerializer(
-                data=payload, context={"request": self.context.get("request")}
-            )
-            serializer.is_valid(raise_exception=True)
-            serializer.save(template=template)
+            TemplateExercise.objects.create(template=template, **payload)
