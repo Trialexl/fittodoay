@@ -1,0 +1,46 @@
+version: "3.9"
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file:
+      - backend/.env
+    environment:
+      DJANGO_DB_ENGINE: django.db.backends.postgresql
+      DJANGO_DB_NAME: ${DJANGO_DB_NAME:-fittodoey}
+      DJANGO_DB_USER: ${DJANGO_DB_USER:-fittodoey}
+      DJANGO_DB_PASSWORD: ${DJANGO_DB_PASSWORD:-fittodoey}
+      DJANGO_DB_HOST: db
+      DJANGO_DB_PORT: 5432
+      IMPORT_EXERCISES_ON_START: ${IMPORT_EXERCISES_ON_START:-false}
+    volumes:
+      - backend_data:/data
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+      - redis
+
+  db:
+    image: postgres:15
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: fittodoey
+      POSTGRES_USER: fittodoey
+      POSTGRES_PASSWORD: fittodoey
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+
+volumes:
+  backend_data:
+  postgres_data:

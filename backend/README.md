@@ -5,12 +5,16 @@ Backend-сервис написан на **Django 5 + DRF** и предоста�
 ## Быстрый старт
 
 ```bash
+# локально (без Docker)
 python3 -m venv .venv
 . .venv/bin/activate
 pip install -r requirements-dev.txt
 python manage.py migrate
-python manage.py import_exercises --truncate   # заполнить системный каталог
 python manage.py runserver
+
+# или одной командой в Docker (SQLite внутри контейнера):
+docker build -t fittodoey-backend -f backend/Dockerfile .
+docker run --rm -p 8000:8000 fittodoey-backend
 ```
 
 Админ-панель доступна по адресу `http://localhost:8000/admin/`.
@@ -35,11 +39,12 @@ python manage.py check
 ## Docker
 
 ```bash
-# backend image
+# сборка прод-образа
 docker build -t fittodoey-backend -f backend/Dockerfile .
 
-# запуск миграций
-docker run --rm --env-file backend/.env fittodoey-backend python manage.py migrate
+# запуск с Postgres (пример через docker compose)
+cd backend
+docker compose up -d backend db redis
 ```
 
 ## API

@@ -11,12 +11,12 @@
    docker build -t fittodoey-backend -f backend/Dockerfile .
    docker build -t fittodoey-frontend -f frontend/Dockerfile .
    ```
-2. Применить миграции и создать суперпользователя:
+2. **Простой запуск backend одним командой (SQLite внутри контейнера):**
    ```bash
-   docker compose run --rm backend python manage.py migrate
-   docker compose run --rm backend python manage.py createsuperuser
+   docker run --rm -p 8000:8000 fittodoey-backend
    ```
-3. Запустить сервисы:
+   Скрипт `entrypoint.sh` автоматически применит миграции, и сервис будет доступен по `http://localhost:8000`.
+3. Для prod/compose-сценария (Postgres/Redis):
    ```bash
    docker compose up -d backend db redis
    ```
