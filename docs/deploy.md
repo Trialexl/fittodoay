@@ -9,6 +9,7 @@
 1. Собрать образ:
    ```bash
    docker build -t fittodoey-backend -f backend/Dockerfile .
+   docker build -t fittodoey-frontend -f frontend/Dockerfile .
    ```
 2. Применить миграции и создать суперпользователя:
    ```bash
