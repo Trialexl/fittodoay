@@ -1,10 +1,11 @@
 "use client";
 
+import Link from "next/link";
+import { useEffect, useState } from "react";
 import { Checklist, type WorkoutPlan } from "@/components/workout/Checklist";
 import { Button } from "@/components/ui/Button";
 import { apiFetch } from "@/lib/api";
 import { useAuth } from "@/state/AuthContext";
-import { useEffect, useState } from "react";
 
 export default function WorkoutPage() {
   const { token } = useAuth();
@@ -36,17 +37,27 @@ export default function WorkoutPage() {
 
   return (
     <div className="space-y-6">
-      <header className="flex items-center justify-between">
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <p className="text-sm uppercase tracking-widest text-blue-500">
+          <p className="text-sm uppercase tracking-widest text-primary">
             Дневной чеклист
           </p>
           <h1 className="text-3xl font-semibold">Сегодня</h1>
           <p className="text-slate-500">Активные папки и шаблоны — в приоритете «Основные».</p>
         </div>
-        <Button variant="secondary" onClick={fetchPlan} loading={loading}>
-          Обновить
-        </Button>
+        <div className="flex flex-col gap-3 sm:flex-row">
+          <Link href="/programs">
+            <Button className="w-full sm:w-auto">Создать программу</Button>
+          </Link>
+          <Button
+            variant="secondary"
+            onClick={fetchPlan}
+            loading={loading}
+            className="w-full sm:w-auto"
+          >
+            Обновить план
+          </Button>
+        </div>
       </header>
       <Checklist plan={plan} refresh={fetchPlan} />
     </div>

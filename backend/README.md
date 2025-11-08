@@ -1,4 +1,4 @@
-# fitTODOey Backend
+# fitTODOay Backend
 
 Backend-сервис написан на **Django 5 + DRF** и предоставляет REST API для мобильного/веб клиентов.
 

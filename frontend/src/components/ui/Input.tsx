@@ -15,7 +15,7 @@ export const Input = forwardRef<HTMLInputElement, Props>(
       <input
         ref={ref}
         className={clsx(
-          "rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40",
+          "rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/40",
           error && "border-red-500",
           className,
         )}

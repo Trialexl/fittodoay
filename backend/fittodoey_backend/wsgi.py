@@ -1,5 +1,5 @@
 """
-WSGI config for fitTODOey backend.
+WSGI config for fitTODOay backend.
 """
 
 from __future__ import annotations

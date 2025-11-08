@@ -1,5 +1,5 @@
 """
-Django settings for fitTODOey backend.
+Django settings for fitTODOay backend.
 
 These settings are intentionally minimal – feature apps will be added iteratively.
 """

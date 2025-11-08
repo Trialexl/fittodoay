@@ -5,7 +5,7 @@ import { OfflineBanner } from "@/components/common/OfflineBanner";
 import { AppHeader } from "@/components/common/AppHeader";
 
 export const metadata: Metadata = {
-  title: "fitTODOey",
+  title: "fitTODOay",
   description: "Персональные тренировки с чеклистами и аналитикой",
 };
 

@@ -5,7 +5,7 @@ export default function ProgramsPage() {
   return (
     <div className="space-y-8">
       <header>
-        <p className="text-sm uppercase tracking-widest text-blue-500">
+        <p className="text-sm uppercase tracking-widest text-primary">
           Программы и шаблоны
         </p>
         <h1 className="text-3xl font-semibold">Управление папками и днями</h1>

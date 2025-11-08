@@ -1,4 +1,4 @@
-# fitTODOey Backend API
+# fitTODOay Backend API
 
 > Базовый URL: `https://{host}` (dev: `http://localhost:8000`).  
 > Авторизация: заголовок `Authorization: Token <token>`.

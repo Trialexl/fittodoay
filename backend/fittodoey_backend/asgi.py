@@ -1,5 +1,5 @@
 """
-ASGI config for fitTODOey backend.
+ASGI config for fitTODOay backend.
 """
 
 from __future__ import annotations

@@ -21,21 +21,10 @@ export default function RegisterPage() {
       await register({
         email: form.email,
         password: form.password,
-        profile: {
-          goal: "strength",
-          level: "beginner",
-          gender: "male",
-          age: 25,
-          weight_kg: 70,
-          height_cm: 180,
-          equipment: "гантели",
-          health_limitations: "",
-          preferred_schedule_notes: "",
-        },
       });
-      router.push("/programs");
-    } catch (e: any) {
-      setError(e.message);
+      router.push("/workout");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Не удалось зарегистрироваться");
     } finally {
       setLoading(false);
     }
@@ -45,7 +34,8 @@ export default function RegisterPage() {
     <div className="mx-auto max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
       <h1 className="text-2xl font-semibold">Регистрация</h1>
       <p className="mt-1 text-sm text-slate-500">
-        Только email и пароль. Цели и профиль можно заполнить позже.
+        Email и пароль — этого достаточно, чтобы попасть в чеклист. Остальные данные
+        спросим позже на онбординге.
       </p>
       <form className="mt-6 space-y-4" onSubmit={submit}>
         <Input
@@ -65,7 +55,7 @@ export default function RegisterPage() {
 
         {error && <p className="text-sm text-red-500">{error}</p>}
         <Button type="submit" className="w-full" loading={loading}>
-          Зарегистрироваться
+          Создать аккаунт
         </Button>
       </form>
     </div>

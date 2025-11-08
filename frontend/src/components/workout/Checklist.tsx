@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { RestTimerOverlay } from "@/components/workout/RestTimerOverlay";
 import { useRestTimer } from "@/hooks/useRestTimer";
@@ -54,8 +55,21 @@ export const Checklist = ({
   const { start, stop, remaining, duration, isActive } = useRestTimer();
   const auth = useAuth();
 
-  if (!plan) {
-    return <p>Нет активных шаблонов на сегодня.</p>;
+  const hasTemplates =
+    plan?.folders.some((folder) => folder.templates.length > 0) ?? false;
+
+  if (!plan || !hasTemplates) {
+    return (
+      <div className="rounded-2xl border border-dashed border-slate-300 bg-white/60 p-6 text-center">
+        <p className="text-lg font-semibold text-slate-900">На сегодня тренировок нет</p>
+        <p className="mt-2 text-sm text-slate-500">
+          Активируйте папку «Основная» или создайте новую программу, чтобы заполнить чеклист.
+        </p>
+        <Link href="/programs" className="inline-block">
+          <Button className="mt-4">Создать программу</Button>
+        </Link>
+      </div>
+    );
   }
 
   const handleComplete = async (

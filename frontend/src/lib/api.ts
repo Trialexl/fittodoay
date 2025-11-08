@@ -7,6 +7,18 @@ type RequestOptions = RequestInit & {
   token?: string | null;
 };
 
+export class ApiError extends Error {
+  status: number;
+  payload: unknown;
+
+  constructor(message: string, status: number, payload: unknown) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.payload = payload;
+  }
+}
+
 export async function apiFetch<T>(
   path: string,
   { token, headers, ...options }: RequestOptions = {},
@@ -33,7 +45,11 @@ export async function apiFetch<T>(
     const detail = await response
       .json()
       .catch(() => ({ detail: response.statusText }));
-    throw new Error(detail.detail ?? "Ошибка запроса");
+    const message =
+      typeof detail === "object" && detail !== null && "detail" in detail
+        ? (detail as { detail?: string }).detail ?? "Ошибка запроса"
+        : "Ошибка запроса";
+    throw new ApiError(message, response.status, detail);
   }
 
   if (response.status === 204) {

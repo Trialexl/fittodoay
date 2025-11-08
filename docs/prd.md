@@ -1,4 +1,4 @@
-# fitTODOey — Product Requirements Document (PRD)
+# fitTODOay — Product Requirements Document (PRD)
 
 ## 1. Обзор
 - **Цель продукта:** помочь пользователям самостоятельно планировать персональные тренировки на неделю и оперативно выполнять их с учётом прогресса и отдыха.

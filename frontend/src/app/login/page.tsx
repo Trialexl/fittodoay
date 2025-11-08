@@ -18,9 +18,9 @@ export default function LoginPage() {
     e.preventDefault();
     setLoading(true);
     setError(null);
-    try {
+  try {
       await login(email, password);
-      router.push("/programs");
+      router.push("/workout");
     } catch (err: any) {
       setError(err.message);
     } finally {

@@ -1,4 +1,4 @@
-# fitTODOey — Гайд по деплою и мониторингу
+# fitTODOay — Гайд по деплою и мониторингу
 
 ## 1. Зависимости
 - Docker/Docker Compose
