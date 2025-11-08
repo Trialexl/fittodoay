@@ -8,15 +8,15 @@ WORKDIR /app
 
 RUN apt-get update && apt-get install -y build-essential libpq-dev && rm -rf /var/lib/apt/lists/*
 
-COPY backend/requirements.txt .
+COPY requirements.txt .
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
-COPY backend /app
+COPY . /app
 
 RUN mkdir -p /data
 VOLUME ["/data"]
 
-COPY backend/entrypoint.sh /entrypoint.sh
+COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 ENV DJANGO_SETTINGS_MODULE=fittodoey_backend.settings \

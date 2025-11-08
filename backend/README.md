@@ -53,7 +53,7 @@ docker compose up -d backend db redis
 
 - `POST /api/auth/register/`, `POST /api/auth/login/`, `GET/PATCH /api/profile/`
 - `GET /api/exercises/`, `GET/POST /api/exercises/custom/`
-- `GET/POST /api/programs/folders/`, `GET/POST /api/programs/templates/`, `GET/POST /api/programs/template-exercises/`
+- `GET/POST /api/programs/folders/`, `GET/POST /api/programs/templates/`, `GET/POST /api/programs/template-exercises/` (для каждого пользователя автоматически создаётся папка «Основные»)
 - `GET /api/workouts/plan/`, `POST /api/workouts/logs/`
 - `GET /api/analytics/days/`, `/exercises/`, `/ai-feed/`
 

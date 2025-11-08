@@ -47,3 +47,10 @@ def test_template_creation_with_exercises():
     assert template.template_exercises.count() == 1
     te = template.template_exercises.first()
     assert te.rep_override == 10
+
+
+@pytest.mark.django_db
+def test_default_folder_created_on_user_signup():
+    user = User.objects.create_user(email="auto@example.com", password="pass")
+    folder_qs = ProgramFolder.objects.filter(user=user, name="Основные")
+    assert folder_qs.exists()

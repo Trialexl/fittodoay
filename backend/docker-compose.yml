@@ -1,12 +1,10 @@
-version: "3.9"
-
 services:
   backend:
     build:
       context: .
-      dockerfile: backend/Dockerfile
+      dockerfile: Dockerfile
     env_file:
-      - backend/.env
+      - .env
     environment:
       DJANGO_DB_ENGINE: django.db.backends.postgresql
       DJANGO_DB_NAME: ${DJANGO_DB_NAME:-fittodoey}

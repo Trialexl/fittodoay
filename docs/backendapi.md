@@ -1,67 +1,228 @@
 # fitTODOey Backend API
 
-> Базовый URL: `https://{host}` (в dev — `http://localhost:8000`).  
-> Для защищённых запросов используется заголовок `Authorization: Token <token>`.
+> Базовый URL: `https://{host}` (dev: `http://localhost:8000`).  
+> Авторизация: заголовок `Authorization: Token <token>`.
 
-## Аутентификация и профиль
+## 1. Аутентификация и профиль
 
-| Метод | Endpoint                  | Описание                                  | Тело запроса |
-|-------|---------------------------|-------------------------------------------|--------------|
-| POST  | `/api/auth/register/`     | Регистрация + создание профиля            | `{email, password, first_name?, profile:{goal, gender, age, weight_kg, height_cm, level, equipment, health_limitations, preferred_schedule_notes}}` |
-| POST  | `/api/auth/login/`        | Логин по email/паролю                     | `{email, password}` |
-| GET   | `/api/profile/`           | Текущий профиль                           | — |
-| PATCH | `/api/profile/`           | Обновление профиля                        | те же поля, что при регистрации |
-| GET   | `/api/profile/prompt/`    | Заготовка промпта для AI (read-only)      | — |
+### POST `/api/auth/register/`
+| Поле | Тип | Описание |
+|------|-----|----------|
+| `email` | string | уникальный email |
+| `password` | string | минимум 8 символов |
+| `first_name` | string, optional |
+| `profile.goal` | enum(`cut`,`strength`,`hypertrophy`,`endurance`) |
+| `profile.gender` | enum(`male`,`female`,`other`) |
+| `profile.age` | integer |
+| `profile.weight_kg` | decimal |
+| `profile.height_cm` | decimal |
+| `profile.level` | enum(`beginner`,`intermediate`,`advanced`) |
+| `profile.equipment` | string |
+| `profile.health_limitations` | string |
+| `profile.preferred_schedule_notes` | string |
 
-## Exercises
+**Пример:**
+```json
+{
+  "email": "user@example.com",
+  "password": "Secret123",
+  "profile": {
+    "goal": "strength",
+    "gender": "male",
+    "age": 28,
+    "weight_kg": 78.5,
+    "height_cm": 182,
+    "level": "intermediate",
+    "equipment": "гантели, штанга",
+    "health_limitations": "",
+    "preferred_schedule_notes": "Пн/Ср/Пт"
+  }
+}
+```
+**Ответ:** `201` `{ "token": "...", "user": {...} }`
 
-| Метод | Endpoint                        | Описание                                  |
-|-------|---------------------------------|-------------------------------------------|
-| GET   | `/api/exercises/`               | Системный каталог (поиск по `?q=` или `?muscles=`) |
-| GET   | `/api/exercises/custom/`        | Персональные упражнения пользователя      |
-| POST  | `/api/exercises/custom/`        | Создать кастомное упражнение              |
-| GET/PATCH/DELETE | `/api/exercises/custom/{id}/` | Управление конкретным кастомным упражнением |
-
-## Programs & Templates
-
-| Метод | Endpoint                              | Описание                                                            |
-|-------|---------------------------------------|---------------------------------------------------------------------|
-| GET/POST | `/api/programs/folders/`           | Список папок / создание новой (поля: name, comment, is_active)      |
-| PATCH/DELETE | `/api/programs/folders/{id}/`  | Обновление/удаление папки                                          |
-| GET/POST | `/api/programs/templates/?folder={id}` | Шаблоны дня. Поля: `name`, `schedule_type`, `schedule_config`, `template_exercises[]`. |
-| GET/PATCH/DELETE | `/api/programs/templates/{id}/` | Управление шаблоном                                                |
-| GET/POST | `/api/programs/template-exercises/?template={id}` | Добавление упражнений в шаблон с override-полями (`weight_override`, `rep_override`, `note` и т.д.) |
-
-## Workouts
-
-| Метод | Endpoint                     | Описание                                                                 |
-|-------|------------------------------|--------------------------------------------------------------------------|
-| GET   | `/api/workouts/plan/?date=YYYY-MM-DD` | Генерация чеклиста на день. Возвращает `WorkoutDay` и `plan_snapshot`. |
-| POST  | `/api/workouts/logs/`        | Запись фактического сета: `{workout_day, template_exercise, set_index, actual_reps?, actual_weight?, actual_time?}` |
-| DELETE| `/api/workouts/logs/{id}/`   | Удаление лога (пересчёт статуса дня)                                    |
-
-## Analytics & AI
-
-| Метод | Endpoint                      | Описание                                         |
-|-------|-------------------------------|--------------------------------------------------|
-| GET   | `/api/analytics/days/?start=&end=` | Нагрузка по дням (журнал `weight * reps`, либо эквивалент времени). |
-| GET   | `/api/analytics/exercises/`   | Нагрузка по упражнениям, количество сетов        |
-| GET   | `/api/analytics/ai-feed/`     | Placeholder: последние логи для генерации рекомендаций |
-
-## Статусы и ошибки
-
-- Успешные ответы: `200 OK` / `201 Created`, содержат JSON.
-- Валидация: `400 Bad Request` с пояснением (`{"non_field_errors": [...]}`).
-- Неавторизованные запросы: `401 Unauthorized`.
-- Если папка/шаблон принадлежит другому пользователю — `403 Forbidden`.
-
-## Импорт данных
-
-```bash
-python manage.py import_exercises --truncate  # заполняет модель Exercise из docs/exercise.csv
+### POST `/api/auth/login/`
+```json
+{ "email": "user@example.com", "password": "Secret123" }
 ```
 
-## Дополнительно
+### GET `/api/profile/`
+Возвращает объект профиля (как в `profile` выше).
 
-- Swagger/Schema не подключён, но можно использовать `python manage.py generateschema` (стандартный DRF).
-- Token Auth реализован через `rest_framework.authtoken`. Для logout достаточно удалить токен на клиенте.
+### PATCH `/api/profile/`
+```json
+{ "equipment": "гантели, турник", "goal": "cut" }
+```
+
+### GET `/api/profile/prompt/`
+Ответ: `{ "prompt": "..." }`
+
+---
+
+## 2. Exercises
+
+### GET `/api/exercises/`
+Параметры: `?q=` (поиск по названию), `?muscles=` (по целевым мышцам).
+
+### CustomExercise
+- **GET/POST `/api/exercises/custom/`**
+- **Модель:**
+```json
+{
+  "id": 5,
+  "name": "Отжимания с хлопком",
+  "target_muscles": "грудь/трицепс",
+  "has_weight": false,
+  "has_time": false,
+  "default_reps": 15,
+  "default_sets": 3,
+  "default_rest": 60,
+  "base_exercise": 1
+}
+```
+
+---
+
+## 3. Программы и шаблоны
+
+### ProgramFolder (`/api/programs/folders/`)
+- Для каждого пользователя при регистрации автоматически создаётся папка **«Основные»** (собственная, можно переименовать или выключить).
+```json
+{
+  "id": 1,
+  "name": "Основные",
+  "comment": "Базовая программа",
+  "is_active": true,
+  "sort_order": 0
+}
+```
+
+### DayTemplate (`/api/programs/templates/`)
+
+| Поле | Тип | Описание |
+|------|-----|----------|
+| `folder` | integer | ID папки |
+| `name` | string |
+| `comment` | string |
+| `is_active` | boolean |
+| `schedule_type` | enum(`weekly`,`biweekly`,`interval`,`custom`) |
+| `schedule_config` | JSON (см. ниже) |
+| `sort_order` | integer |
+| `template_exercises` | массив TemplateExercise |
+
+**schedule_config форматы:**
+- weekly: `{"days_of_week": [0,2,4]}` (0=понедельник)
+- biweekly: `{"start_date": "2024-01-01", "week_interval": 2, "days_of_week": [1,4]}`
+- interval: `{"start_date": "2024-01-01", "every_x_days": 3}`
+- custom: `{"specific_dates": ["2024-01-05","2024-01-12"]}`
+
+**TemplateExercise объект:**
+```json
+{
+  "exercise_id": 10,
+  "custom_exercise_id": null,
+  "sort_order": 1,
+  "weight_override": 60,
+  "rep_override": 8,
+  "set_override": 4,
+  "time_override": null,
+  "rest_override": 90,
+  "note": "Разминка 2 подхода"
+}
+```
+
+---
+
+## 4. Workouts
+
+### GET `/api/workouts/plan/?date=2024-06-01`
+Ответ:
+```json
+{
+  "id": 12,
+  "date": "2024-06-01",
+  "plan_snapshot": {
+    "folders": [
+      {
+        "id": 1,
+        "name": "Основные",
+        "templates": [
+          {
+            "id": 3,
+            "name": "Понедельник",
+            "exercises": [
+              {
+                "template_exercise_id": 21,
+                "source": { "type": "system", "id": 10, "name": "Жим лежа" },
+                "defaults": {
+                  "reps": 10,
+                  "sets": 4,
+                  "weight": 60,
+                  "rest": 90
+                },
+                "sets": [
+                  { "set_index": 1, "default_reps": 10, "default_weight": 60 },
+                  { "set_index": 2, "default_reps": 10, "default_weight": 60 }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "total_sets": 8
+  }
+}
+```
+
+### POST `/api/workouts/logs/`
+```json
+{
+  "workout_day": 12,
+  "template_exercise": 21,
+  "set_index": 1,
+  "actual_reps": 10,
+  "actual_weight": 60,
+  "actual_time": null
+}
+```
+
+---
+
+## 5. Analytics & AI
+
+### GET `/api/analytics/days/?start=2024-06-01&end=2024-06-07`
+```json
+{
+  "start": "2024-06-01",
+  "end": "2024-06-07",
+  "items": [
+    {"date": "2024-06-01", "load": 640},
+    {"date": "2024-06-02", "load": 120}
+  ]
+}
+```
+
+### GET `/api/analytics/exercises/`
+```json
+[
+  {"id": "sys:10", "name": "Жим лежа", "type": "system", "load": 780, "sets": 6},
+  {"id": "custom:3", "name": "Планка", "type": "custom", "load": 45, "sets": 3}
+]
+```
+
+### GET `/api/analytics/ai-feed/`
+Ответ: массив последних логов (дата, упражнение, фактические значения, рассчитанная нагрузка).
+
+---
+
+## 6. Статусы и ошибки
+- `200/201 OK` — успешные ответы.
+- `400 Bad Request` — проблемы валидации.
+- `401 Unauthorized` — отсутствует/неверный токен.
+- `403 Forbidden` — попытка работать с чужими ресурсами.
+
+---
+
+## 7. Импорт данных
+`python manage.py import_exercises --truncate` — загружает `docs/exercise.csv` в модель `Exercise`.
