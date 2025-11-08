@@ -25,7 +25,7 @@ if not User.objects.filter(email="$DJANGO_SUPERUSER_EMAIL").exists():
 END
 fi
 
-if [ "$IMPORT_EXERCISES_ON_START" = "true" ]; then
+if [ "$(echo "$IMPORT_EXERCISES_ON_START" | tr '[:upper:]' '[:lower:]')" = "true" ]; then
   python manage.py import_exercises --truncate
 fi
 
