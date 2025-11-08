@@ -1,0 +1,29 @@
+# macOS
+.DS_Store
+
+# Python / Django
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+*.sqlite3
+db.sqlite3
+env/
+venv/
+.venv/
+.env
+.env.*
+/staticfiles/
+/media/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+.npm/
+yarn-error.log
+pnpm-lock.yaml
+package-lock.json
+
+# Logs
+*.log
