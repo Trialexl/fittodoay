@@ -53,7 +53,7 @@ def template_matches_date(template: DayTemplate, target_date: date) -> bool:
     return True
 
 
-def _resolve_defaults(te: TemplateExercise) -> Dict[str, Any]:
+def resolve_defaults(te: TemplateExercise) -> Dict[str, Any]:
     source = te.exercise or te.custom_exercise
     if source is None:
         return {}
@@ -119,7 +119,7 @@ def generate_daily_plan(user, target_date: date | None = None) -> WorkoutDay:
                 source = te.exercise or te.custom_exercise
                 if source is None:
                     continue
-                defaults = _resolve_defaults(te)
+                defaults = resolve_defaults(te)
                 sets = []
                 for idx in range(int(defaults.get("sets") or 1)):
                     sets.append(
