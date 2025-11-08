@@ -35,9 +35,14 @@ export const AppHeader = () => {
               </Button>
             </>
           ) : (
-            <Link href="/login" className="text-blue-600">
-              Войти
-            </Link>
+            <div className="flex gap-3">
+              <Link href="/login" className="text-blue-600">
+                Войти
+              </Link>
+              <Link href="/register" className="text-blue-600">
+                Регистрация
+              </Link>
+            </div>
           )}
         </div>
       </div>

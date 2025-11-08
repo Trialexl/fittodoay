@@ -50,13 +50,13 @@ export const TemplateEditor = () => {
   });
 
   const { data: folders } = useSWR<Folder[]>(
-    token ? ["/api/programs/folders/", token] : null,
-    ([url]) => apiFetch(url as string, { token: token ?? undefined }),
+    token ? "/api/programs/folders/" : null,
+    (url: string) => apiFetch(url, { token: token ?? undefined }),
   );
 
   const { data: exercises } = useSWR<ExerciseOption[]>(
-    token ? ["/api/exercises/", token] : null,
-    ([url]) => apiFetch(url as string, { token: token ?? undefined }),
+    token ? "/api/exercises/" : null,
+    (url: string) => apiFetch(url, { token: token ?? undefined }),
   );
 
   const folderOptions = folders ?? [];

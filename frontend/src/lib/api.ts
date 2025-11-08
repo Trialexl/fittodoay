@@ -11,17 +11,17 @@ export async function apiFetch<T>(
   path: string,
   { token, headers, ...options }: RequestOptions = {},
 ): Promise<T> {
-  const finalHeaders: HeadersInit = {
-    "Content-Type": "application/json",
-    ...(headers || {}),
-  };
+  const finalHeaders = new Headers(headers || {});
+  if (!finalHeaders.has("Content-Type")) {
+    finalHeaders.set("Content-Type", "application/json");
+  }
 
   const authToken =
     token ??
     (typeof window !== "undefined" ? localStorage.getItem("token") : null);
 
   if (authToken) {
-    finalHeaders["Authorization"] = `Token ${authToken}`;
+    finalHeaders.set("Authorization", `Token ${authToken}`);
   }
 
   const response = await fetch(`${API_BASE_URL}${path}`, {
