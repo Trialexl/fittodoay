@@ -1,0 +1,80 @@
+from __future__ import annotations
+
+from rest_framework import permissions, viewsets
+
+from .models import DayTemplate, ProgramFolder, TemplateExercise
+from .serializers import (
+    DayTemplateSerializer,
+    ProgramFolderSerializer,
+    TemplateExerciseSerializer,
+)
+
+
+class BaseUserQuerysetMixin:
+    """Restrict queryset to current user."""
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        return qs.filter(user=self.request.user)
+
+
+class ProgramFolderViewSet(BaseUserQuerysetMixin, viewsets.ModelViewSet):
+    serializer_class = ProgramFolderSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return ProgramFolder.objects.filter(user=self.request.user).order_by("sort_order", "id")
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
+
+class DayTemplateViewSet(viewsets.ModelViewSet):
+    serializer_class = DayTemplateSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        queryset = DayTemplate.objects.filter(folder__user=user)
+        folder_id = self.request.query_params.get("folder")
+        if folder_id:
+            queryset = queryset.filter(folder_id=folder_id)
+        return queryset.order_by("sort_order", "id")
+
+    def perform_create(self, serializer):
+        folder = serializer.validated_data["folder"]
+        if folder.user != self.request.user:
+            raise permissions.PermissionDenied("Нельзя добавлять шаблон в чужую папку")
+        serializer.save()
+
+    def perform_update(self, serializer):
+        folder = serializer.validated_data.get("folder")
+        if folder and folder.user != self.request.user:
+            raise permissions.PermissionDenied("Нельзя перемещать шаблон в чужую папку")
+        serializer.save()
+
+
+class TemplateExerciseViewSet(viewsets.ModelViewSet):
+    serializer_class = TemplateExerciseSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        qs = TemplateExercise.objects.filter(template__folder__user=self.request.user)
+        template_id = self.request.query_params.get("template")
+        if template_id:
+            qs = qs.filter(template_id=template_id)
+        return qs.order_by("sort_order", "id")
+
+    def perform_create(self, serializer):
+        template = serializer.validated_data.get("template")
+        if template.folder.user != self.request.user:
+            raise permissions.PermissionDenied("Нельзя изменять чужой шаблон")
+        serializer.save()
+
+    def perform_update(self, serializer):
+        template = serializer.validated_data.get("template") or serializer.instance.template
+        if template.folder.user != self.request.user:
+            raise permissions.PermissionDenied("Нельзя изменять чужой шаблон")
+        serializer.save()
+
+# Create your views here.

@@ -30,6 +30,7 @@ INSTALLED_APPS = [
     "rest_framework.authtoken",
     "accounts",
     "exercises",
+    "programs",
 ]
 
 MIDDLEWARE = [
