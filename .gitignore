@@ -31,8 +31,6 @@ package-lock.json
 # Obsidian
 .obsidian/
 .obsidian-workspace
-*.excalidraw
-*.excalidraw.png
 
 # Obsidian
 .obsidian/
