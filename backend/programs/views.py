@@ -35,7 +35,7 @@ class DayTemplateViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        queryset = DayTemplate.objects.filter(folder__user=user)
+        queryset = DayTemplate.objects.select_related("folder").filter(folder__user=user)
         folder_id = self.request.query_params.get("folder")
         if folder_id:
             queryset = queryset.filter(folder_id=folder_id)

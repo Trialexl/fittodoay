@@ -6,4 +6,5 @@ urlpatterns = [
     path("api/", include("accounts.urls")),
     path("api/", include("exercises.urls")),
     path("api/programs/", include("programs.urls")),
+    path("api/workouts/", include("workouts.urls")),
 ]
