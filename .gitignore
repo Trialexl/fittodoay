@@ -27,3 +27,15 @@ package-lock.json
 
 # Logs
 *.log
+
+# Obsidian
+.obsidian/
+.obsidian-workspace
+*.excalidraw
+*.excalidraw.png
+
+# Obsidian
+.obsidian/
+*.excalidraw
+*.excalidraw.png
+.obsidian-workspace
