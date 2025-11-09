@@ -107,7 +107,16 @@ type TemplateExerciseDetail = {
   note?: string;
 };
 
-export const ProgramBoard = () => {
+type ProgramBoardProps = {
+  initialFocus?: {
+    folderId?: number;
+    templateId?: number;
+    templateName?: string;
+    exerciseId?: number;
+  };
+};
+
+export const ProgramBoard = ({ initialFocus }: ProgramBoardProps = {}) => {
   const { token } = useAuth();
   const {
     data: folders,
@@ -121,11 +130,41 @@ export const ProgramBoard = () => {
   const [programModal, setProgramModal] = useState<ProgramModalState>(null);
   const [templateModal, setTemplateModal] = useState<TemplateEditorState>(null);
   const [exerciseModal, setExerciseModal] = useState<TemplateExerciseModalState>(null);
+  const [initialHandled, setInitialHandled] = useState(false);
+  const focus = initialFocus ?? {};
+  const { folderId, templateId, templateName, exerciseId } = focus;
 
   const toggleFolder = (id: number) =>
     setExpandedFolders((prev) => ({ ...prev, [id]: !prev[id] }));
   const toggleTemplate = (id: number) =>
     setExpandedTemplates((prev) => ({ ...prev, [id]: !prev[id] }));
+
+  useEffect(() => {
+    if (initialHandled) return;
+    if (exerciseId && templateId) {
+      setExerciseModal({
+        mode: "edit",
+        templateId,
+        templateName: templateName ?? "Шаблон",
+        exerciseId,
+        refresh: () => refreshFolders(),
+      });
+      setInitialHandled(true);
+      return;
+    }
+    if (templateId) {
+      setTemplateModal({ mode: "edit", templateId, refresh: () => refreshFolders() });
+      setInitialHandled(true);
+      return;
+    }
+    if (folderId && folders) {
+      const folder = folders.find((item) => item.id === folderId);
+      if (folder) {
+        setProgramModal({ mode: "edit", folder });
+        setInitialHandled(true);
+      }
+    }
+  }, [exerciseId, templateId, templateName, folderId, folders, initialHandled, refreshFolders]);
 
   if (isLoading) return <p className="text-sm text-slate-500">Загружаем программы…</p>;
 

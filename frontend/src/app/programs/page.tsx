@@ -1,6 +1,15 @@
 import { ProgramBoard } from "@/components/programs/ProgramBoard";
 
-export default function ProgramsPage() {
+type PageProps = {
+  searchParams?: Record<string, string | string[] | undefined>;
+};
+
+export default function ProgramsPage({ searchParams }: PageProps) {
+  const folderId = searchParams?.folder ? Number(searchParams.folder) : undefined;
+  const templateId = searchParams?.template ? Number(searchParams.template) : undefined;
+  const templateName =
+    typeof searchParams?.templateName === "string" ? (searchParams.templateName as string) : undefined;
+  const exerciseId = searchParams?.exercise ? Number(searchParams.exercise) : undefined;
   return (
     <div className="space-y-8">
       <header>
@@ -11,7 +20,14 @@ export default function ProgramsPage() {
           или собственные варианты.
         </p>
       </header>
-      <ProgramBoard />
+      <ProgramBoard
+        initialFocus={{
+          folderId: Number.isFinite(folderId) ? folderId : undefined,
+          templateId: Number.isFinite(templateId) ? templateId : undefined,
+          templateName,
+          exerciseId: Number.isFinite(exerciseId) ? exerciseId : undefined,
+        }}
+      />
     </div>
   );
 }

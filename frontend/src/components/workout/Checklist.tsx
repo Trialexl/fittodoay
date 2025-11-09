@@ -489,7 +489,7 @@ ${note}`;
                   <h3 className="text-lg font-semibold text-slate-900">{folder.name}</h3>
                 </button>
                 <Link
-                  href="/programs"
+                  href={`/programs?folder=${folder.id}`}
                   aria-label="Редактировать программы"
                   className="rounded-full p-2 text-slate-400 transition hover:bg-slate-100 hover:text-primary"
                 >
@@ -608,7 +608,7 @@ ${note}`;
                               </button>
                               <div className="flex items-center gap-2">
                                 <Link
-                                  href={`/programs?exercise=${exercise.template_exercise_id}`}
+                                  href={`/programs?template=${template.id}&templateName=${encodeURIComponent(template.name)}&exercise=${exercise.template_exercise_id}`}
                                   aria-label="Редактировать упражнение"
                                   className="rounded-full p-2 text-slate-400 transition hover:bg-slate-100 hover:text-primary"
                                   onClick={(event) => event.stopPropagation()}
