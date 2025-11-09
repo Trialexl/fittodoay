@@ -170,13 +170,20 @@ export const Checklist = ({
       plan.folders.forEach((folder) => {
         folder.templates.forEach((template) => {
           template.exercises.forEach((exercise) => {
-            next[exercise.template_exercise_id] = prev[exercise.template_exercise_id] ?? true;
+            const isComplete = exercise.sets.every((set) =>
+              logsBySet.has(keyForSet(exercise.template_exercise_id, set.set_index)),
+            );
+            if (prev[exercise.template_exercise_id] !== undefined) {
+              next[exercise.template_exercise_id] = prev[exercise.template_exercise_id];
+            } else {
+              next[exercise.template_exercise_id] = !isComplete;
+            }
           });
         });
       });
       return next;
     });
-  }, [plan?.folders]);
+  }, [plan?.folders, logsBySet]);
 
   useEffect(() => {
     if (!restOverlay || restOverlay.autoSubmitted || restOverlay.rest <= 0) return;
@@ -225,6 +232,18 @@ export const Checklist = ({
     set: SetPayload,
   ) => {
     const nextExists = hasUpcomingSets(exercise.template_exercise_id, set.set_index);
+    const willCompleteExercise = exercise.sets.every((exerciseSet) => {
+      if (exerciseSet.set_index === set.set_index) {
+        return true;
+      }
+      return Boolean(getLogForSet(exercise.template_exercise_id, exerciseSet.set_index));
+    });
+    if (willCompleteExercise) {
+      setExpandedExercises((prev) => ({
+        ...prev,
+        [exercise.template_exercise_id]: false,
+      }));
+    }
     const baseRest = set.rest ?? exercise.defaults.rest ?? 0;
     const restSeconds = nextExists ? baseRest : 10;
     setRestOverlay({
@@ -516,15 +535,25 @@ ${note}`;
                         aria-expanded={templateExpanded}
                       >
                         <span className="text-base text-slate-400">{templateExpanded ? "▾" : "▸"}</span>
-                        <div>
-                          <h4 className="text-base font-semibold text-slate-900">
-                            {template.name}
-                          </h4>
-                          <p className="text-xs uppercase tracking-wide text-slate-500">
-                            {templateProgress.completed}/{templateProgress.total} сетов
-                          </p>
+                        <div className="flex flex-col">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h4 className="text-base font-semibold text-slate-900">
+                              {template.name}
+                            </h4>
+                            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                              {templateProgress.completed}/{templateProgress.total}
+                            </span>
+                          </div>
                         </div>
                       </button>
+                      <Link
+                        href={`/programs?template=${template.id}`}
+                        aria-label="Редактировать шаблон дня"
+                        className="rounded-full p-2 text-slate-400 transition hover:bg-slate-100 hover:text-primary"
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        <EditIcon />
+                      </Link>
                     </div>
                     <div
                       className={`mt-4 overflow-hidden transition-[max-height,opacity] duration-500 ease-out ${templateExpanded ? "max-h-[1600px] opacity-100" : "max-h-0 opacity-0"}`}
@@ -532,8 +561,16 @@ ${note}`;
                       {templateExpanded && (
                         <div className="space-y-4">
                           {template.exercises.map((exercise) => {
+                            const isExerciseComplete = exercise.sets.every((set) =>
+                              Boolean(
+                                getLogForSet(exercise.template_exercise_id, set.set_index),
+                              ),
+                            );
+                            const storedExpanded = expandedExercises[exercise.template_exercise_id];
                             const exerciseExpanded =
-                              expandedExercises[exercise.template_exercise_id] ?? true;
+                              storedExpanded !== undefined
+                                ? storedExpanded
+                                : !isExerciseComplete;
                         const completedSets = exercise.sets.filter((set) =>
                           getLogForSet(exercise.template_exercise_id, set.set_index),
                         ).length;
@@ -552,27 +589,39 @@ ${note}`;
                                 <span className="text-base text-slate-400">
                                   {exerciseExpanded ? "▾" : "▸"}
                                 </span>
-                                <div>
-                                  <p
-                                    className="text-base font-semibold text-slate-900"
-                                    title={tooltipText(exercise.source.description, exercise.note)}
-                                  >
-                                    {exercise.source.name}
-                                  </p>
+                                <div className="flex flex-col">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <p
+                                      className="text-base font-semibold text-slate-900"
+                                      title={tooltipText(exercise.source.description, exercise.note)}
+                                    >
+                                      {exercise.source.name}
+                                    </p>
+                                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                      {completedSets}/{exercise.sets.length}
+                                    </span>
+                                  </div>
                                   {exercise.note && (
                                     <p className="text-xs text-slate-500">{exercise.note}</p>
                                   )}
                                 </div>
                               </button>
-                              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                                {completedSets}/{exercise.sets.length}
-                              </span>
+                              <div className="flex items-center gap-2">
+                                <Link
+                                  href={`/programs?exercise=${exercise.template_exercise_id}`}
+                                  aria-label="Редактировать упражнение"
+                                  className="rounded-full p-2 text-slate-400 transition hover:bg-slate-100 hover:text-primary"
+                                  onClick={(event) => event.stopPropagation()}
+                                >
+                                  <EditIcon />
+                                </Link>
+                              </div>
                             </div>
                             <div
                               className={`mt-4 overflow-hidden transition-[max-height,opacity] duration-500 ease-out ${exerciseExpanded ? "max-h-[1200px] opacity-100" : "max-h-0 opacity-0"}`}
                             >
                               {exerciseExpanded &&
-                                exercise.sets.map((set) => {
+                                exercise.sets.map((set, setPosition) => {
                                 const log = getLogForSet(
                                   exercise.template_exercise_id,
                                   set.set_index,
@@ -583,6 +632,10 @@ ${note}`;
                                 );
                                 const isActiveSet = activeSetKey === setKey;
                                 const isComplete = Boolean(log);
+                                const setNumber =
+                                  set.set_index && set.set_index > 0
+                                    ? set.set_index
+                                    : setPosition + 1;
                                 return (
                                   <div
                                     key={`${exercise.template_exercise_id}-${set.set_index}`}
@@ -593,12 +646,12 @@ ${note}`;
                                         : "border-slate-200 bg-slate-50",
                                       isActiveSet && "ring-2 ring-primary/60",
                                     )}
-                                  >
-                                    <div className="min-w-[200px] flex-1">
-                                      <div className="flex flex-wrap items-center justify-between gap-3">
-                                        <p className="font-semibold text-slate-900">
-                                          Сет {set.set_index + 1}
-                                        </p>
+                                    >
+                                      <div className="min-w-[200px] flex-1">
+                                        <div className="flex flex-wrap items-center justify-between gap-3">
+                                          <p className="font-semibold text-slate-900">
+                                            Сет {setNumber}
+                                          </p>
                                         <div className="flex flex-wrap items-center gap-2">
                                           {isComplete && log ? (
                                             <button
