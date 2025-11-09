@@ -43,3 +43,23 @@ body {
 .fade-once {
   animation: greetingFade 5s ease-out forwards;
 }
+
+@keyframes calloutPop {
+  0% {
+    opacity: 0;
+    transform: translateY(-16px) scale(0.92);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(4px) scale(1.04);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.callout-pop {
+  animation: calloutPop 1800ms ease-in;
+  animation-fill-mode: both;
+}

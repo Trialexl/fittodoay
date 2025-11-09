@@ -2,7 +2,8 @@
 
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
-import { useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 
 import type { PendingSet } from "./Checklist";
 
@@ -31,110 +32,136 @@ export const RestTimerOverlay = ({
   onClose,
   error,
 }: Props) => {
+  const [mounted, setMounted] = useState(false);
+  const [visibleCallout, setVisibleCallout] = useState<string[] | null>(null);
+
   useEffect(() => {
-    if (!pending) return;
+    setMounted(true);
+    return () => setMounted(false);
+  }, []);
+
+  useEffect(() => {
+    if (!pending || !mounted) return;
     document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = "";
     };
-  }, [pending]);
+  }, [pending, mounted]);
 
-  if (!pending) return null;
-
-  const showTimer = pending.rest > 0;
+  const restSeconds = pending?.rest ?? 0;
+  const showTimer = restSeconds > 0;
   const displayRemaining = Math.max(remaining, 0);
   const progress = duration ? Math.min((duration - remaining) / duration, 1) : 0;
+  const isFinalSet = Boolean(pending?.isFinal);
 
-  const showPrepCue = showTimer && !pending.isFinal && displayRemaining === 5;
-  const showGoCue = showTimer && !pending.isFinal && displayRemaining === 1;
-  const showCongrats = showTimer && pending.isFinal;
-  const calloutText = showCongrats
-    ? "Молодец"
-    : showGoCue
-      ? "Давай дальше"
-      : showPrepCue
-        ? "Приготовься"
-        : null;
-  const calloutTone = pending.isFinal ? "from-emerald-500/40 to-emerald-400/10" : "from-indigo-500/30 to-blue-500/10";
+  const showPrepCue = showTimer && !isFinalSet && displayRemaining === 5;
+  const showGoCue = showTimer && !isFinalSet && displayRemaining === 1;
+  const showCongrats = showTimer && isFinalSet;
+  const calloutText = useMemo(() => {
+    if (showCongrats) return ["На сегодня всё.", "Ты молодец!"];
+    if (showGoCue) return ["Давай дальше"];
+    if (showPrepCue) return ["Приготовься"];
+    return null;
+  }, [showCongrats, showGoCue, showPrepCue]);
 
-  return (
-    <div className="fixed inset-0 z-40 flex flex-col items-center justify-center bg-slate-900/90 p-6 text-white relative overflow-hidden">
-      <button
-        className="absolute right-6 top-6 text-slate-200 hover:text-white"
-        onClick={onClose}
-        aria-label="Закрыть"
-      >
-        ×
-      </button>
-      {calloutText && (
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <div className={`absolute inset-0 bg-gradient-to-br ${calloutTone} opacity-40 blur-2xl`} />
-          <span className="relative text-5xl font-black uppercase tracking-[0.3em] text-white drop-shadow-2xl animate-pulse">
-            {calloutText}
-          </span>
-        </div>
-      )}
-      {showTimer && (
-        <div className="mb-4 text-sm uppercase tracking-wider text-slate-200">Отдых</div>
-      )}
-      <div className="text-center">
-        <p className="text-3xl font-semibold">{pending.exerciseName}</p>
-      </div>
-      {showTimer && (
-        <div className="mt-6 flex flex-col items-center">
-          <div className="relative flex h-40 w-40 items-center justify-center rounded-full border border-white/30">
-            <span className="text-4xl font-bold tabular-nums">{displayRemaining}s</span>
-            <svg className="absolute inset-0 h-full w-full">
-              <circle cx="80" cy="80" r="70" stroke="rgba(255,255,255,0.2)" strokeWidth="8" fill="none" />
-              <circle
-                cx="80"
-                cy="80"
-                r="70"
-                stroke="#c7d2fe"
-                strokeWidth="8"
-                fill="none"
-                strokeDasharray={`${progress * 440} 440`}
-                transform="rotate(-90 80 80)"
-              />
-            </svg>
-          </div>
-          {!isTimerActive && <p className="mt-2 text-xs text-slate-200">Отдых завершён</p>}
-        </div>
-      )}
-      <div className="mt-8 w-full max-w-md space-y-3 text-left text-slate-200">
-        {!pending.hasTime ? (
-          <div className="flex w-full flex-wrap gap-3">
-            <OverlayField
-              label="Повторы"
-              value={values.reps}
-              onChange={(value) => onChange("reps", value)}
-              className={pending.hasWeight ? "min-w-[140px] flex-1" : "w-full"}
-            />
-            {pending.hasWeight && (
+  useEffect(() => {
+    if (!pending) {
+      setVisibleCallout(null);
+      return;
+    }
+    if (calloutText) {
+      setVisibleCallout(calloutText);
+    }
+  }, [calloutText, pending]);
+
+  if (!pending || !mounted) return null;
+
+  const overlay = (
+    <div className="fixed inset-0 z-50 bg-slate-900/90 text-white">
+      <div className="relative flex h-full w-full flex-col overflow-hidden p-6">
+        <button
+          className="absolute right-6 top-6 text-slate-200 hover:text-white"
+          onClick={onClose}
+          aria-label="Закрыть"
+        >
+          ×
+        </button>
+        <div className="flex flex-1 flex-col items-center justify-center gap-6 pt-12 text-center">
+          {visibleCallout && (
+            <div className="w-full max-w-xl px-6 text-center">
+              {visibleCallout.map((line) => (
+                <span
+                  key={line}
+                  className="callout-pop block text-2xl font-black uppercase tracking-[0.35em] text-white sm:text-3xl"
+                >
+                  {line}
+                </span>
+              ))}
+            </div>
+          )}
+          {showTimer && (
+            <div className="text-xs uppercase tracking-[0.6em] text-slate-200 sm:text-sm">Отдых</div>
+          )}
+          <p className="text-3xl font-semibold sm:text-4xl">{pending.exerciseName}</p>
+          {showTimer && (
+            <div className="flex flex-col items-center">
+              <div className="relative flex h-40 w-40 items-center justify-center rounded-full border border-white/30 sm:h-48 sm:w-48">
+                <span className="text-4xl font-bold tabular-nums sm:text-5xl">{displayRemaining}s</span>
+                <svg className="absolute inset-0 h-full w-full">
+                  <circle cx="80" cy="80" r="70" stroke="rgba(255,255,255,0.2)" strokeWidth="8" fill="none" />
+                  <circle
+                    cx="80"
+                    cy="80"
+                    r="70"
+                    stroke="#c7d2fe"
+                    strokeWidth="8"
+                    fill="none"
+                    strokeDasharray={`${progress * 440} 440`}
+                    transform="rotate(-90 80 80)"
+                  />
+                </svg>
+              </div>
+              {!isTimerActive && <p className="mt-2 text-xs text-slate-200">Отдых завершён</p>}
+            </div>
+          )}
+          <div className="w-full max-w-md space-y-3 text-left text-slate-200">
+            {!pending.hasTime ? (
+              <div className="flex w-full flex-wrap gap-3">
+                <OverlayField
+                  label="Повторы"
+                  value={values.reps}
+                  onChange={(value) => onChange("reps", value)}
+                  className={pending.hasWeight ? "min-w-[140px] flex-1" : "w-full"}
+                />
+                {pending.hasWeight && (
+                  <OverlayField
+                    label="Вес (кг)"
+                    value={values.weight}
+                    onChange={(value) => onChange("weight", value)}
+                    className="min-w-[140px] flex-1"
+                  />
+                )}
+              </div>
+            ) : (
               <OverlayField
-                label="Вес (кг)"
-                value={values.weight}
-                onChange={(value) => onChange("weight", value)}
-                className="min-w-[140px] flex-1"
+                label="Время (сек)"
+                value={values.time}
+                onChange={(value) => onChange("time", value)}
               />
             )}
           </div>
-        ) : (
-          <OverlayField
-            label="Время (сек)"
-            value={values.time}
-            onChange={(value) => onChange("time", value)}
-          />
-        )}
-      </div>
-      {error && <p className="mt-3 text-sm text-red-300">{error}</p>}
-      <div className="mt-6 flex flex-wrap gap-3">
-        <Button variant="secondary" className="bg-white text-slate-900" onClick={onSkip}>
-          Пропустить отдых
-        </Button>
+          {error && <p className="text-sm text-red-300">{error}</p>}
+          <div className="flex flex-wrap justify-center gap-3">
+            <Button variant="secondary" className="bg-white text-slate-900" onClick={onSkip}>
+              Пропустить отдых
+            </Button>
+          </div>
+        </div>
       </div>
     </div>
   );
+
+  return createPortal(overlay, document.body);
 };
 
 const OverlayField = ({
