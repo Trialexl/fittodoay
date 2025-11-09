@@ -139,6 +139,7 @@ def generate_daily_plan(user, target_date: date | None = None) -> WorkoutDay:
                             "type": "system" if te.exercise else "custom",
                             "id": source.id,
                             "name": source.name,
+                            "description": getattr(source, "description", "") or "",
                         },
                         "defaults": defaults,
                         "note": te.note,

@@ -18,12 +18,15 @@ export default function WorkoutPage() {
     try {
       const data = await apiFetch<{
         id: number;
+        date: string;
         plan_snapshot: { folders: WorkoutPlan["folders"]; date: string };
+        set_logs?: WorkoutPlan["logs"];
       }>("/api/workouts/plan/", { token });
       setPlan({
         id: data.id,
-        date: data.plan_snapshot.date,
+        date: data.date ?? data.plan_snapshot.date,
         folders: data.plan_snapshot.folders,
+        logs: data.set_logs ?? [],
       });
     } finally {
       setLoading(false);

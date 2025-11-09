@@ -17,6 +17,12 @@ export const useRestTimer = () => {
 
   const start = useCallback((seconds: number) => {
     clear();
+    if (seconds <= 0) {
+      setDuration(0);
+      setRemaining(0);
+      setIsActive(false);
+      return;
+    }
     setDuration(seconds);
     setRemaining(seconds);
     setIsActive(true);
