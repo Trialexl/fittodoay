@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/Input";
 import { useAuth } from "@/state/AuthContext";
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
+import { buildDefaultProfile } from "@/lib/profileDefaults";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -21,6 +22,7 @@ export default function RegisterPage() {
       await register({
         email: form.email,
         password: form.password,
+        profile: buildDefaultProfile(),
       });
       router.push("/workout");
     } catch (e: unknown) {

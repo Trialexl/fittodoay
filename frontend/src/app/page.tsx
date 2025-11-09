@@ -8,6 +8,7 @@ import { useAuth } from "@/state/AuthContext";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { BrandMark } from "@/components/common/BrandMark";
+import { buildDefaultProfile } from "@/lib/profileDefaults";
 
 const greetingFont = localFont({
   src: "../../public/fonts/Christopher.otf",
@@ -41,6 +42,7 @@ export default function HomePage() {
           await register({
             email: form.email,
             password: form.password,
+            profile: buildDefaultProfile(),
           });
           router.push("/workout");
           return;

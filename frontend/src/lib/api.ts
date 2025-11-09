@@ -19,6 +19,22 @@ export class ApiError extends Error {
   }
 }
 
+const extractErrorMessage = (payload: unknown) => {
+  if (typeof payload === "string") return payload;
+  if (typeof payload === "object" && payload !== null) {
+    if ("detail" in payload && typeof (payload as any).detail === "string") {
+      return (payload as { detail: string }).detail;
+    }
+    const firstValue = Object.values(payload as Record<string, unknown>).flat().find(
+      (value) => typeof value === "string",
+    );
+    if (firstValue && typeof firstValue === "string") {
+      return firstValue;
+    }
+  }
+  return "Ошибка запроса";
+};
+
 export async function apiFetch<T>(
   path: string,
   { token, headers, ...options }: RequestOptions = {},
@@ -45,10 +61,7 @@ export async function apiFetch<T>(
     const detail = await response
       .json()
       .catch(() => ({ detail: response.statusText }));
-    const message =
-      typeof detail === "object" && detail !== null && "detail" in detail
-        ? (detail as { detail?: string }).detail ?? "Ошибка запроса"
-        : "Ошибка запроса";
+    const message = extractErrorMessage(detail);
     throw new ApiError(message, response.status, detail);
   }
 

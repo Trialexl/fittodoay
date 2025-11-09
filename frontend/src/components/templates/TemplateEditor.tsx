@@ -1,143 +1,232 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
+import useSWR from "swr";
+import clsx from "clsx";
+
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { apiFetch } from "@/lib/api";
-import useSWR from "swr";
 import { useAuth } from "@/state/AuthContext";
-import { useMemo, useState } from "react";
 
-type TemplateExerciseForm = {
-  exercise_id?: number | null;
-  custom_exercise_id?: number | null;
-  note?: string;
-  rep_override?: number | null;
-  set_override?: number | null;
-  weight_override?: number | null;
-  time_override?: number | null;
-  rest_override?: number | null;
-  sort_order: number;
-};
+type ScheduleType = "weekly" | "biweekly" | "interval" | "custom";
+
+type WeeklyConfig = { days_of_week: number[] };
+type BiweeklyConfig = { start_date: string; week_interval: number; days_of_week: number[] };
+type IntervalConfig = { start_date: string; every_x_days: number };
+type CustomConfig = { specific_dates: string[] };
+
+type ScheduleConfig = WeeklyConfig | BiweeklyConfig | IntervalConfig | CustomConfig;
 
 type TemplateForm = {
   folder: number;
   name: string;
   comment: string;
-  schedule_type: string;
-  schedule_config: Record<string, unknown>;
-  template_exercises: TemplateExerciseForm[];
+  schedule_type: ScheduleType;
+  schedule_config: ScheduleConfig;
 };
 
-const scheduleOptions = [
+type TemplateDetail = TemplateForm & { id: number };
+
+type TemplateEditorProps = {
+  defaultFolderId?: number;
+  initialTemplate?: TemplateDetail;
+  onSuccess?: () => void;
+  onCancel?: () => void;
+};
+
+const scheduleOptions: { value: ScheduleType; label: string }[] = [
   { value: "weekly", label: "Еженедельно" },
   { value: "biweekly", label: "Раз в N недель" },
-  { value: "interval", label: "Раз в X дней" },
-  { value: "custom", label: "Пользовательское" },
+  { value: "interval", label: "Через X дней" },
+  { value: "custom", label: "Конкретные даты" },
 ];
 
-type Folder = { id: number; name: string };
-type ExerciseOption = { id: number; name: string };
+const weekDays = [
+  { value: 0, label: "Пн" },
+  { value: 1, label: "Вт" },
+  { value: 2, label: "Ср" },
+  { value: 3, label: "Чт" },
+  { value: 4, label: "Пт" },
+  { value: 5, label: "Сб" },
+  { value: 6, label: "Вс" },
+];
 
-export const TemplateEditor = () => {
+const todayISO = () => new Date().toISOString().slice(0, 10);
+const currentWeekday = () => ((new Date().getDay() + 6) % 7);
+
+const defaultConfigByType = (type: ScheduleType): ScheduleConfig => {
+  switch (type) {
+    case "weekly":
+      return { days_of_week: [currentWeekday()] };
+    case "biweekly":
+      return { start_date: todayISO(), week_interval: 2, days_of_week: [currentWeekday()] };
+    case "interval":
+      return { start_date: todayISO(), every_x_days: 2 };
+    case "custom":
+    default:
+      return { specific_dates: [] };
+  }
+};
+
+type Folder = { id: number; name: string };
+
+export const TemplateEditor = ({
+  defaultFolderId,
+  initialTemplate,
+  onSuccess,
+  onCancel,
+}: TemplateEditorProps) => {
   const { token } = useAuth();
-  const [form, setForm] = useState<TemplateForm>({
-    folder: 0,
-    name: "",
-    comment: "",
-    schedule_type: "weekly",
-    schedule_config: { days_of_week: [0, 2, 4] },
-    template_exercises: [],
-  });
+  const showFolderSelect = !defaultFolderId && !initialTemplate;
+  const [form, setForm] = useState<TemplateForm>(() =>
+    initialTemplate
+      ? {
+          folder: initialTemplate.folder,
+          name: initialTemplate.name,
+          comment: initialTemplate.comment,
+          schedule_type: initialTemplate.schedule_type,
+          schedule_config: initialTemplate.schedule_config,
+        }
+      : {
+          folder: defaultFolderId ?? 0,
+          name: "",
+          comment: "",
+          schedule_type: "weekly",
+          schedule_config: defaultConfigByType("weekly"),
+        },
+  );
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
   const { data: folders } = useSWR<Folder[]>(
-    token ? "/api/programs/folders/" : null,
+    showFolderSelect && token ? "/api/programs/folders/" : null,
     (url: string) => apiFetch(url, { token: token ?? undefined }),
   );
 
-  const { data: exercises } = useSWR<ExerciseOption[]>(
-    token ? "/api/exercises/" : null,
-    (url: string) => apiFetch(url, { token: token ?? undefined }),
-  );
+  useEffect(() => {
+    if (defaultFolderId) {
+      setForm((prev) => ({ ...prev, folder: defaultFolderId }));
+    }
+  }, [defaultFolderId]);
 
-  const folderOptions = folders ?? [];
+  useEffect(() => {
+    if (initialTemplate) {
+      setForm({
+        folder: initialTemplate.folder,
+        name: initialTemplate.name,
+        comment: initialTemplate.comment,
+        schedule_type: initialTemplate.schedule_type,
+        schedule_config: initialTemplate.schedule_config,
+      });
+    }
+  }, [initialTemplate]);
 
-  const addExercise = () => {
-    setForm((prev) => ({
-      ...prev,
-      template_exercises: [
-        ...prev.template_exercises,
-        {
-          exercise_id: exercises?.[0]?.id ?? null,
-          custom_exercise_id: null,
-          note: "",
-          sort_order: prev.template_exercises.length + 1,
-        },
-      ],
-    }));
-  };
-
-  const updateExercise = (index: number, payload: Partial<TemplateExerciseForm>) => {
-    setForm((prev) => ({
-      ...prev,
-      template_exercises: prev.template_exercises.map((item, idx) =>
-        idx === index ? { ...item, ...payload } : item,
-      ),
-    }));
-  };
-
-  const submit = async () => {
-    if (!form.folder) return;
-    await apiFetch("/api/programs/templates/", {
-      method: "POST",
-      body: JSON.stringify(form),
-      token: token ?? undefined,
-    });
-    setForm((prev) => ({
-      ...prev,
-      name: "",
-      comment: "",
-      template_exercises: [],
-    }));
-    alert("Шаблон создан");
-  };
-
-  const scheduleHint = useMemo(() => {
+  const defaultName = useMemo(() => {
     switch (form.schedule_type) {
       case "weekly":
-        return "Укажите массив дней (0-понедельник).";
+        return `День (${(form.schedule_config as WeeklyConfig).days_of_week
+          .map((day) => weekDays.find((d) => d.value === day)?.label ?? "")
+          .join("/")})`;
       case "biweekly":
-        return "Поля week_interval и days_of_week.";
+        return (form.schedule_config as BiweeklyConfig).days_of_week
+          .map((day) => weekDays.find((d) => d.value === day)?.label ?? "")
+          .join("/");
       case "interval":
-        return "Поле every_x_days.";
+        return `Каждые ${(form.schedule_config as IntervalConfig).every_x_days} д.`;
       case "custom":
-        return "Массив specific_dates в формате YYYY-MM-DD.";
+        return `Даты (${(form.schedule_config as CustomConfig).specific_dates.length})`;
       default:
-        return "";
+        return "Шаблон дня";
     }
-  }, [form.schedule_type]);
+  }, [form.schedule_type, form.schedule_config]);
+
+  const validationError = useMemo(() => {
+    if (showFolderSelect && !form.folder) return "Выберите программу";
+    switch (form.schedule_type) {
+      case "weekly": {
+        const days = (form.schedule_config as WeeklyConfig).days_of_week;
+        if (!days.length) return "Выберите хотя бы один день недели";
+        break;
+      }
+      case "biweekly": {
+        const cfg = form.schedule_config as BiweeklyConfig;
+        if (!cfg.days_of_week.length) return "Выберите дни недели";
+        if (!cfg.week_interval || cfg.week_interval < 1) return "Интервал недель должен быть больше 0";
+        break;
+      }
+      case "interval": {
+        const cfg = form.schedule_config as IntervalConfig;
+        if (!cfg.every_x_days || cfg.every_x_days < 1) return "Интервал в днях должен быть больше 0";
+        break;
+      }
+      case "custom": {
+        const cfg = form.schedule_config as CustomConfig;
+        if (!cfg.specific_dates.length) return "Добавьте хотя бы одну дату";
+        break;
+      }
+      default:
+        break;
+    }
+    return null;
+  }, [form.folder, showFolderSelect, form.schedule_type, form.schedule_config]);
+
+  const submit = async () => {
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+    setLoading(true);
+    try {
+      if (initialTemplate) {
+        await apiFetch(`/api/programs/templates/${initialTemplate.id}/`, {
+          method: "PATCH",
+          body: JSON.stringify({ ...form, name: form.name.trim() || defaultName }),
+          token: token ?? undefined,
+        });
+      } else {
+        await apiFetch("/api/programs/templates/", {
+          method: "POST",
+          body: JSON.stringify({ ...form, name: form.name.trim() || defaultName }),
+          token: token ?? undefined,
+        });
+      }
+      setError(null);
+      onSuccess?.();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось сохранить шаблон");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-      <h3 className="text-xl font-semibold">Конструктор шаблона дня</h3>
+    <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+      <h3 className="text-xl font-semibold text-slate-900">
+        {initialTemplate ? "Настройка шаблона дня" : "Новый шаблон дня"}
+      </h3>
       <div className="mt-4 grid gap-4 md:grid-cols-2">
-        <label className="text-sm">
-          Папка
-          <select
-            className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
-            value={form.folder}
-            onChange={(e) => setForm((prev) => ({ ...prev, folder: Number(e.target.value) }))}
-          >
-            <option value={0}>Выберите папку</option>
-            {folderOptions.map((folder) => (
-              <option key={folder.id} value={folder.id}>
-                {folder.name}
-              </option>
-            ))}
-          </select>
-        </label>
+        {showFolderSelect && (
+          <label className="text-sm">
+            Программа
+            <select
+              className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
+              value={form.folder}
+              onChange={(e) => setForm((prev) => ({ ...prev, folder: Number(e.target.value) }))}
+            >
+              <option value={0}>Выберите папку</option>
+              {folders?.map((folder) => (
+                <option key={folder.id} value={folder.id}>
+                  {folder.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <Input
           label="Название"
           value={form.name}
+          placeholder={`Например: ${defaultName}`}
           onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
         />
         <Input
@@ -150,9 +239,14 @@ export const TemplateEditor = () => {
           <select
             className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
             value={form.schedule_type}
-            onChange={(e) =>
-              setForm((prev) => ({ ...prev, schedule_type: e.target.value }))
-            }
+            onChange={(e) => {
+              const nextType = e.target.value as ScheduleType;
+              setForm((prev) => ({
+                ...prev,
+                schedule_type: nextType,
+                schedule_config: defaultConfigByType(nextType),
+              }));
+            }}
           >
             {scheduleOptions.map((option) => (
               <option key={option.value} value={option.value}>
@@ -160,104 +254,236 @@ export const TemplateEditor = () => {
               </option>
             ))}
           </select>
-          <span className="text-xs text-slate-500">{scheduleHint}</span>
         </label>
       </div>
-      <div className="mt-6 space-y-4">
-        {form.template_exercises.map((exercise, index) => (
-          <div key={index} className="rounded border border-slate-200 p-4">
-            <div className="flex items-center justify-between">
-              <h4 className="font-medium">Упражнение {index + 1}</h4>
-              <Button
-                variant="ghost"
-                onClick={() =>
-                  setForm((prev) => ({
-                    ...prev,
-                    template_exercises: prev.template_exercises.filter(
-                      (_, idx) => idx !== index,
-                    ),
-                  }))
-                }
-              >
-                Удалить
-              </Button>
-            </div>
-            <div className="mt-3 grid gap-3 md:grid-cols-2">
-              <label className="text-sm">
-                Системное упражнение
-                <select
-                  className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
-                  value={exercise.exercise_id ?? 0}
-                  onChange={(e) =>
-                    updateExercise(index, {
-                      exercise_id: Number(e.target.value) || null,
-                      custom_exercise_id: null,
-                    })
-                  }
-                >
-                  <option value={0}>Выберите</option>
-                  {exercises?.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <Input
-                label="Повторы"
-                type="number"
-                value={exercise.rep_override ?? ""}
-                onChange={(e) =>
-                  updateExercise(index, { rep_override: Number(e.target.value) })
-                }
-              />
-              <Input
-                label="Сеты"
-                type="number"
-                value={exercise.set_override ?? ""}
-                onChange={(e) =>
-                  updateExercise(index, { set_override: Number(e.target.value) })
-                }
-              />
-              <Input
-                label="Вес (кг)"
-                type="number"
-                value={exercise.weight_override ?? ""}
-                onChange={(e) =>
-                  updateExercise(index, { weight_override: Number(e.target.value) })
-                }
-              />
-              <Input
-                label="Время (сек)"
-                type="number"
-                value={exercise.time_override ?? ""}
-                onChange={(e) =>
-                  updateExercise(index, { time_override: Number(e.target.value) })
-                }
-              />
-              <Input
-                label="Отдых (сек)"
-                type="number"
-                value={exercise.rest_override ?? ""}
-                onChange={(e) =>
-                  updateExercise(index, { rest_override: Number(e.target.value) })
-                }
-              />
-              <Input
-                label="Комментарий"
-                value={exercise.note ?? ""}
-                onChange={(e) => updateExercise(index, { note: e.target.value })}
-              />
-            </div>
-          </div>
-        ))}
-      </div>
-      <div className="mt-4 flex flex-wrap gap-3">
-        <Button variant="secondary" onClick={addExercise}>
-          Добавить упражнение
+      <ScheduleConfigurator
+        type={form.schedule_type}
+        config={form.schedule_config}
+        onChange={(config) => setForm((prev) => ({ ...prev, schedule_config: config }))}
+      />
+      {error && <p className="mt-4 rounded bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
+      <div className="mt-6 flex justify-end gap-3">
+        {onCancel && (
+          <Button variant="ghost" onClick={onCancel}>
+            Отмена
+          </Button>
+        )}
+        <Button onClick={submit} loading={loading}>
+          Сохранить
         </Button>
-        <Button onClick={submit}>Сохранить шаблон</Button>
       </div>
     </div>
+  );
+};
+
+const ScheduleConfigurator = ({
+  type,
+  config,
+  onChange,
+}: {
+  type: ScheduleType;
+  config: ScheduleConfig;
+  onChange: (config: ScheduleConfig) => void;
+}) => {
+  switch (type) {
+    case "weekly":
+      return (
+        <section className="mt-6 rounded-2xl border border-slate-200 p-4">
+          <h4 className="text-base font-semibold text-slate-900">Дни недели</h4>
+          <p className="text-sm text-slate-500">Выберите, когда повторяется шаблон.</p>
+          <DayPicker
+            selected={(config as WeeklyConfig).days_of_week}
+            onToggle={(days_of_week) => onChange({ days_of_week })}
+          />
+        </section>
+      );
+    case "biweekly": {
+      const biConfig = config as BiweeklyConfig;
+      return (
+        <section className="mt-6 space-y-4 rounded-2xl border border-slate-200 p-4">
+          <h4 className="text-base font-semibold text-slate-900">Раз в несколько недель</h4>
+          <div className="grid gap-4 md:grid-cols-2">
+            <InputDate
+              label="Дата старта"
+              value={biConfig.start_date}
+              onChange={(start_date) => onChange({ ...biConfig, start_date })}
+            />
+            <InputNumber
+              label="Интервал (недель)"
+              min={1}
+              value={biConfig.week_interval}
+              onChange={(week_interval) => onChange({ ...biConfig, week_interval })}
+            />
+          </div>
+          <div>
+            <p className="text-sm font-medium text-slate-700">Дни недели</p>
+            <DayPicker
+              selected={biConfig.days_of_week}
+              onToggle={(days_of_week) => onChange({ ...biConfig, days_of_week })}
+            />
+          </div>
+        </section>
+      );
+    }
+    case "interval": {
+      const intervalConfig = config as IntervalConfig;
+      return (
+        <section className="mt-6 grid gap-4 rounded-2xl border border-slate-200 p-4 md:grid-cols-2">
+          <InputDate
+            label="Дата старта"
+            value={intervalConfig.start_date}
+            onChange={(start_date) => onChange({ ...intervalConfig, start_date })}
+          />
+          <InputNumber
+            label="Каждые, дней"
+            min={1}
+            value={intervalConfig.every_x_days}
+            onChange={(every_x_days) => onChange({ ...intervalConfig, every_x_days })}
+          />
+        </section>
+      );
+    }
+    case "custom":
+      return (
+        <CustomDatesConfigurator
+          dates={(config as CustomConfig).specific_dates}
+          onChange={(specific_dates) => onChange({ specific_dates })}
+        />
+      );
+    default:
+      return null;
+  }
+};
+
+const DayPicker = ({
+  selected,
+  onToggle,
+}: {
+  selected: number[];
+  onToggle: (days: number[]) => void;
+}) => {
+  const toggle = (value: number) => {
+    if (selected.includes(value)) {
+      onToggle(selected.filter((day) => day !== value));
+    } else {
+      onToggle([...selected, value]);
+    }
+  };
+  return (
+    <div className="mt-3 flex flex-wrap gap-2">
+      {weekDays.map((day) => (
+        <button
+          key={day.value}
+          type="button"
+          className={clsx(
+            "rounded-full px-3 py-1 text-sm transition",
+            selected.includes(day.value)
+              ? "bg-primary text-white"
+              : "border border-slate-200 text-slate-600 hover:border-slate-400",
+          )}
+          onClick={() => toggle(day.value)}
+        >
+          {day.label}
+        </button>
+      ))}
+    </div>
+  );
+};
+
+const InputDate = ({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) => (
+  <label className="text-sm">
+    {label}
+    <input
+      type="date"
+      className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+    />
+  </label>
+);
+
+const InputNumber = ({
+  label,
+  value,
+  onChange,
+  min = 0,
+}: {
+  label: string;
+  value: number;
+  onChange: (value: number) => void;
+  min?: number;
+}) => (
+  <label className="text-sm">
+    {label}
+    <input
+      type="number"
+      min={min}
+      className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
+      value={value}
+      onChange={(e) => onChange(Math.max(min, Number(e.target.value) || min))}
+    />
+  </label>
+);
+
+const CustomDatesConfigurator = ({
+  dates,
+  onChange,
+}: {
+  dates: string[];
+  onChange: (dates: string[]) => void;
+}) => {
+  const [inputValue, setInputValue] = useState(todayISO());
+
+  const addDate = () => {
+    if (!inputValue || dates.includes(inputValue)) return;
+    onChange([...dates, inputValue].sort());
+    setInputValue(todayISO());
+  };
+
+  const removeDate = (value: string) => {
+    onChange(dates.filter((date) => date !== value));
+  };
+
+  return (
+    <section className="mt-6 rounded-2xl border border-slate-200 p-4">
+      <h4 className="text-base font-semibold text-slate-900">Конкретные даты</h4>
+      <p className="text-sm text-slate-500">Добавьте даты в формате ГГГГ-ММ-ДД.</p>
+      <div className="mt-3 flex flex-wrap gap-3">
+        <input
+          type="date"
+          className="rounded border border-slate-300 px-3 py-2"
+          value={inputValue}
+          onChange={(e) => setInputValue(e.target.value)}
+        />
+        <Button type="button" onClick={addDate}>
+          Добавить
+        </Button>
+      </div>
+      {dates.length ? (
+        <div className="mt-4 flex flex-wrap gap-2">
+          {dates.map((date) => (
+            <span
+              key={date}
+              className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-sm text-slate-700"
+            >
+              {date}
+              <button className="text-slate-500" type="button" onClick={() => removeDate(date)}>
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      ) : (
+        <p className="mt-3 text-sm text-slate-500">Даты пока не выбраны.</p>
+      )}
+    </section>
   );
 };
