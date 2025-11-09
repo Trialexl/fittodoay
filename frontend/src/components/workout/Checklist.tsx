@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { RestTimerOverlay } from "@/components/workout/RestTimerOverlay";
+import { ExecutionTimerOverlay } from "@/components/workout/ExecutionTimerOverlay";
 import { useRestTimer } from "@/hooks/useRestTimer";
 import { apiFetch } from "@/lib/api";
 import { useAuth } from "@/state/AuthContext";
@@ -99,8 +100,29 @@ export const Checklist = ({
   refresh: () => void;
 }) => {
   const auth = useAuth();
-  const { start, stop, remaining, duration, isActive } = useRestTimer();
+  const restTimer = useRestTimer();
+  const executionTimer = useRestTimer();
+  const {
+    start: startRestTimer,
+    stop: stopRestTimer,
+    remaining: restRemaining,
+    duration: restDuration,
+    isActive: isRestActive,
+  } = restTimer;
+  const {
+    start: startExecTimer,
+    stop: stopExecTimer,
+    remaining: execRemaining,
+    duration: execDuration,
+    isActive: isExecActive,
+  } = executionTimer;
   const [restOverlay, setRestOverlay] = useState<PendingSet | null>(null);
+  const [executionOverlay, setExecutionOverlay] = useState<{
+    exercise: ExercisePayload;
+    set: SetPayload;
+    exerciseName: string;
+    duration: number;
+  } | null>(null);
   const [restForm, setRestForm] = useState({ reps: "", weight: "", time: "" });
   const [restError, setRestError] = useState<string | null>(null);
   const [editState, setEditState] = useState<EditState | null>(null);
@@ -187,13 +209,23 @@ export const Checklist = ({
 
   useEffect(() => {
     if (!restOverlay || restOverlay.autoSubmitted || restOverlay.rest <= 0) return;
-    if (duration === 0) return;
-    if (!isActive && remaining <= 0) {
+    if (restDuration === 0) return;
+    if (!isRestActive && restRemaining <= 0) {
       setRestOverlay((prev) => (prev ? { ...prev, autoSubmitted: true } : prev));
       submitRestSet();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [restOverlay, isActive, remaining, duration]);
+  }, [restOverlay, isRestActive, restRemaining, restDuration]);
+
+  useEffect(() => {
+    if (!executionOverlay) return;
+    if (!isExecActive && execRemaining <= 0) {
+      const payload = executionOverlay;
+      setExecutionOverlay(null);
+      openRestOverlay(payload.exercise, payload.set, payload.duration);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [executionOverlay, isExecActive, execRemaining]);
 
   if (!plan || !hasTemplates) {
     return (
@@ -230,6 +262,7 @@ export const Checklist = ({
   const openRestOverlay = (
     exercise: ExercisePayload,
     set: SetPayload,
+    actualTime?: number,
   ) => {
     const nextExists = hasUpcomingSets(exercise.template_exercise_id, set.set_index);
     const willCompleteExercise = exercise.sets.every((exerciseSet) => {
@@ -260,20 +293,40 @@ export const Checklist = ({
     setRestForm({
       reps: toInput(set.default_reps ?? exercise.defaults.reps ?? null),
       weight: toInput(set.default_weight ?? exercise.defaults.weight ?? null),
-      time: toInput(set.default_time ?? exercise.defaults.time ?? null),
+      time: toInput(actualTime ?? set.default_time ?? exercise.defaults.time ?? null),
     });
     setRestError(null);
     if (restSeconds > 0) {
-      start(restSeconds);
+      startRestTimer(restSeconds);
     } else {
-      stop();
+      stopRestTimer();
     }
   };
 
   const closeRestOverlay = () => {
-    stop();
+    stopRestTimer();
     setRestOverlay(null);
     setRestError(null);
+  };
+
+  const startTimedExecution = (exercise: ExercisePayload, set: SetPayload) => {
+    const duration = Number(set.default_time ?? exercise.defaults.time ?? 0);
+    if (!duration || duration <= 0) {
+      openRestOverlay(exercise, set);
+      return;
+    }
+    setExecutionOverlay({
+      exercise,
+      set,
+      exerciseName: exercise.source.name,
+      duration,
+    });
+    startExecTimer(duration);
+  };
+
+  const cancelExecutionOverlay = () => {
+    stopExecTimer();
+    setExecutionOverlay(null);
   };
 
   const parseNumberInput = (value: string) => {
@@ -632,6 +685,7 @@ ${note}`;
                                 );
                                 const isActiveSet = activeSetKey === setKey;
                                 const isComplete = Boolean(log);
+                                const isTimedExercise = Boolean(exercise.defaults.has_time);
                                 const setNumber =
                                   set.set_index && set.set_index > 0
                                     ? set.set_index
@@ -666,10 +720,14 @@ ${note}`;
                                           ) : (
                                             <Button
                                               variant="secondary"
-                                              disabled={Boolean(restOverlay)}
-                                              onClick={() => openRestOverlay(exercise, set)}
+                                              disabled={Boolean(restOverlay) || Boolean(executionOverlay)}
+                                              onClick={() =>
+                                                isTimedExercise
+                                                  ? startTimedExecution(exercise, set)
+                                                  : openRestOverlay(exercise, set)
+                                              }
                                             >
-                                              Выполнено
+                                              {isTimedExercise ? "Начать" : "Выполнено"}
                                             </Button>
                                           )}
                                         </div>
@@ -706,14 +764,21 @@ ${note}`;
 
       <RestTimerOverlay
         pending={restOverlay}
-        isTimerActive={isActive}
-        remaining={remaining}
-        duration={duration}
+        isTimerActive={isRestActive}
+        remaining={restRemaining}
+        duration={restDuration}
         values={restForm}
         onChange={handleRestFieldChange}
         onSkip={skipRest}
         onClose={closeRestOverlay}
         error={restError}
+      />
+      <ExecutionTimerOverlay
+        pending={executionOverlay}
+        isTimerActive={isExecActive}
+        remaining={execRemaining}
+        duration={execDuration}
+        onCancel={cancelExecutionOverlay}
       />
 
       <Modal
