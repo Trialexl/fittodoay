@@ -1,9 +1,11 @@
 #!/bin/sh
 set -e
 
+# For Postgres wait until connection succeeds
 if [ "$DJANGO_DB_ENGINE" != "django.db.backends.sqlite3" ]; then
   echo "Waiting for database to be ready..."
-  until python manage.py check --database default >/dev/null 2>&1; do
+  until python manage.py check --database default; do
+    echo "Database unavailable, retrying in 2s..."
     sleep 2
   done
 fi
