@@ -111,6 +111,7 @@ type TemplateExerciseDetail = {
   id: number;
   exercise_id: number | null;
   custom_exercise_id: number | null;
+  exercise?: ExerciseOption | null;
   rep_override: number | null;
   set_override: number | null;
   weight_override: number | null;
@@ -777,8 +778,9 @@ const TemplateExerciseModal = ({
           `/api/programs/template-exercises/${state.exerciseId}/`,
           { token: token ?? undefined },
         );
+        const resolvedExerciseId = detail.exercise_id ?? detail.exercise?.id ?? 0;
         setForm({
-          exercise_id: detail.exercise_id ?? 0,
+          exercise_id: resolvedExerciseId,
           rep_override: toInput(detail.rep_override),
           set_override: toInput(detail.set_override),
           weight_override: toInput(detail.weight_override),
