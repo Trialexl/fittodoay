@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import clsx from "clsx";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
@@ -92,6 +92,12 @@ type EditState = {
 const keyForSet = (templateExerciseId: number, setIndex: number) =>
   `${templateExerciseId}-${setIndex}`;
 
+const CompletionIcon = () => (
+  <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-emerald-100 text-[10px] font-black text-emerald-600">
+    ✓
+  </span>
+);
+
 export const Checklist = ({
   plan,
   refresh,
@@ -143,6 +149,24 @@ export const Checklist = ({
     return map;
   }, [plan?.logs]);
 
+  const isExerciseComplete = useCallback(
+    (exercise: ExercisePayload) =>
+      exercise.sets.every((set) =>
+        logsBySet.has(keyForSet(exercise.template_exercise_id, set.set_index)),
+      ),
+    [logsBySet],
+  );
+
+  const isTemplateComplete = useCallback(
+    (template: TemplatePayload) => template.exercises.every((exercise) => isExerciseComplete(exercise)),
+    [isExerciseComplete],
+  );
+
+  const isFolderComplete = useCallback(
+    (folder: WorkoutPlan["folders"][number]) => folder.templates.every((template) => isTemplateComplete(template)),
+    [isTemplateComplete],
+  );
+
   const orderedSetMeta = useMemo(() => {
     if (!plan) {
       return { order: [] as string[], positions: new Map<string, number>() };
@@ -192,9 +216,7 @@ export const Checklist = ({
       plan.folders.forEach((folder) => {
         folder.templates.forEach((template) => {
           template.exercises.forEach((exercise) => {
-            const isComplete = exercise.sets.every((set) =>
-              logsBySet.has(keyForSet(exercise.template_exercise_id, set.set_index)),
-            );
+            const isComplete = isExerciseComplete(exercise);
             if (prev[exercise.template_exercise_id] !== undefined) {
               next[exercise.template_exercise_id] = prev[exercise.template_exercise_id];
             } else {
@@ -205,7 +227,7 @@ export const Checklist = ({
       });
       return next;
     });
-  }, [plan?.folders, logsBySet]);
+  }, [plan?.folders, logsBySet, isExerciseComplete]);
 
   useEffect(() => {
     if (!restOverlay || restOverlay.autoSubmitted || restOverlay.rest <= 0) return;
@@ -524,8 +546,17 @@ ${note}`;
       <div className="space-y-6">
         {plan.folders.map((folder) => {
           const expanded = expandedFolders[folder.id] ?? true;
+          const folderComplete = isFolderComplete(folder);
           return (
-            <section key={folder.id} className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-6">
+            <section
+              key={folder.id}
+              className={clsx(
+                "rounded-2xl border p-4 sm:p-6",
+                folderComplete
+                  ? "border-emerald-200 bg-emerald-50/70"
+                  : "border-slate-200 bg-white",
+              )}
+            >
               <div className="flex items-start justify-between gap-3">
                 <button
                   type="button"
@@ -539,7 +570,10 @@ ${note}`;
                   aria-expanded={expanded}
                 >
                   <span className="text-lg text-slate-400">{expanded ? "▾" : "▸"}</span>
-                  <h3 className="text-lg font-semibold text-slate-900">{folder.name}</h3>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-lg font-semibold text-slate-900">{folder.name}</h3>
+                    {folderComplete && <CompletionIcon />}
+                  </div>
                 </button>
                 <Link
                   href={`/programs?folder=${folder.id}`}
@@ -560,77 +594,83 @@ ${note}`;
                     {folder.templates.map((template) => {
                       const folderTemplateState = expandedTemplates[folder.id] ?? {};
                       const templateExpanded = folderTemplateState[template.id] ?? true;
-                const templateProgress = template.exercises.reduce<{
-                  completed: number;
-                  total: number;
-                }>(
-                  (acc, exercise) => {
-                    const completedSets = exercise.sets.filter((set) =>
-                      getLogForSet(exercise.template_exercise_id, set.set_index),
-                    ).length;
-                    return {
-                      completed: acc.completed + completedSets,
-                      total: acc.total + exercise.sets.length,
-                    };
-                  },
-                  { completed: 0, total: 0 },
-                );
-                return (
-                  <article
-                    key={template.id}
-                    className="rounded-2xl border border-slate-100 bg-slate-50/60 p-5"
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <button
-                        type="button"
-                        className="flex flex-1 items-center gap-2 text-left"
-                        onClick={() => toggleTemplate(folder.id, template.id)}
-                        aria-expanded={templateExpanded}
-                      >
-                        <span className="text-base text-slate-400">{templateExpanded ? "▾" : "▸"}</span>
-                        <div className="flex flex-col">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <h4 className="text-base font-semibold text-slate-900">
-                              {template.name}
-                            </h4>
-                            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                              {templateProgress.completed}/{templateProgress.total}
-                            </span>
+                      const templateComplete = isTemplateComplete(template);
+                      const templateProgress = template.exercises.reduce<{
+                        completed: number;
+                        total: number;
+                      }>(
+                        (acc, exercise) => {
+                          const completedSets = exercise.sets.filter((set) =>
+                            getLogForSet(exercise.template_exercise_id, set.set_index),
+                          ).length;
+                          return {
+                            completed: acc.completed + completedSets,
+                            total: acc.total + exercise.sets.length,
+                          };
+                        },
+                        { completed: 0, total: 0 },
+                      );
+                      return (
+                        <article
+                          key={template.id}
+                          className={clsx(
+                            "rounded-2xl border p-5",
+                            templateComplete
+                              ? "border-emerald-200 bg-emerald-50/60"
+                              : "border-slate-100 bg-slate-50/60",
+                          )}
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <button
+                              type="button"
+                              className="flex flex-1 items-center gap-2 text-left"
+                              onClick={() => toggleTemplate(folder.id, template.id)}
+                              aria-expanded={templateExpanded}
+                            >
+                              <span className="text-base text-slate-400">{templateExpanded ? "▾" : "▸"}</span>
+                              <div className="flex flex-col">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <h4 className="text-base font-semibold text-slate-900">
+                                    {template.name}
+                                  </h4>
+                                  <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                    {templateProgress.completed}/{templateProgress.total}
+                                  </span>
+                                  {templateComplete && <CompletionIcon />}
+                                </div>
+                              </div>
+                            </button>
+                            <Link
+                              href={`/programs?template=${template.id}`}
+                              aria-label="Редактировать шаблон дня"
+                              className="rounded-full p-2 text-slate-400 transition hover:bg-slate-100 hover:text-primary"
+                              onClick={(event) => event.stopPropagation()}
+                            >
+                              <EditIcon />
+                            </Link>
                           </div>
-                        </div>
-                      </button>
-                      <Link
-                        href={`/programs?template=${template.id}`}
-                        aria-label="Редактировать шаблон дня"
-                        className="rounded-full p-2 text-slate-400 transition hover:bg-slate-100 hover:text-primary"
-                        onClick={(event) => event.stopPropagation()}
-                      >
-                        <EditIcon />
-                      </Link>
-                    </div>
-                    <div
-                      className={`mt-4 overflow-hidden transition-[max-height,opacity] duration-500 ease-out ${templateExpanded ? "max-h-[1600px] opacity-100" : "max-h-0 opacity-0"}`}
-                    >
-                      {templateExpanded && (
-                        <div className="space-y-4">
-                          {template.exercises.map((exercise) => {
-                            const isExerciseComplete = exercise.sets.every((set) =>
-                              Boolean(
-                                getLogForSet(exercise.template_exercise_id, set.set_index),
-                              ),
-                            );
+                          <div
+                            className={`mt-4 overflow-hidden transition-[max-height,opacity] duration-500 ease-out ${templateExpanded ? "max-h-[1600px] opacity-100" : "max-h-0 opacity-0"}`}
+                          >
+                            {templateExpanded && (
+                              <div className="space-y-4">
+                                {template.exercises.map((exercise) => {
+                            const exerciseComplete = isExerciseComplete(exercise);
                             const storedExpanded = expandedExercises[exercise.template_exercise_id];
                             const exerciseExpanded =
-                              storedExpanded !== undefined
-                                ? storedExpanded
-                                : !isExerciseComplete;
+                              storedExpanded !== undefined ? storedExpanded : !exerciseComplete;
                         const completedSets = exercise.sets.filter((set) =>
                           getLogForSet(exercise.template_exercise_id, set.set_index),
                         ).length;
                         return (
                           <div
                             key={exercise.template_exercise_id}
-                            className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-100"
+                            className={clsx(
+                              "rounded-2xl p-4 shadow-sm ring-1",
+                              exerciseComplete
+                                ? "bg-emerald-50/60 ring-emerald-200"
+                                : "bg-white ring-slate-100",
+                            )}
                           >
                             <div className="flex flex-wrap items-start justify-between gap-3">
                               <button
@@ -653,6 +693,7 @@ ${note}`;
                                     <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                                       {completedSets}/{exercise.sets.length}
                                     </span>
+                                    {exerciseComplete && <CompletionIcon />}
                                   </div>
                                   {exercise.note && (
                                     <p className="text-xs text-slate-500">{exercise.note}</p>
