@@ -1,6 +1,18 @@
 "use client";
 
-import { ReactNode, useEffect, useState } from "react";
+import { ReactNode, useEffect, useMemo, useState } from "react";
+import clsx from "clsx";
+import {
+  DndContext,
+  closestCenter,
+  DragEndEvent,
+  PointerSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import { arrayMove, SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import useSWR from "swr";
 
 import { apiFetch } from "@/lib/api";
@@ -131,6 +143,24 @@ export const ProgramBoard = ({ initialFocus }: ProgramBoardProps = {}) => {
   const [templateModal, setTemplateModal] = useState<TemplateEditorState>(null);
   const [exerciseModal, setExerciseModal] = useState<TemplateExerciseModalState>(null);
   const [initialHandled, setInitialHandled] = useState(false);
+  const [reordering, setReordering] = useState<{ templateId: number | null }>({ templateId: null });
+
+  const reorderExercises = async (templateId: number, exerciseIds: number[]) => {
+    if (!token) return;
+    setReordering({ templateId });
+    try {
+      await apiFetch(`/api/programs/template-exercises/reorder/`, {
+        method: "POST",
+        body: JSON.stringify({ template: templateId, order: exerciseIds }),
+        token,
+      });
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setReordering({ templateId: null });
+      refreshFolders();
+    }
+  };
   const focus = initialFocus ?? {};
   const { folderId, templateId, templateName, exerciseId } = focus;
 
@@ -207,6 +237,8 @@ export const ProgramBoard = ({ initialFocus }: ProgramBoardProps = {}) => {
                 refresh,
               })
             }
+            reorderingTemplateId={reordering.templateId}
+            onReorderExercises={reorderExercises}
           />
         ))}
       </div>
@@ -239,6 +271,8 @@ const FolderCallout = ({
   onToggleTemplate,
   onAddExercise,
   onEditExercise,
+  reorderingTemplateId,
+  onReorderExercises,
 }: {
   folder: Folder;
   expanded: boolean;
@@ -260,6 +294,8 @@ const FolderCallout = ({
     exerciseId: number,
     refresh: () => void,
   ) => void;
+  reorderingTemplateId: number | null;
+  onReorderExercises: (templateId: number, order: number[]) => void;
 }) => {
   const { token } = useAuth();
   const { data, isLoading, mutate } = useSWR(
@@ -324,6 +360,8 @@ const FolderCallout = ({
                 onEditExercise={(exerciseId) =>
                   onEditExercise(template.id, template.name, exerciseId, () => mutate())
                 }
+                onReorderExercises={(orderedIds) => onReorderExercises(template.id, orderedIds)}
+                isReordering={reorderingTemplateId === template.id}
               />
             ))}
           </div>
@@ -341,6 +379,8 @@ const TemplateCard = ({
   onEdit,
   onAddExercise,
   onEditExercise,
+  onReorderExercises,
+  isReordering,
 }: {
   template: TemplateSummary;
   expanded: boolean;
@@ -348,6 +388,8 @@ const TemplateCard = ({
   onEdit: () => void;
   onAddExercise: () => void;
   onEditExercise: (exerciseId: number) => void;
+  onReorderExercises: (orderedIds: number[]) => void;
+  isReordering: boolean;
 }) => (
   <div className="rounded-2xl border border-slate-200 bg-slate-100 px-4 py-3">
     <div className="flex items-start justify-between gap-3">
@@ -376,6 +418,8 @@ const TemplateCard = ({
           items={template.template_exercises ?? []}
           emptyMessage="Упражнений пока нет."
           onEdit={onEditExercise}
+          onReorder={onReorderExercises}
+          disabled={isReordering}
         />
       )}
     </div>
@@ -386,27 +430,97 @@ const TemplateExerciseList = ({
   items,
   emptyMessage,
   onEdit,
+  onReorder,
+  disabled = false,
 }: {
   items: TemplateExerciseSummary[];
   emptyMessage?: string;
   onEdit: (exerciseId: number) => void;
+  onReorder: (orderedIds: number[]) => void;
+  disabled?: boolean;
 }) => {
+  const [orderedItems, setOrderedItems] = useState(items);
+  useEffect(() => {
+    setOrderedItems(items);
+  }, [items]);
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 120, tolerance: 5 } }),
+  );
   if (!items.length) {
     return <p className="mt-3 text-xs text-slate-400">{emptyMessage ?? "Нет упражнений"}</p>;
   }
   return (
-    <div className="mt-3 space-y-2">
-      {items.map((exercise) => (
-        <div
-          key={exercise.id}
-          className="flex items-center justify-between rounded-2xl border border-slate-100 bg-white px-3 py-2"
-        >
-          <p className="text-sm font-medium text-slate-800">
-            {exercise.exercise?.name ?? exercise.custom_exercise?.name ?? "Упражнение"}
-          </p>
-          <IconButton label="Редактировать" icon={<EditIcon />} onClick={() => onEdit(exercise.id)} />
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      onDragEnd={(event: DragEndEvent) => {
+        const { active, over } = event;
+        if (!over || active.id === over.id) return;
+        const activeIndex = orderedItems.findIndex((item) => item.id === Number(active.id));
+        const overIndex = orderedItems.findIndex((item) => item.id === Number(over.id));
+        if (activeIndex === -1 || overIndex === -1) return;
+        const newItems = arrayMove(orderedItems, activeIndex, overIndex);
+        setOrderedItems(newItems);
+        onReorder(newItems.map((item) => item.id));
+      }}
+    >
+      <SortableContext items={orderedItems.map((item) => item.id)} strategy={verticalListSortingStrategy}>
+        <div className="mt-3 space-y-2">
+          {orderedItems.map((exercise) => (
+            <SortableExerciseRow
+              key={exercise.template_exercise_id || exercise.id}
+              exercise={exercise}
+              disabled={disabled}
+              onEdit={onEdit}
+            />
+          ))}
         </div>
-      ))}
+      </SortableContext>
+    </DndContext>
+  );
+};
+
+const SortableExerciseRow = ({
+  exercise,
+  onEdit,
+  disabled,
+}: {
+  exercise: TemplateExerciseSummary;
+  onEdit: (exerciseId: number) => void;
+  disabled: boolean;
+}) => {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: exercise.id,
+    disabled,
+  });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={clsx(
+        "flex items-center justify-between rounded-2xl border px-3 py-2",
+        isDragging ? "border-primary bg-white shadow-lg" : "border-slate-100 bg-white",
+      )}
+    >
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          className="text-slate-400 transition hover:text-slate-600 touch-none"
+          {...attributes}
+          {...listeners}
+        >
+          ≡
+        </button>
+        <p className="text-sm font-medium text-slate-800">
+          {exercise.exercise?.name ?? exercise.custom_exercise?.name ?? "Упражнение"}
+        </p>
+      </div>
+      <IconButton label="Редактировать" icon={<EditIcon />} onClick={() => onEdit(exercise.id)} />
     </div>
   );
 };

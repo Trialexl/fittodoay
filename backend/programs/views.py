@@ -1,8 +1,11 @@
 from __future__ import annotations
 
-from rest_framework import permissions, viewsets
+from rest_framework import permissions, status, viewsets
+from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
+from rest_framework.response import Response
 
+from django.db import transaction
 from django.shortcuts import get_object_or_404
 
 from .models import DayTemplate, ProgramFolder, TemplateExercise
@@ -95,5 +98,33 @@ class TemplateExerciseViewSet(viewsets.ModelViewSet):
     def perform_update(self, serializer):
         template = self._resolve_template(serializer, allow_missing=True) or serializer.instance.template
         serializer.save(template=template)
+
+    @action(detail=False, methods=["post"], url_path="reorder")
+    def reorder(self, request):
+        template_id = request.data.get("template")
+        order = request.data.get("order")
+        if not template_id:
+            raise ValidationError({"template": "Не указан шаблон"})
+        try:
+            template_id = int(template_id)
+        except (TypeError, ValueError):
+            raise ValidationError({"template": "Некорректный идентификатор"})
+        if not isinstance(order, list) or not all(isinstance(item, int) for item in order):
+            raise ValidationError({"order": "Список упражнений должен состоять из чисел"})
+        template = get_object_or_404(
+            DayTemplate, pk=template_id, folder__user=request.user
+        )
+        exercises = list(
+            TemplateExercise.objects.filter(template=template).values_list("id", flat=True)
+        )
+        missing = set(order) - set(exercises)
+        if missing or len(order) != len(exercises):
+            raise ValidationError({"order": "Некорректные идентификаторы упражнений"})
+        with transaction.atomic():
+            for sort_order, exercise_id in enumerate(order, start=1):
+                TemplateExercise.objects.filter(pk=exercise_id, template=template).update(
+                    sort_order=sort_order,
+                )
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 # Create your views here.
