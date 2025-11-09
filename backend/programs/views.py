@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from rest_framework import permissions, viewsets
+from rest_framework.exceptions import ValidationError
+
+from django.shortcuts import get_object_or_404
 
 from .models import DayTemplate, ProgramFolder, TemplateExercise
 from .serializers import (
@@ -65,16 +68,32 @@ class TemplateExerciseViewSet(viewsets.ModelViewSet):
             qs = qs.filter(template_id=template_id)
         return qs.order_by("sort_order", "id")
 
-    def perform_create(self, serializer):
+    def _resolve_template(self, serializer, *, allow_missing: bool = False) -> DayTemplate | None:
         template = serializer.validated_data.get("template")
-        if template.folder.user != self.request.user:
-            raise permissions.PermissionDenied("Нельзя изменять чужой шаблон")
-        serializer.save()
+        if template:
+            if template.folder.user != self.request.user:
+                raise permissions.PermissionDenied("Нельзя изменять чужой шаблон")
+            return template
+        template_id = self.request.data.get("template")
+        if not template_id:
+            if allow_missing:
+                return None
+            raise ValidationError({"template": "Не указан шаблон дня"})
+        try:
+            template_id = int(template_id)
+        except (TypeError, ValueError):
+            raise ValidationError({"template": "Некорректный идентификатор шаблона"})
+        template = get_object_or_404(
+            DayTemplate, pk=template_id, folder__user=self.request.user
+        )
+        return template
+
+    def perform_create(self, serializer):
+        template = self._resolve_template(serializer)
+        serializer.save(template=template)
 
     def perform_update(self, serializer):
-        template = serializer.validated_data.get("template") or serializer.instance.template
-        if template.folder.user != self.request.user:
-            raise permissions.PermissionDenied("Нельзя изменять чужой шаблон")
-        serializer.save()
+        template = self._resolve_template(serializer, allow_missing=True) or serializer.instance.template
+        serializer.save(template=template)
 
 # Create your views here.
