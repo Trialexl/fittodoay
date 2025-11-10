@@ -33,6 +33,8 @@ type TemplateEditorProps = {
   initialTemplate?: TemplateDetail;
   onSuccess?: () => void;
   onCancel?: () => void;
+  onDelete?: () => void;
+  deleteDisabled?: boolean;
 };
 
 const scheduleOptions: { value: ScheduleType; label: string }[] = [
@@ -76,6 +78,8 @@ export const TemplateEditor = ({
   initialTemplate,
   onSuccess,
   onCancel,
+  onDelete,
+  deleteDisabled,
 }: TemplateEditorProps) => {
   const { token } = useAuth();
   const showFolderSelect = !defaultFolderId && !initialTemplate;
@@ -262,9 +266,36 @@ export const TemplateEditor = ({
         onChange={(config) => setForm((prev) => ({ ...prev, schedule_config: config }))}
       />
       {error && <p className="mt-4 rounded bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
-      <div className="mt-6 flex justify-end gap-3">
+      <div className="mt-6 flex flex-wrap items-center justify-end gap-3">
+        {initialTemplate && onDelete && (
+          <button
+            type="button"
+            className="rounded-lg border border-primary/40 px-4 py-2 text-primary transition hover:border-primary hover:bg-primary/10 disabled:opacity-40"
+            onClick={onDelete}
+            disabled={deleteDisabled}
+          >
+            <svg
+              viewBox="0 0 20 20"
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-4 w-4"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={1.8}
+            >
+              <path d="M5 6h10" />
+              <path d="M8 6v8" />
+              <path d="M12 6v8" />
+              <path d="M6 6V4h8v2" />
+              <path d="M4 6l1 10c.1.9.9 1.5 1.8 1.5h6.4c.9 0 1.7-.6 1.8-1.5l1-10" />
+            </svg>
+          </button>
+        )}
         {onCancel && (
-          <Button variant="ghost" onClick={onCancel}>
+          <Button
+            variant="ghost"
+            onClick={onCancel}
+            className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:border-primary/40 hover:text-primary"
+          >
             Отмена
           </Button>
         )}

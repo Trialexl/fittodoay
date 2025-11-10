@@ -703,6 +703,7 @@ const TemplateEditorModal = ({
 }) => {
   const { token } = useAuth();
   const isEdit = state?.mode === "edit";
+  const [deleteLoading, setDeleteLoading] = useState(false);
   const { data } = useSWR(
     state && state.mode === "edit"
       ? ["/api/programs/templates/" + state.templateId + "/", token]
@@ -711,6 +712,24 @@ const TemplateEditorModal = ({
   );
 
   if (!state) return null;
+
+  const handleTemplateDelete = async () => {
+    if (!isEdit || !state.templateId) return;
+    setDeleteLoading(true);
+    try {
+      await apiFetch(`/api/programs/templates/${state.templateId}/`, {
+        method: "DELETE",
+        token: token ?? undefined,
+      });
+      state.refresh?.();
+      onSaved();
+      onClose();
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
 
   return (
     <Modal
@@ -731,6 +750,8 @@ const TemplateEditorModal = ({
             onClose();
           }}
           onCancel={onClose}
+          onDelete={isEdit ? handleTemplateDelete : undefined}
+          deleteDisabled={deleteLoading}
         />
       )}
     </Modal>
@@ -863,6 +884,23 @@ const TemplateExerciseModal = ({
     }
   };
 
+  const handleDelete = async () => {
+    if (state?.mode !== "edit") return;
+    setLoading(true);
+    try {
+      await apiFetch(`/api/programs/template-exercises/${state.exerciseId}/`, {
+        method: "DELETE",
+        token: token ?? undefined,
+      });
+      state.refresh?.();
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось удалить упражнение");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (!state) return null;
 
   return (
@@ -927,7 +965,35 @@ const TemplateExerciseModal = ({
           />
         </div>
         <div className="flex justify-end gap-2">
-          <Button variant="ghost" onClick={onClose}>
+          {state.mode === "edit" && (
+            <button
+              type="button"
+              aria-label="Удалить упражнение"
+              onClick={handleDelete}
+              disabled={loading}
+              className="rounded-lg border border-primary/40 px-4 py-2 text-sm font-semibold text-primary transition hover:border-primary hover:bg-primary/10 disabled:opacity-40"
+            >
+              <svg
+                viewBox="0 0 20 20"
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-4 w-4"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={1.8}
+              >
+                <path d="M5 6h10" />
+                <path d="M8 6v8" />
+                <path d="M12 6v8" />
+                <path d="M6 6V4h8v2" />
+                <path d="M4 6l1 10c.1.9.9 1.5 1.8 1.5h6.4c.9 0 1.7-.6 1.8-1.5l1-10" />
+              </svg>
+            </button>
+          )}
+          <Button
+            variant="ghost"
+            onClick={onClose}
+            className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:border-primary/40 hover:text-primary"
+          >
             Отмена
           </Button>
           <Button onClick={submit} loading={loading}>
