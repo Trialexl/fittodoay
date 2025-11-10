@@ -11,6 +11,7 @@ const links = [
   { href: "/programs", label: "Программы" },
   { href: "/workout", label: "Чеклист" },
   { href: "/analytics", label: "Аналитика" },
+  { href: "/assistant", label: "Помощник" },
 ];
 
 export const AppHeader = () => {
