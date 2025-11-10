@@ -266,7 +266,7 @@ export const TemplateEditor = ({
         onChange={(config) => setForm((prev) => ({ ...prev, schedule_config: config }))}
       />
       {error && <p className="mt-4 rounded bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
-      <div className="mt-6 flex flex-wrap items-center justify-end gap-3">
+      <div className="mt-6 flex flex-nowrap items-center justify-end gap-3">
         {initialTemplate && onDelete && (
           <button
             type="button"
