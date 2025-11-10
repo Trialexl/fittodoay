@@ -9,6 +9,7 @@ from rest_framework.views import APIView
 from .models import UserProfile
 from .serializers import (
     LoginSerializer,
+    LLMPreferencesSerializer,
     PromptPreviewSerializer,
     RegisterSerializer,
     UserProfileSerializer,
@@ -54,5 +55,32 @@ class PromptPreviewView(APIView):
         profile = request.user.profile
         serializer = PromptPreviewSerializer().to_representation(profile)
         return Response(serializer)
+
+
+class LLMPreferencesView(APIView):
+    serializer_class = LLMPreferencesSerializer
+
+    def get(self, request, *args, **kwargs):
+        profile = request.user.profile
+        data = self._with_defaults(profile.llm_preferences)
+        serializer = self.serializer_class(instance=data)
+        return Response(serializer.data)
+
+    def put(self, request, *args, **kwargs):
+        profile = request.user.profile
+        serializer = self.serializer_class(data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        preferences = profile.llm_preferences or {}
+        preferences.update(serializer.validated_data)
+        profile.llm_preferences = preferences
+        profile.save(update_fields=["llm_preferences"])
+        response_serializer = self.serializer_class(instance=self._with_defaults(preferences))
+        return Response(response_serializer.data)
+
+    def _with_defaults(self, data: dict | None):
+        serializer = self.serializer_class()
+        defaults = {field_name: None for field_name in serializer.fields.keys()}
+        defaults.update(data or {})
+        return defaults
 
 # Create your views here.

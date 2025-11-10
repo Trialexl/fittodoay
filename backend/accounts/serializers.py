@@ -33,6 +33,32 @@ class UserProfileSerializer(serializers.ModelSerializer):
         read_only_fields = ["updated_at"]
 
 
+class LLMPreferencesSerializer(serializers.Serializer):
+    gender = serializers.ChoiceField(
+        choices=UserProfile.Gender.choices, required=False, allow_null=True
+    )
+    age = serializers.IntegerField(min_value=10, max_value=100, required=False, allow_null=True)
+    weight_kg = serializers.DecimalField(
+        max_digits=5, decimal_places=2, required=False, allow_null=True, coerce_to_string=False
+    )
+    goal = serializers.ChoiceField(
+        choices=UserProfile.Goal.choices, required=False, allow_null=True
+    )
+    sessions_per_week = serializers.IntegerField(
+        min_value=1, max_value=14, required=False, allow_null=True
+    )
+    session_duration = serializers.IntegerField(
+        min_value=10, max_value=180, required=False, allow_null=True
+    )
+
+    def to_representation(self, instance):
+        base = {field: None for field in self.fields}
+        if isinstance(instance, dict):
+            for key in base.keys():
+                base[key] = instance.get(key)
+        return base
+
+
 class RegisterSerializer(serializers.Serializer):
     email = serializers.EmailField()
     password = serializers.CharField(write_only=True, min_length=8)

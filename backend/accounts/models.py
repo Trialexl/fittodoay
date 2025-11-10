@@ -88,6 +88,7 @@ class UserProfile(models.Model):
     preferred_schedule_notes = models.CharField(
         max_length=255, blank=True, help_text="Дополнительные пожелания к графику"
     )
+    llm_preferences = models.JSONField(default=dict, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self) -> str:

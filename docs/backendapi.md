@@ -57,6 +57,30 @@
 ### GET `/api/profile/prompt/`
 Ответ: `{ "prompt": "..." }`
 
+### GET `/api/profile/preferences/`
+Возвращает сохранённые параметры для LLM-визарда:
+```json
+{
+  "gender": "male",
+  "age": 32,
+  "weight_kg": 82.5,
+  "goal": "strength",
+  "sessions_per_week": 4,
+  "session_duration": 60
+}
+```
+
+### PUT `/api/profile/preferences/`
+Передавайте любые поля (все optional) для обновления:
+```json
+{
+  "gender": "female",
+  "goal": "cut",
+  "sessions_per_week": 5
+}
+```
+Ответ — актуальное состояние как в `GET`.
+
 ---
 
 ## 2. Exercises
@@ -200,6 +224,34 @@
     {"date": "2024-06-01", "load": 640},
     {"date": "2024-06-02", "load": 120}
   ]
+}
+```
+
+### POST `/api/llm-agent/programs/`
+Создаёт программы через LLM-помощника. Тело запроса повторяет поля из `/api/profile/preferences/` (можно передавать частично):
+```json
+{
+  "gender": "male",
+  "goal": "strength",
+  "sessions_per_week": 4,
+  "session_duration": 60
+}
+```
+Ответ `201`:
+```json
+{
+  "created_programs": [
+    {"id": 10, "name": "Сила", "templates": 3, "is_active": true}
+  ],
+  "active_program_id": 10,
+  "raw_plan": { "programs": [...] }
+}
+```
+При недоступности LLM возвращает `503`:
+```json
+{
+  "detail": "assistant_unavailable",
+  "message": "На данный момент создание через помощника недоступно..."
 }
 ```
 
