@@ -95,6 +95,15 @@ type EditState = {
   hasTime: boolean;
 };
 
+const parseTargetMuscles = (value?: string | null) =>
+  value
+    ?.split(/[\/,]/)
+    .map((item) => item.trim())
+    .filter(Boolean) ?? [];
+
+const getExerciseMuscles = (exercise: ExercisePayload) =>
+  parseTargetMuscles(exercise.source.target_muscles);
+
 const keyForSet = (templateExerciseId: number, setIndex: number) =>
   `${templateExerciseId}-${setIndex}`;
 
@@ -172,14 +181,6 @@ export const Checklist = ({
     (folder: WorkoutPlan["folders"][number]) => folder.templates.every((template) => isTemplateComplete(template)),
     [isTemplateComplete],
   );
-
-  const parseTargetMuscles = (value?: string | null) =>
-    value
-      ?.split(/[\/,]/)
-      .map((item) => item.trim())
-      .filter(Boolean) ?? [];
-
-  const getExerciseMuscles = (exercise: ExercisePayload) => parseTargetMuscles(exercise.source.target_muscles);
 
   const getTemplateMuscles = (template: TemplatePayload) => {
     const seen = new Set<string>();

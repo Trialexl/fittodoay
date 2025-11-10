@@ -1,6 +1,6 @@
 "use client";
 
-import { ReactNode, useEffect, useMemo, useState } from "react";
+import { ComponentProps, ReactNode, useEffect, useMemo, useState } from "react";
 import clsx from "clsx";
 import {
   DndContext,
@@ -33,6 +33,7 @@ type ExerciseRef = { id: number; name: string; target_muscles?: string | null };
 
 type TemplateExerciseSummary = {
   id: number;
+  template_exercise_id?: number;
   note?: string;
   rep_override?: number | null;
   set_override?: number | null;
@@ -786,13 +787,18 @@ const TemplateEditorModal = ({
   );
 };
 
-const mapTemplateDetail = (detail: TemplateDetailResponse) => ({
+type TemplateEditorInitial = NonNullable<
+  ComponentProps<typeof TemplateEditor>["initialTemplate"]
+>;
+
+const mapTemplateDetail = (detail: TemplateDetailResponse): TemplateEditorInitial => ({
   id: detail.id,
   folder: detail.folder,
   name: detail.name,
   comment: detail.comment,
-  schedule_type: detail.schedule_type,
-  schedule_config: detail.schedule_config,
+  schedule_type:
+    (detail.schedule_type as TemplateEditorInitial["schedule_type"]) ?? "weekly",
+  schedule_config: detail.schedule_config as TemplateEditorInitial["schedule_config"],
 });
 
 const TemplateExerciseModal = ({
