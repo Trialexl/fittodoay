@@ -35,7 +35,13 @@ const EditIcon = () => (
 
 type ExercisePayload = {
   template_exercise_id: number;
-  source: { type: string; id: number; name: string; description?: string | null };
+  source: {
+    type: string;
+    id: number;
+    name: string;
+    description?: string | null;
+    target_muscles?: string | null;
+  };
   defaults: {
     reps: number | null;
     weight: number | null;
@@ -167,6 +173,28 @@ export const Checklist = ({
     [isTemplateComplete],
   );
 
+  const parseTargetMuscles = (value?: string | null) =>
+    value
+      ?.split(/[\/,]/)
+      .map((item) => item.trim())
+      .filter(Boolean) ?? [];
+
+  const getExerciseMuscles = (exercise: ExercisePayload) => parseTargetMuscles(exercise.source.target_muscles);
+
+  const getTemplateMuscles = (template: TemplatePayload) => {
+    const seen = new Set<string>();
+    const result: string[] = [];
+    template.exercises.forEach((exercise) => {
+      getExerciseMuscles(exercise).forEach((muscle) => {
+        if (!seen.has(muscle)) {
+          seen.add(muscle);
+          result.push(muscle);
+        }
+      });
+    });
+    return result;
+  };
+
   const orderedSetMeta = useMemo(() => {
     if (!plan) {
       return { order: [] as string[], positions: new Map<string, number>() };
@@ -185,6 +213,20 @@ export const Checklist = ({
       }
     }
     return { order, positions };
+  }, [plan]);
+
+  const todayMuscles = useMemo(() => {
+    const counts = new Map<string, number>();
+    plan?.folders.forEach((folder) => {
+      folder.templates.forEach((template) => {
+        template.exercises.forEach((exercise) => {
+          getExerciseMuscles(exercise).forEach((muscle) => {
+            counts.set(muscle, (counts.get(muscle) ?? 0) + 1);
+          });
+        });
+      });
+    });
+    return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
   }, [plan]);
 
   const orderedSetKeys = orderedSetMeta.order;
@@ -544,6 +586,24 @@ ${note}`;
   return (
     <>
       <div className="space-y-6">
+        {todayMuscles.length > 0 && (
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-[0.4em] text-slate-500">
+              Сегодня работаем
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {todayMuscles.slice(0, 6).map(([muscle, count]) => (
+                <span
+                  key={muscle}
+                  className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/5 px-3 py-1 text-sm font-semibold text-primary"
+                >
+                  {muscle}
+                  {count > 1 && <span className="text-xs font-medium text-primary/70">×{count}</span>}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
         {plan.folders.map((folder) => {
           const expanded = expandedFolders[folder.id] ?? true;
           const folderComplete = isFolderComplete(folder);
@@ -610,6 +670,7 @@ ${note}`;
                         },
                         { completed: 0, total: 0 },
                       );
+                      const templateMuscles = getTemplateMuscles(template);
                       return (
                         <article
                           key={template.id}
@@ -638,6 +699,12 @@ ${note}`;
                                   </span>
                                   {templateComplete && <CompletionIcon />}
                                 </div>
+                                {templateMuscles.length > 0 && (
+                                  <p className="text-xs text-slate-500">
+                                    {templateMuscles.slice(0, 4).join(" • ")}
+                                    {templateMuscles.length > 4 && " …"}
+                                  </p>
+                                )}
                               </div>
                             </button>
                             <Link

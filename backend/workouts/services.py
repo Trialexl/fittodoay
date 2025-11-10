@@ -140,6 +140,7 @@ def generate_daily_plan(user, target_date: date | None = None) -> WorkoutDay:
                             "id": source.id,
                             "name": source.name,
                             "description": getattr(source, "description", "") or "",
+                            "target_muscles": getattr(source, "target_muscles", "") or "",
                         },
                         "defaults": defaults,
                         "note": te.note,
