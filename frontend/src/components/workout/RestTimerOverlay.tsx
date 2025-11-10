@@ -143,11 +143,14 @@ export const RestTimerOverlay = ({
                 )}
               </div>
             ) : (
-              <OverlayField
-                label="Время (сек)"
-                value={values.time}
-                onChange={(value) => onChange("time", value)}
-              />
+              <div className="flex justify-center">
+                <OverlayField
+                  label="Время (сек)"
+                  value={values.time}
+                  onChange={(value) => onChange("time", value)}
+                  className="mx-auto w-full max-w-[150px] text-center"
+                />
+              </div>
             )}
           </div>
           {error && <p className="text-sm text-red-300">{error}</p>}
