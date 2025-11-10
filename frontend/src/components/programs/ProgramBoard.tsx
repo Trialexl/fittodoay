@@ -29,7 +29,7 @@ type Folder = {
   is_active: boolean;
 };
 
-type ExerciseRef = { id: number; name: string };
+type ExerciseRef = { id: number; name: string; target_muscles?: string | null };
 
 type TemplateExerciseSummary = {
   id: number;
@@ -373,6 +373,25 @@ const FolderCallout = ({
   );
 };
 
+const parseMuscles = (value?: string | null) =>
+  value
+    ?.split(/[\/,]/)
+    .map((item) => item.trim())
+    .filter(Boolean) ?? [];
+
+const collectTemplateMuscles = (template: TemplateSummary) => {
+  const seen = new Set<string>();
+  template.template_exercises?.forEach((exercise) => {
+    const raw = exercise.exercise?.target_muscles ?? exercise.custom_exercise?.target_muscles;
+    parseMuscles(raw).forEach((muscle) => {
+      if (!seen.has(muscle)) {
+        seen.add(muscle);
+      }
+    });
+  });
+  return Array.from(seen);
+};
+
 const TemplateCard = ({
   template,
   expanded,
@@ -391,8 +410,10 @@ const TemplateCard = ({
   onEditExercise: (exerciseId: number) => void;
   onReorderExercises: (orderedIds: number[]) => void;
   isReordering: boolean;
-}) => (
-  <div className="rounded-2xl border border-slate-200 bg-slate-100 px-4 py-3">
+}) => {
+  const templateMuscles = collectTemplateMuscles(template);
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-slate-100 px-4 py-3">
     <div className="flex items-start justify-between gap-3">
       <button
         className="flex flex-1 items-center gap-3 text-left"
@@ -404,6 +425,12 @@ const TemplateCard = ({
         <div>
           <p className="font-semibold text-slate-900">{template.name}</p>
           {template.comment && <p className="text-xs text-slate-500">{template.comment}</p>}
+          {templateMuscles.length > 0 && (
+            <p className="text-xs text-slate-500">
+              {templateMuscles.slice(0, 4).join(" • ")}
+              {templateMuscles.length > 4 && " …"}
+            </p>
+          )}
         </div>
       </button>
       <div className="flex items-center gap-1">
@@ -425,7 +452,8 @@ const TemplateCard = ({
       )}
     </div>
   </div>
-);
+  );
+};
 
 const TemplateExerciseList = ({
   items,
