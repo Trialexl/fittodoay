@@ -6,7 +6,7 @@ import {
   DndContext,
   closestCenter,
   DragEndEvent,
-  PointerSensor,
+  MouseSensor,
   TouchSensor,
   useSensor,
   useSensors,
@@ -445,8 +445,8 @@ const TemplateExerciseList = ({
     setOrderedItems(items);
   }, [items]);
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 120, tolerance: 5 } }),
+    useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 8 } }),
   );
   if (!items.length) {
     return <p className="mt-3 text-xs text-slate-400">{emptyMessage ?? "Нет упражнений"}</p>;
