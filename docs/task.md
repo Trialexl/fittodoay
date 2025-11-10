@@ -1,7 +1,7 @@
 # fitTODOay — Активные задачи
 
 ## 1. Подготовка LLM-агента
-- [ ] Добавить переменные в конфигурацию (`OPENROUTER_API_KEY`, `OPENROUTER_MODEL`), описать их в README/пример `.env`.
+- [x] Добавить переменные в конфигурацию (`OPENROUTER_API_KEY`, `OPENROUTER_MODEL`), описать их в README/пример `.env`.
 - [ ] Спроектировать хранение пользовательских предпочтений ассистента (например, поле `llm_preferences` в профиле) и API для чтения/записи.
 - [ ] Реализовать backend endpoint `POST /api/llm-agent/programs/`:
   - принимает параметры визарда,
