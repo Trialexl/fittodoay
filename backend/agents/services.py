@@ -37,13 +37,17 @@ class LLMConfig:
     api_key: str | None
     model: str
     base_url: str
+    referrer: str | None
+    app_name: str | None
 
     @classmethod
     def load(cls) -> "LLMConfig":
         return cls(
             api_key=os.environ.get("OPENROUTER_API_KEY"),
-            model=os.environ.get("OPENROUTER_MODEL", "openrouter/anthropic/claude-3.5-sonnet"),
+            model=os.environ.get("OPENROUTER_MODEL", "anthropic/claude-3.5-sonnet"),
             base_url=os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"),
+            referrer=os.environ.get("OPENROUTER_REFERRER"),
+            app_name=os.environ.get("OPENROUTER_APP_NAME", "fitTODOay"),
         )
 
 
@@ -59,14 +63,29 @@ class OpenRouterClient:
             "Authorization": f"Bearer {self.config.api_key}",
             "Content-Type": "application/json",
         }
+        if self.config.referrer:
+            headers["HTTP-Referer"] = self.config.referrer
+        if self.config.app_name:
+            headers["X-Title"] = self.config.app_name
         payload = {
             "model": self.config.model,
             "response_format": {"type": "json_object"},
             "messages": messages,
         }
+        timeout = httpx.Timeout(connect=10.0, read=20.0, write=20.0, pool=None)
         try:
-            response = httpx.post(url, json=payload, headers=headers, timeout=40)
+            response = httpx.post(url, json=payload, headers=headers, timeout=timeout)
             response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            logger.warning(
+                "LLM request failed (%s): %s",
+                exc.response.status_code,
+                exc.response.text[:500],
+            )
+            raise LLMUnavailableError("openrouter_request_failed") from exc
+        except httpx.TimeoutException as exc:
+            logger.warning("LLM request timeout: %s", exc)
+            raise LLMUnavailableError("openrouter_timeout") from exc
         except httpx.HTTPError as exc:
             logger.exception("LLM request failed: %s", exc)
             raise LLMUnavailableError("openrouter_request_failed") from exc
@@ -95,29 +114,38 @@ class LLMProgramGenerationService:
 
     def _serialize_exercises(self) -> List[Dict[str, Any]]:
         qs = Exercise.objects.all().order_by("id")[:150]
-        return [
-            {
-                "id": exercise.id,
-                "name": exercise.name,
-                "target_muscles": exercise.target_muscles,
-                "default_sets": exercise.default_sets,
-                "default_reps": exercise.default_reps,
-                "default_weight": exercise.default_weight,
-                "default_time": exercise.default_time,
-                "default_rest": exercise.default_rest,
-            }
-            for exercise in qs
-        ]
+        snapshot = []
+        for exercise in qs:
+            snapshot.append(
+                {
+                    "id": exercise.id,
+                    "name": exercise.name,
+                    "target_muscles": exercise.target_muscles,
+                    "default_sets": exercise.default_sets,
+                    "default_reps": exercise.default_reps,
+                    "default_weight": float(exercise.default_weight)
+                    if exercise.default_weight is not None
+                    else None,
+                    "default_time": exercise.default_time,
+                    "default_rest": exercise.default_rest,
+                }
+            )
+        return snapshot
 
     def _build_messages(self, preferences, exercises_snapshot):
         system_prompt = (
-            "Ты помощник тренера. Составь от 1 до 3 программ тренировок на основе каталога упражнений. "
-            "Ответ строго в JSON по схеме: {\"programs\": [{\"name\": str, \"days\": "
-            "[{\"name\": str, \"comment\": str?, \"schedule_type\": \"weekly\", "
-            "\"schedule_config\": {\"days_of_week\": [0]}, "
-            "\"exercises\": [{\"exercise_id\": int, \"sets\": int, \"reps\": int?, "
-            "\"weight\": float?, \"time\": int?, \"rest\": int?, \"note\": str?}]}]}]. "
-            "Не придумывай новых упражнений, используй только id из каталога."
+            "Ты помощник тренера фитнес-приложения. Составь от 1 до 3 программ тренировок на основе каталога упражнений. "
+            "Ответ ДОЛЖЕН быть валидным JSON без Markdown, без комментариев, без лишних полей. "
+            "Строгая схема:\n"
+            "{\"programs\": [{\"name\": string, \"comment\": string?, \"days\": ["
+            "{\"name\": string, \"comment\": string?, "
+            "\"schedule_type\": \"weekly\", \"schedule_config\": {\"days_of_week\": [int]}, "
+            "\"exercises\": [{"
+            "\"exercise_id\": int, \"sets\": int, \"reps\": int|null, \"weight\": number|null, "
+            "\"time\": int|null, \"rest\": int|null, \"note\": string?\n"
+            "}]}]}]}\n"
+            "Только числа или null, никаких строк вида \"10 кг\". Нельзя придумывать новые упражнения; "
+            "используй только id из каталога."
         )
         user_content = {
             "preferences": preferences,
@@ -139,8 +167,13 @@ class LLMProgramGenerationService:
             raise LLMUnavailableError("unexpected_error") from exc
 
     def _parse_plan(self, raw_text: str) -> Dict[str, Any]:
+        cleaned = raw_text.strip()
+        if cleaned.startswith("```"):
+            # Remove optional markdown fences
+            cleaned = cleaned.strip("`")
+            cleaned = cleaned.replace("json", "", 1).strip()
         try:
-            data = json.loads(raw_text)
+            data = json.loads(cleaned)
         except json.JSONDecodeError as exc:
             logger.warning("LLM returned invalid JSON: %s (raw=%s)", exc, raw_text[:2000])
             raise LLMInvalidResponse("invalid_json") from exc

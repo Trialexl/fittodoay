@@ -38,9 +38,7 @@ class LLMPreferencesSerializer(serializers.Serializer):
         choices=UserProfile.Gender.choices, required=False, allow_null=True
     )
     age = serializers.IntegerField(min_value=10, max_value=100, required=False, allow_null=True)
-    weight_kg = serializers.DecimalField(
-        max_digits=5, decimal_places=2, required=False, allow_null=True, coerce_to_string=False
-    )
+    weight_kg = serializers.FloatField(required=False, allow_null=True)
     goal = serializers.ChoiceField(
         choices=UserProfile.Goal.choices, required=False, allow_null=True
     )

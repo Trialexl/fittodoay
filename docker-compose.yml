@@ -1,10 +1,10 @@
 services:
   backend:
     build:
-      context: ..
+      context: .
       dockerfile: backend/Dockerfile
     env_file:
-      - .env
+      - backend/.env
     environment:
       DJANGO_DB_ENGINE: django.db.backends.postgresql
       DJANGO_DB_NAME: ${DJANGO_DB_NAME:-fittodoey}
@@ -20,6 +20,18 @@ services:
     depends_on:
       - db
       - redis
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://backend:8000}
+      PORT: 3000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
 
   db:
     image: postgres:15

@@ -34,8 +34,10 @@ python manage.py check
 | Переменная              | Назначение                                                                 |
 |------------------------|----------------------------------------------------------------------------|
 | `OPENROUTER_API_KEY`   | Ключ OpenRouter. Хранится только на бэкенде, никогда не уходит на фронт.   |
-| `OPENROUTER_MODEL`     | Идентификатор модели (например, `openrouter/anthropic/claude-3.5-sonnet`). |
+| `OPENROUTER_MODEL`     | Идентификатор модели (например, `anthropic/claude-3.5-sonnet`).           |
 | `OPENROUTER_BASE_URL`  | Базовый URL API OpenRouter (`https://openrouter.ai/api/v1`).               |
+| `OPENROUTER_REFERRER`  | URL приложения, передаётся в `HTTP-Referer` (требование OpenRouter).       |
+| `OPENROUTER_APP_NAME`  | Название проекта для заголовка `X-Title`.                                  |
 
 Поддерживаются два варианта БД:
 

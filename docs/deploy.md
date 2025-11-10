@@ -1,36 +1,58 @@
 # fitTODOay — Гайд по деплою и мониторингу
 
 ## 1. Зависимости
-- Docker/Docker Compose
-- PostgreSQL 15, Redis 7 (используются в `docker-compose.yml`)
-- Переменные окружения (см. `backend/.env.example` + `NEXT_PUBLIC_API_URL` для фронта)
+- Docker / Docker Compose
+- PostgreSQL 15 и Redis 7 (используются в корневом `docker-compose.yml`)
+- Файл конфигурации `backend/.env` (см. `backend/.env.example`), где настраиваются:
+  - `DJANGO_*`, ключ Django
+  - OpenRouter (`OPENROUTER_API_KEY`, `OPENROUTER_MODEL`, `OPENROUTER_BASE_URL`, `OPENROUTER_REFERRER`, `OPENROUTER_APP_NAME`)
+- Для фронтенда обязательно указать `NEXT_PUBLIC_API_URL` (URL backend API)
 
-## 2. Бэкенд
-1. Собрать образ:
-   ```bash
-   docker build -t fittodoey-backend -f backend/Dockerfile .
-   docker build -t fittodoey-frontend -f frontend/Dockerfile .
-   ```
-2. **Простой запуск backend одним командой (SQLite внутри контейнера):**
-   ```bash
-   docker run --rm -p 8000:8000 fittodoey-backend
-   ```
-   Скрипт `entrypoint.sh` автоматически применит миграции, и сервис будет доступен по `http://localhost:8000`.
-3. Для prod/compose-сценария (Postgres/Redis):
-   ```bash
-   docker compose up -d backend db redis
-   ```
+## 2. Бэкенд (Django + DRF)
 
-## 3. Фронтенд
-1. Указать `NEXT_PUBLIC_API_URL` на backend endpoint.
-2. Собрать и запустить:
-   ```bash
-   cd frontend
-   npm install
-   npm run build
-   npm run start
-   ```
-   Для продакшена можно использовать `next start` за reverse-proxy (Nginx).
+### Docker-образ
+```bash
+docker build -t fittodoey-backend -f backend/Dockerfile .
+```
+
+### Быстрый запуск (SQLite внутри контейнера)
+```bash
+docker run --rm -p 8000:8000 --env-file backend/.env fittodoey-backend
+```
+`entrypoint.sh` применит миграции; API будет доступен по `http://localhost:8000`.
+
+### Docker Compose (Postgres + Redis)
+```bash
+docker compose up -d backend db redis
+```
+`docker-compose.yml` пробрасывает порт `8000`, а БД и Redis живут в отдельных контейнерах. Для override‑ов используйте `.env` рядом с файлом Compose (см. переменные внутри файла).
+
+## 3. Фронтенд (Next.js)
+
+### Docker-образ
+```bash
+docker build -t fittodoey-frontend -f frontend/Dockerfile .
+```
+```bash
+docker run --rm -p 3000:3000 \
+  -e NEXT_PUBLIC_API_URL=http://localhost:8000 \
+  fittodoey-frontend
+```
+
+### Локальная разработка
+```bash
+cd frontend
+npm install
+npm run dev            # дев-сервер
+npm run build && npm run start   # прод-сборка
+```
+
+### Совместный запуск (backend + frontend + db + redis)
+Корневой `docker-compose.yml` включает все сервисы. Достаточно одной команды:
+```bash
+NEXT_PUBLIC_API_URL=http://backend:8000 docker compose up -d backend frontend db redis
+```
+По умолчанию фронт внутри сети обращается к `http://backend:8000`. Извне приложение доступно на `http://localhost:3000`.
 
 ## 4. Мониторинг и офлайн-синхронизация
 - Включить health-checkи для backend контейнера (endpoints `/admin/`, `/api/analytics/days/`).

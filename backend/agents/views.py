@@ -7,6 +7,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from accounts.serializers import LLMPreferencesSerializer
+from decimal import Decimal
+
 from agents.serializers import LLMProgramRequestSerializer, LLMProgramResponseSerializer
 from agents.services import (
     FALLBACK_MESSAGE,
@@ -31,7 +33,9 @@ class LLMProgramView(APIView):
         serializer.is_valid(raise_exception=True)
 
         profile = request.user.profile
-        merged_preferences = {**(profile.llm_preferences or {}), **serializer.validated_data}
+        existing = self._normalize(profile.llm_preferences)
+        incoming = self._normalize(serializer.validated_data)
+        merged_preferences = {**existing, **incoming}
         profile.llm_preferences = merged_preferences
         profile.save(update_fields=["llm_preferences"])
 
@@ -59,3 +63,12 @@ class LLMProgramView(APIView):
 
         response = self.response_serializer(result)
         return Response(response.data, status=status.HTTP_201_CREATED)
+
+    def _normalize(self, data):
+        normalized = {}
+        for key, value in (data or {}).items():
+            if isinstance(value, Decimal):
+                normalized[key] = float(value)
+            else:
+                normalized[key] = value
+        return normalized

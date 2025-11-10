@@ -1,0 +1,14 @@
+.git
+.github
+.obsidian
+.venv
+__pycache__/
+*.pyc
+*.pyo
+*.log
+backend/db.sqlite3
+frontend/node_modules
+frontend/.next
+frontend/out
+frontend/.eslintcache
+docs/ux/*
