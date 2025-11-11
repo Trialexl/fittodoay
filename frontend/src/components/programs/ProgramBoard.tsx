@@ -846,6 +846,7 @@ const TemplateExerciseModal = ({
 }) => {
   const { token } = useAuth();
   const [search, setSearch] = useState("");
+  const [dropdownOpen, setDropdownOpen] = useState(false);
   const [form, setForm] = useState({
     exercise_id: 0,
     rep_override: "",
@@ -991,41 +992,54 @@ const TemplateExerciseModal = ({
       <div className="space-y-4">
         {error && <p className="rounded bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
         <div className="space-y-2">
-          <Input
-            label="Поиск"
-            placeholder="Название, английское имя или мышцы"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-          <div className="max-h-64 overflow-y-auto rounded-xl border border-slate-200 bg-white">
-            {exercisesLoading ? (
-              <p className="px-3 py-2 text-sm text-slate-500">Ищем упражнения…</p>
-            ) : (filteredExercises.length ? (
-              <ul className="divide-y divide-slate-100 text-sm">
-                {filteredExercises.map((exercise) => (
-                  <li
-                    key={exercise.id}
-                    className={clsx(
-                      "cursor-pointer px-3 py-2 transition", 
-                      form.exercise_id === exercise.id
-                        ? "bg-primary/10 text-primary"
-                        : "hover:bg-slate-50",
-                    )}
-                    onClick={() => populateDefaults(exercise.id)}
-                  >
-                    <p className="font-semibold text-slate-900">
-                      {exercise.name}
-                      {exercise.english_name ? ` / ${exercise.english_name}` : ""}
-                    </p>
-                    {exercise.target_muscles && (
-                      <p className="text-xs text-slate-500">{exercise.target_muscles}</p>
-                    )}
-                  </li>
+          <div className="relative">
+            <Input
+              label="Поиск"
+              placeholder="Название, английское имя или мышцы"
+              value={search}
+              onFocus={() => setDropdownOpen(true)}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setDropdownOpen(true);
+              }}
+            />
+            {dropdownOpen && (
+              <div className="absolute z-10 mt-1 max-h-64 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl">
+                {exercisesLoading ? (
+                  <p className="px-3 py-2 text-sm text-slate-500">Ищем упражнения…</p>
+                ) : (filteredExercises.length ? (
+                  <ul className="divide-y divide-slate-100 text-sm">
+                    {filteredExercises.map((exercise) => (
+                      <li
+                        key={exercise.id}
+                        className={clsx(
+                          "cursor-pointer px-3 py-2 transition", 
+                          form.exercise_id === exercise.id
+                            ? "bg-primary/10 text-primary"
+                            : "hover:bg-slate-50",
+                        )}
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => {
+                          populateDefaults(exercise.id);
+                          setSearch(exercise.name);
+                          setDropdownOpen(false);
+                        }}
+                      >
+                        <p className="font-semibold text-slate-900">
+                          {exercise.name}
+                          {exercise.english_name ? ` / ${exercise.english_name}` : ""}
+                        </p>
+                        {exercise.target_muscles && (
+                          <p className="text-xs text-slate-500">{exercise.target_muscles}</p>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="px-3 py-2 text-sm text-slate-500">Ничего не найдено</p>
                 ))}
-              </ul>
-            ) : (
-              <p className="px-3 py-2 text-sm text-slate-500">Ничего не найдено</p>
-            ))}
+              </div>
+            )}
           </div>
         </div>
         <div className="grid gap-3 md:grid-cols-2">
