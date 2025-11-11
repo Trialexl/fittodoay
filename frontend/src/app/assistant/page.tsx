@@ -16,6 +16,7 @@ const defaultValues = {
   goal: "cut",
   sessions_per_week: "3",
   session_duration: "60",
+  notes: "",
 };
 
 type PreferencesPayload = {
@@ -25,6 +26,7 @@ type PreferencesPayload = {
   goal?: string | null;
   sessions_per_week?: number | null;
   session_duration?: number | null;
+  notes?: string | null;
 };
 
 type GeneratedProgram = {
@@ -79,6 +81,7 @@ export default function AssistantPage() {
           session_duration: data.session_duration
             ? String(data.session_duration)
             : prev.session_duration,
+          notes: data.notes ?? prev.notes,
         }));
       })
       .catch(() => null);
@@ -137,6 +140,17 @@ export default function AssistantPage() {
           },
         ],
       },
+      {
+        title: "Дополнительные пожелания",
+        fields: [
+          {
+            name: "notes",
+            label: "Расскажите о предпочтениях",
+            placeholder: "Например: предпочитаю тренажеры, есть ограничения для спины",
+            type: "textarea" as const,
+          },
+        ],
+      },
     ],
     [],
   );
@@ -161,6 +175,7 @@ export default function AssistantPage() {
         weight_kg: form.weight_kg ? Number(form.weight_kg) : null,
         sessions_per_week: form.sessions_per_week ? Number(form.sessions_per_week) : null,
         session_duration: form.session_duration ? Number(form.session_duration) : null,
+        notes: form.notes?.trim() ? form.notes.trim() : null,
       };
       const response = await apiFetch<LLMResponse>("/api/llm-agent/programs/", {
         method: "POST",
@@ -235,6 +250,17 @@ export default function AssistantPage() {
                           </option>
                         ))}
                       </select>
+                    </label>
+                  ) : field.type === "textarea" ? (
+                    <label className="text-sm">
+                      <span className="font-medium text-slate-700">{field.label}</span>
+                      <textarea
+                        className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                        rows={4}
+                        placeholder={field.placeholder}
+                        value={fieldValue(field.name)}
+                        onChange={(e) => updateField(field.name, e.target.value)}
+                      />
                     </label>
                   ) : (
                     <Input

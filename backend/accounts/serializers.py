@@ -48,6 +48,9 @@ class LLMPreferencesSerializer(serializers.Serializer):
     session_duration = serializers.IntegerField(
         min_value=10, max_value=180, required=False, allow_null=True
     )
+    notes = serializers.CharField(
+        required=False, allow_null=True, allow_blank=True, max_length=1000
+    )
 
     def to_representation(self, instance):
         base = {field: None for field in self.fields}

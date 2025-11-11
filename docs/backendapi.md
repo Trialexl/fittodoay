@@ -66,7 +66,8 @@
   "weight_kg": 82.5,
   "goal": "strength",
   "sessions_per_week": 4,
-  "session_duration": 60
+  "session_duration": 60,
+  "notes": "Предпочитаю тренажеры и короткие разминки"
 }
 ```
 
@@ -76,7 +77,8 @@
 {
   "gender": "female",
   "goal": "cut",
-  "sessions_per_week": 5
+  "sessions_per_week": 5,
+  "notes": "Новичок, нужно беречь спину"
 }
 ```
 Ответ — актуальное состояние как в `GET`.
@@ -234,7 +236,8 @@
   "gender": "male",
   "goal": "strength",
   "sessions_per_week": 4,
-  "session_duration": 60
+  "session_duration": 60,
+  "notes": "Только тренажеры, без прыжков"
 }
 ```
 Ответ `201`:
