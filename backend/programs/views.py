@@ -29,7 +29,10 @@ class ProgramFolderViewSet(BaseUserQuerysetMixin, viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        return ProgramFolder.objects.filter(user=self.request.user).order_by("sort_order", "id")
+        return (
+            ProgramFolder.objects.filter(user=self.request.user)
+            .order_by("-is_active", "sort_order", "id")
+        )
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)

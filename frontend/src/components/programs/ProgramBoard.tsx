@@ -595,11 +595,11 @@ const EditIcon = () => (
   </svg>
 );
 
-const TrashIcon = () => (
+const TrashIcon = ({ className = "text-red-500" }: { className?: string }) => (
   <svg
     viewBox="0 0 20 20"
     xmlns="http://www.w3.org/2000/svg"
-    className="h-4 w-4 text-red-500"
+    className={clsx("h-4 w-4", className)}
     fill="none"
     stroke="currentColor"
     strokeWidth={1.6}
@@ -638,6 +638,9 @@ const ProgramModal = ({
 }) => {
   const { token } = useAuth();
   const folder = state?.folder;
+  const isEdit = Boolean(folder);
+  const isProtectedProgram =
+    folder?.name?.trim().toLowerCase() === "основные" || folder?.name?.trim().toLowerCase() === "основная";
   const [form, setForm] = useState({
     name: folder?.name ?? "",
     comment: folder?.comment ?? "",
@@ -645,6 +648,7 @@ const ProgramModal = ({
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   useEffect(() => {
     if (folder) {
@@ -682,6 +686,25 @@ const ProgramModal = ({
     }
   };
 
+  const handleDelete = async () => {
+    if (!folder || isProtectedProgram) return;
+    if (!window.confirm("Удалить программу и все её шаблоны?")) return;
+    setDeleteLoading(true);
+    try {
+      await apiFetch(`/api/programs/folders/${folder.id}/`, {
+        method: "DELETE",
+        token: token ?? undefined,
+      });
+      onSaved();
+      onClose();
+    } catch (err) {
+      console.error(err);
+      setError("Не удалось удалить программу");
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
   return (
     <Modal
       open
@@ -708,7 +731,18 @@ const ProgramModal = ({
           />
           Программа активна
         </label>
-        <div className="flex justify-end gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-3">
+          {isEdit && !isProtectedProgram && (
+            <button
+              type="button"
+              className="rounded-lg border border-primary/40 px-4 py-2 text-primary transition hover:border-primary hover:bg-primary/10 disabled:opacity-40"
+              onClick={handleDelete}
+              disabled={deleteLoading}
+              aria-label="Удалить программу"
+            >
+              <TrashIcon className="text-primary" />
+            </button>
+          )}
           <Button variant="ghost" onClick={onClose}>
             Отмена
           </Button>
