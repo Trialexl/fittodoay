@@ -120,6 +120,7 @@ class LLMProgramGenerationService:
                 {
                     "id": exercise.id,
                     "name": exercise.name,
+                    "english_name": exercise.english_name,
                     "target_muscles": exercise.target_muscles,
                     "default_sets": exercise.default_sets,
                     "default_reps": exercise.default_reps,
@@ -128,6 +129,7 @@ class LLMProgramGenerationService:
                     else None,
                     "default_time": exercise.default_time,
                     "default_rest": exercise.default_rest,
+                    "difficulty": exercise.difficulty,
                 }
             )
         return snapshot
@@ -135,7 +137,8 @@ class LLMProgramGenerationService:
     def _build_messages(self, preferences, exercises_snapshot):
         system_prompt = (
             "Ты помощник тренера фитнес-приложения. Составь от 1 до 3 программ тренировок на основе каталога упражнений. "
-            "Ответ ДОЛЖЕН быть валидным JSON без Markdown, без комментариев, без лишних полей. "
+            "Ответ ОБЯЗАТЕЛЬНО должен быть ПОЛНЫМ JSON-объектом без Markdown-разметки, без ```json, без текста до или после. "
+            "JSON должен начинаться с символа '{' и заканчиваться '}'. Никаких комментариев, переносов с ``` и т.п.\n"
             "Строгая схема:\n"
             "{\"programs\": [{\"name\": string, \"comment\": string?, \"days\": ["
             "{\"name\": string, \"comment\": string?, "
@@ -144,7 +147,7 @@ class LLMProgramGenerationService:
             "\"exercise_id\": int, \"sets\": int, \"reps\": int|null, \"weight\": number|null, "
             "\"time\": int|null, \"rest\": int|null, \"note\": string?\n"
             "}]}]}]}\n"
-            "Только числа или null, никаких строк вида \"10 кг\". Нельзя придумывать новые упражнения; "
+            "Только числа или null (не строки вида \"10 кг\"). Нельзя придумывать новые упражнения; "
             "используй только id из каталога."
         )
         user_content = {

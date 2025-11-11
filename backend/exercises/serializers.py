@@ -20,6 +20,10 @@ class ExerciseSerializer(serializers.ModelSerializer):
             "default_reps",
             "default_sets",
             "default_rest",
+            "rating",
+            "english_name",
+            "difficulty",
+            "common_errors",
         ]
 
 

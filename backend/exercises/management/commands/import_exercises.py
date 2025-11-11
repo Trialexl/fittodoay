@@ -16,7 +16,7 @@ class Command(BaseCommand):
         parser.add_argument(
             "--file",
             type=str,
-            default=str((settings.BASE_DIR.parent / "docs" / "exercise.csv").resolve()),
+            default=str((settings.BASE_DIR.parent / "docs" / "ex800.CSV").resolve()),
             help="Path to exercise CSV file",
         )
         parser.add_argument(
@@ -50,6 +50,10 @@ class Command(BaseCommand):
                     "default_sets": self._parse_int(row["Количество подходов"], fallback=3) or 3,
                     "default_rest": self._parse_int(row["Время отдыха между повторениями"], 60)
                     or 60,
+                    "rating": self._parse_decimal(row.get("Рейтинг упражнения", "")),
+                    "english_name": (row.get("Оригинальное название на английском") or "").strip() or None,
+                    "difficulty": (row.get("Сложность") or "").strip() or None,
+                    "common_errors": (row.get("Частые ошибки") or "").strip() or None,
                 }
                 defaults["has_weight"] = bool(defaults["default_weight"])
                 defaults["has_time"] = bool(defaults["default_time"])

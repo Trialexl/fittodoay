@@ -12,7 +12,6 @@ services:
       DJANGO_DB_PASSWORD: ${DJANGO_DB_PASSWORD:-fittodoey}
       DJANGO_DB_HOST: db
       DJANGO_DB_PORT: 5432
-      IMPORT_EXERCISES_ON_START: ${IMPORT_EXERCISES_ON_START:-false}
     volumes:
       - backend_data:/data
     ports:
