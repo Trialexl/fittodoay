@@ -97,6 +97,8 @@ type ExerciseOption = {
   default_reps: number | null;
   default_sets: number | null;
   default_rest: number | null;
+  english_name?: string | null;
+  target_muscles?: string | null;
 };
 
 type TemplateDetailResponse = {
@@ -843,6 +845,7 @@ const TemplateExerciseModal = ({
   onClose: () => void;
 }) => {
   const { token } = useAuth();
+  const [search, setSearch] = useState("");
   const [form, setForm] = useState({
     exercise_id: 0,
     rep_override: "",
@@ -855,9 +858,14 @@ const TemplateExerciseModal = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const { data: exercises } = useSWR(
-    state ? "/api/exercises/" : null,
-    (url: string) => apiFetch<ExerciseOption[]>(url, { token: token ?? undefined }),
+  const { data: exercises, isLoading: exercisesLoading } = useSWR(
+    state ? ["/api/exercises/", token, search] : null,
+    ([url]) =>
+      apiFetch<ExerciseOption[]>(
+        `${url}?q=${encodeURIComponent(search)}`,
+        { token: token ?? undefined },
+      ),
+    { keepPreviousData: true },
   );
 
   useEffect(() => {
@@ -904,6 +912,8 @@ const TemplateExerciseModal = ({
       rest_override: selected?.default_rest?.toString() ?? "",
     }));
   };
+
+  const filteredExercises = useMemo(() => exercises ?? [], [exercises]);
 
   const submit = async () => {
     if (!form.exercise_id) {
@@ -980,21 +990,44 @@ const TemplateExerciseModal = ({
     >
       <div className="space-y-4">
         {error && <p className="rounded bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
-        <label className="text-sm">
-          Упражнение
-          <select
-            className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
-            value={form.exercise_id}
-            onChange={(e) => populateDefaults(Number(e.target.value))}
-          >
-            <option value={0}>Выберите из каталога</option>
-            {exercises?.map((exercise) => (
-              <option key={exercise.id} value={exercise.id}>
-                {exercise.name}
-              </option>
+        <div className="space-y-2">
+          <Input
+            label="Поиск"
+            placeholder="Название, английское имя или мышцы"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          <div className="max-h-64 overflow-y-auto rounded-xl border border-slate-200 bg-white">
+            {exercisesLoading ? (
+              <p className="px-3 py-2 text-sm text-slate-500">Ищем упражнения…</p>
+            ) : (filteredExercises.length ? (
+              <ul className="divide-y divide-slate-100 text-sm">
+                {filteredExercises.map((exercise) => (
+                  <li
+                    key={exercise.id}
+                    className={clsx(
+                      "cursor-pointer px-3 py-2 transition", 
+                      form.exercise_id === exercise.id
+                        ? "bg-primary/10 text-primary"
+                        : "hover:bg-slate-50",
+                    )}
+                    onClick={() => populateDefaults(exercise.id)}
+                  >
+                    <p className="font-semibold text-slate-900">
+                      {exercise.name}
+                      {exercise.english_name ? ` / ${exercise.english_name}` : ""}
+                    </p>
+                    {exercise.target_muscles && (
+                      <p className="text-xs text-slate-500">{exercise.target_muscles}</p>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="px-3 py-2 text-sm text-slate-500">Ничего не найдено</p>
             ))}
-          </select>
-        </label>
+          </div>
+        </div>
         <div className="grid gap-3 md:grid-cols-2">
           <Input
             label="Сеты"
