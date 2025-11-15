@@ -581,9 +581,8 @@ ${note}`;
               key={folder.id}
               className={clsx(
                 "rounded-2xl border p-3 sm:p-4 transition-colors",
-                folderComplete
-                  ? "border-emerald-200 bg-emerald-50/70"
-                  : "border-slate-200 bg-white",
+                "border-violet-200 bg-violet-50/80",
+                folderComplete && "ring-1 ring-emerald-300",
               )}
             >
               <div className="flex items-start justify-between gap-2">
@@ -645,9 +644,8 @@ ${note}`;
                           key={template.id}
                           className={clsx(
                             "rounded-xl border p-4 sm:p-5",
-                            templateComplete
-                              ? "border-emerald-200 bg-emerald-50/60"
-                              : "border-slate-100 bg-slate-50/60",
+                            "border-sky-200 bg-sky-50/80",
+                            templateComplete && "ring-1 ring-emerald-300",
                           )}
                         >
                           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -703,9 +701,8 @@ ${note}`;
                             key={exercise.template_exercise_id}
                             className={clsx(
                               "rounded-xl p-3 shadow-sm ring-1 sm:p-4",
-                              exerciseComplete
-                                ? "bg-emerald-50/60 ring-emerald-200"
-                                : "bg-white ring-slate-100",
+                              "bg-slate-50/70 ring-slate-200",
+                              exerciseComplete && "ring-emerald-300 bg-emerald-50/60",
                             )}
                           >
                             <div className="flex flex-wrap items-start justify-between gap-2">
@@ -772,9 +769,8 @@ ${note}`;
                                     key={`${exercise.template_exercise_id}-${set.set_index}`}
                                     className={clsx(
                                       "flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2 text-xs transition sm:text-sm",
-                                      isComplete
-                                        ? "border-emerald-200 bg-emerald-50/80"
-                                        : "border-slate-200 bg-slate-50",
+                                      "border-slate-200 bg-white",
+                                      isComplete && "border-emerald-200 bg-emerald-50/80",
                                       isActiveSet && "ring-1 ring-primary/60",
                                     )}
                                     >
