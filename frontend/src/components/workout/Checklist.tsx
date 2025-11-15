@@ -33,6 +33,24 @@ const EditIcon = () => (
   </svg>
 );
 
+const InfoIcon = () => (
+  <svg
+    viewBox="0 0 20 20"
+    xmlns="http://www.w3.org/2000/svg"
+    className="h-4 w-4 text-primary"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.8}
+  >
+    <path
+      d="M9.5 4.5h1M9 8h1v6H9Z"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    <circle cx="10" cy="10" r="8" />
+  </svg>
+);
+
 type ExercisePayload = {
   template_exercise_id: number;
   source: {
@@ -151,6 +169,7 @@ export const Checklist = ({
   const [editState, setEditState] = useState<EditState | null>(null);
   const [editForm, setEditForm] = useState({ reps: "", weight: "", time: "" });
   const [editError, setEditError] = useState<string | null>(null);
+  const [infoExercise, setInfoExercise] = useState<{ name: string; content: string } | null>(null);
   const [expandedFolders, setExpandedFolders] = useState<Record<number, boolean>>({});
   const [expandedTemplates, setExpandedTemplates] = useState<Record<number, Record<number, boolean>>>({});
   const [expandedExercises, setExpandedExercises] = useState<Record<number, boolean>>({});
@@ -726,6 +745,8 @@ ${note}`;
                         const completedSets = exercise.sets.filter((set) =>
                           getLogForSet(exercise.template_exercise_id, set.set_index),
                         ).length;
+                        const exerciseInfo = tooltipText(exercise.source.description, exercise.note);
+                        const canShowInfo = Boolean(exerciseInfo);
                         return (
                           <div
                             key={exercise.template_exercise_id}
@@ -747,14 +768,41 @@ ${note}`;
                                   {exerciseExpanded ? "▾" : "▸"}
                                 </span>
                                 <div className="flex flex-col">
-                                  <div className="flex flex-wrap items-center gap-2">
+                                  <div className="flex flex-wrap items-center gap-1">
                                     {exerciseComplete && <CompletionIcon />}
                                     <p
                                       className="text-sm font-semibold text-slate-900 sm:text-base"
-                                      title={tooltipText(exercise.source.description, exercise.note)}
+                                      title={exerciseInfo}
                                     >
                                       {exercise.source.name}
                                     </p>
+                                    {canShowInfo && (
+                                      <span
+                                        role="button"
+                                        tabIndex={0}
+                                        className="inline-flex h-5 w-5 items-center justify-center text-primary transition hover:text-primary/80 focus:outline-none focus:ring-2 focus:ring-primary/40"
+                                        onClick={(event) => {
+                                          event.stopPropagation();
+                                          setInfoExercise({
+                                            name: exercise.source.name,
+                                            content: exerciseInfo ?? "",
+                                          });
+                                        }}
+                                        onKeyDown={(event) => {
+                                          if (event.key === "Enter" || event.key === " ") {
+                                            event.preventDefault();
+                                            event.stopPropagation();
+                                            setInfoExercise({
+                                              name: exercise.source.name,
+                                              content: exerciseInfo ?? "",
+                                            });
+                                          }
+                                        }}
+                                        aria-label="Детали упражнения"
+                                      >
+                                        <InfoIcon />
+                                      </span>
+                                    )}
                                     <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                                       {completedSets}/{exercise.sets.length}
                                     </span>
@@ -885,6 +933,17 @@ ${note}`;
         duration={execDuration}
         onCancel={cancelExecutionOverlay}
       />
+
+      <Modal
+        open={Boolean(infoExercise)}
+        title={infoExercise ? `Описание — ${infoExercise.name}` : undefined}
+        onClose={() => setInfoExercise(null)}
+        className="max-w-md"
+      >
+        {infoExercise && (
+          <p className="whitespace-pre-line text-sm text-slate-600">{infoExercise.content}</p>
+        )}
+      </Modal>
 
       <Modal
         open={Boolean(editState)}
