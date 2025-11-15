@@ -216,20 +216,6 @@ export const Checklist = ({
     return { order, positions };
   }, [plan]);
 
-  const todayMuscles = useMemo(() => {
-    const counts = new Map<string, number>();
-    plan?.folders.forEach((folder) => {
-      folder.templates.forEach((template) => {
-        template.exercises.forEach((exercise) => {
-          getExerciseMuscles(exercise).forEach((muscle) => {
-            counts.set(muscle, (counts.get(muscle) ?? 0) + 1);
-          });
-        });
-      });
-    });
-    return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
-  }, [plan]);
-
   const orderedSetKeys = orderedSetMeta.order;
   const orderedSetPositions = orderedSetMeta.positions;
 
@@ -586,25 +572,7 @@ ${note}`;
 
   return (
     <>
-      <div className="space-y-6">
-        {todayMuscles.length > 0 && (
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-[0.4em] text-slate-500">
-              Сегодня работаем
-            </p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {todayMuscles.slice(0, 6).map(([muscle, count]) => (
-                <span
-                  key={muscle}
-                  className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/5 px-3 py-1 text-sm font-semibold text-primary"
-                >
-                  {muscle}
-                  {count > 1 && <span className="text-xs font-medium text-primary/70">×{count}</span>}
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
+      <div className="space-y-4 sm:space-y-5">
         {plan.folders.map((folder) => {
           const expanded = expandedFolders[folder.id] ?? true;
           const folderComplete = isFolderComplete(folder);
@@ -612,16 +580,16 @@ ${note}`;
             <section
               key={folder.id}
               className={clsx(
-                "rounded-2xl border p-4 sm:p-6",
+                "rounded-2xl border p-3 sm:p-4 transition-colors",
                 folderComplete
                   ? "border-emerald-200 bg-emerald-50/70"
                   : "border-slate-200 bg-white",
               )}
             >
-              <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start justify-between gap-2">
                 <button
                   type="button"
-                  className="flex flex-1 items-center gap-3 text-left"
+                  className="flex flex-1 items-center gap-2 text-left"
                   onClick={() =>
                     setExpandedFolders((prev) => ({
                       ...prev,
@@ -630,9 +598,9 @@ ${note}`;
                   }
                   aria-expanded={expanded}
                 >
-                  <span className="text-lg text-slate-400">{expanded ? "▾" : "▸"}</span>
+                  <span className="text-base text-slate-400">{expanded ? "▾" : "▸"}</span>
                   <div className="flex items-center gap-2">
-                    <h3 className="text-lg font-semibold text-slate-900">{folder.name}</h3>
+                    <h3 className="text-base font-semibold text-slate-900 sm:text-lg">{folder.name}</h3>
                     {folderComplete && <CompletionIcon />}
                   </div>
                 </button>
@@ -648,7 +616,7 @@ ${note}`;
                 className={`overflow-hidden transition-[max-height,opacity] duration-500 ease-out ${expanded ? "max-h-[2000px] opacity-100" : "max-h-0 opacity-0"}`}
               >
                 {expanded && (
-                  <div className="mt-6 space-y-5">
+                  <div className="mt-4 space-y-4 sm:mt-5 sm:space-y-5">
                     {folder.templates.length === 0 && (
                       <p className="text-sm text-slate-500">В этой папке пока нет активных шаблонов.</p>
                     )}
@@ -676,23 +644,23 @@ ${note}`;
                         <article
                           key={template.id}
                           className={clsx(
-                            "rounded-2xl border p-5",
+                            "rounded-xl border p-4 sm:p-5",
                             templateComplete
                               ? "border-emerald-200 bg-emerald-50/60"
                               : "border-slate-100 bg-slate-50/60",
                           )}
                         >
-                          <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
                             <button
                               type="button"
                               className="flex flex-1 items-center gap-2 text-left"
                               onClick={() => toggleTemplate(folder.id, template.id)}
                               aria-expanded={templateExpanded}
                             >
-                              <span className="text-base text-slate-400">{templateExpanded ? "▾" : "▸"}</span>
+                              <span className="text-sm text-slate-400">{templateExpanded ? "▾" : "▸"}</span>
                               <div className="flex flex-col">
                                 <div className="flex flex-wrap items-center gap-2">
-                                  <h4 className="text-base font-semibold text-slate-900">
+                                  <h4 className="text-sm font-semibold text-slate-900 sm:text-base">
                                     {template.name}
                                   </h4>
                                   <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -701,7 +669,7 @@ ${note}`;
                                   {templateComplete && <CompletionIcon />}
                                 </div>
                                 {templateMuscles.length > 0 && (
-                                  <p className="text-xs text-slate-500">
+                                  <p className="text-[11px] text-slate-500">
                                     {templateMuscles.slice(0, 4).join(" • ")}
                                     {templateMuscles.length > 4 && " …"}
                                   </p>
@@ -718,10 +686,10 @@ ${note}`;
                             </Link>
                           </div>
                           <div
-                            className={`mt-4 overflow-hidden transition-[max-height,opacity] duration-500 ease-out ${templateExpanded ? "max-h-[1600px] opacity-100" : "max-h-0 opacity-0"}`}
+                            className={`mt-3 overflow-hidden transition-[max-height,opacity] duration-500 ease-out ${templateExpanded ? "max-h-[1600px] opacity-100" : "max-h-0 opacity-0"}`}
                           >
                             {templateExpanded && (
-                              <div className="space-y-4">
+                              <div className="space-y-3 sm:space-y-4">
                                 {template.exercises.map((exercise) => {
                             const exerciseComplete = isExerciseComplete(exercise);
                             const storedExpanded = expandedExercises[exercise.template_exercise_id];
@@ -734,37 +702,37 @@ ${note}`;
                           <div
                             key={exercise.template_exercise_id}
                             className={clsx(
-                              "rounded-2xl p-4 shadow-sm ring-1",
+                              "rounded-xl p-3 shadow-sm ring-1 sm:p-4",
                               exerciseComplete
                                 ? "bg-emerald-50/60 ring-emerald-200"
                                 : "bg-white ring-slate-100",
                             )}
                           >
-                            <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div className="flex flex-wrap items-start justify-between gap-2">
                               <button
                                 type="button"
                                 className="flex flex-1 items-center gap-2 text-left"
                                 onClick={() => toggleExercise(exercise.template_exercise_id)}
                                 aria-expanded={exerciseExpanded}
                               >
-                                <span className="text-base text-slate-400">
+                                <span className="text-sm text-slate-400">
                                   {exerciseExpanded ? "▾" : "▸"}
                                 </span>
                                 <div className="flex flex-col">
                                   <div className="flex flex-wrap items-center gap-2">
                                     <p
-                                      className="text-base font-semibold text-slate-900"
+                                      className="text-sm font-semibold text-slate-900 sm:text-base"
                                       title={tooltipText(exercise.source.description, exercise.note)}
                                     >
                                       {exercise.source.name}
                                     </p>
-                                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                    <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                                       {completedSets}/{exercise.sets.length}
                                     </span>
                                     {exerciseComplete && <CompletionIcon />}
                                   </div>
                                   {exercise.note && (
-                                    <p className="text-xs text-slate-500">{exercise.note}</p>
+                                    <p className="text-[11px] text-slate-500">{exercise.note}</p>
                                   )}
                                 </div>
                               </button>
@@ -780,7 +748,7 @@ ${note}`;
                               </div>
                             </div>
                             <div
-                              className={`mt-4 overflow-hidden transition-[max-height,opacity] duration-500 ease-out ${exerciseExpanded ? "max-h-[1200px] opacity-100" : "max-h-0 opacity-0"}`}
+                              className={`mt-3 overflow-hidden transition-[max-height,opacity] duration-500 ease-out ${exerciseExpanded ? "max-h-[1200px] opacity-100" : "max-h-0 opacity-0"}`}
                             >
                               {exerciseExpanded &&
                                 exercise.sets.map((set, setPosition) => {
@@ -803,16 +771,16 @@ ${note}`;
                                   <div
                                     key={`${exercise.template_exercise_id}-${set.set_index}`}
                                     className={clsx(
-                                      "flex flex-wrap items-center gap-3 rounded-xl border px-4 py-3 text-sm transition",
+                                      "flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2 text-xs transition sm:text-sm",
                                       isComplete
                                         ? "border-emerald-200 bg-emerald-50/80"
                                         : "border-slate-200 bg-slate-50",
-                                      isActiveSet && "ring-2 ring-primary/60",
+                                      isActiveSet && "ring-1 ring-primary/60",
                                     )}
                                     >
-                                      <div className="min-w-[200px] flex-1">
-                                        <div className="flex flex-wrap items-center justify-between gap-3">
-                                          <p className="font-semibold text-slate-900">
+                                      <div className="min-w-[150px] flex-1">
+                                        <div className="flex flex-wrap items-center justify-between gap-2">
+                                          <p className="text-sm font-semibold text-slate-900">
                                             Сет {setNumber}
                                           </p>
                                         <div className="flex flex-wrap items-center gap-2">
@@ -841,11 +809,11 @@ ${note}`;
                                           )}
                                         </div>
                                       </div>
-                                      <p className="text-xs text-slate-500">
+                                      <p className="text-[11px] text-slate-500">
                                         План: {formatPlanSet(exercise, set)}
                                       </p>
                                       {isComplete && log && (
-                                        <p className="text-xs text-emerald-600">
+                                        <p className="text-[11px] text-emerald-600">
                                           Факт: {formatLogValues(exercise, log)}
                                         </p>
                                       )}
