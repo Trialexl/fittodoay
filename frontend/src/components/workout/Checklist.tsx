@@ -952,7 +952,8 @@ ${note}`;
 
       <Modal
         open={Boolean(editState)}
-        title={editState ? `Правка подхода — ${editState.exerciseName}` : undefined}
+        title={editState ? "Правка подхода" : undefined}
+        description={editState?.exerciseName}
         onClose={closeEditModal}
         footer={editModalFooter}
         className="max-w-lg"
@@ -960,15 +961,21 @@ ${note}`;
         {editState && (
           <div className="space-y-4">
             {!editState.hasTime ? (
-              <div className="grid gap-4 md:grid-cols-2">
+              <div className="flex flex-wrap items-center justify-center gap-3 text-center">
                 <Input
                   label="Повторы"
+                  type="number"
+                  inputMode="numeric"
+                  className="w-20"
                   value={editForm.reps}
                   onChange={(event) => setEditForm((prev) => ({ ...prev, reps: event.target.value }))}
                 />
                 {editState.hasWeight && (
                   <Input
                     label="Вес (кг)"
+                    type="number"
+                    inputMode="decimal"
+                    className="w-20"
                     value={editForm.weight}
                     onChange={(event) =>
                       setEditForm((prev) => ({ ...prev, weight: event.target.value }))
@@ -979,11 +986,14 @@ ${note}`;
             ) : (
               <Input
                 label="Время (сек)"
+                type="number"
+                inputMode="numeric"
+                className="w-20"
                 value={editForm.time}
                 onChange={(event) => setEditForm((prev) => ({ ...prev, time: event.target.value }))}
               />
             )}
-            {editError && <p className="text-sm text-red-500">{editError}</p>}
+            {editError && <p className="text-sm text-red-500 text-center">{editError}</p>}
           </div>
         )}
       </Modal>

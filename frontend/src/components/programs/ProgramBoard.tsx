@@ -99,6 +99,8 @@ type ExerciseOption = {
   default_rest: number | null;
   english_name?: string | null;
   target_muscles?: string | null;
+  has_weight?: boolean;
+  has_time?: boolean;
 };
 
 type TemplateDetailResponse = {
@@ -858,6 +860,7 @@ const TemplateExerciseModal = ({
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [exerciseMeta, setExerciseMeta] = useState({ hasTime: false, hasWeight: true });
 
   const { data: exercises, isLoading: exercisesLoading } = useSWR(
     state ? ["/api/exercises/", token, search] : null,
@@ -886,6 +889,10 @@ const TemplateExerciseModal = ({
           rest_override: toInput(detail.rest_override),
           note: detail.note ?? "",
         });
+        setExerciseMeta({
+          hasTime: Boolean(detail.exercise?.has_time),
+          hasWeight: detail.exercise?.has_weight ?? true,
+        });
       })();
     } else {
       setForm({
@@ -897,6 +904,7 @@ const TemplateExerciseModal = ({
         rest_override: "",
         note: "",
       });
+      setExerciseMeta({ hasTime: false, hasWeight: true });
     }
     setError(null);
   }, [state, token]);
@@ -912,6 +920,10 @@ const TemplateExerciseModal = ({
       time_override: selected?.default_time?.toString() ?? "",
       rest_override: selected?.default_rest?.toString() ?? "",
     }));
+    setExerciseMeta({
+      hasTime: Boolean(selected?.has_time),
+      hasWeight: selected?.has_weight ?? true,
+    });
   };
 
   const filteredExercises = useMemo(() => exercises ?? [], [exercises]);
@@ -1042,43 +1054,63 @@ const TemplateExerciseModal = ({
             )}
           </div>
         </div>
-        <div className="grid gap-3 md:grid-cols-2">
+        <div className="flex flex-wrap items-center justify-center gap-3 text-center">
           <Input
             label="Сеты"
             type="number"
+            inputMode="numeric"
+            className="w-20"
             value={form.set_override}
             onChange={(e) => setForm((prev) => ({ ...prev, set_override: e.target.value }))}
           />
-          <Input
-            label="Повторы"
-            type="number"
-            value={form.rep_override}
-            onChange={(e) => setForm((prev) => ({ ...prev, rep_override: e.target.value }))}
-          />
-          <Input
-            label="Вес (кг)"
-            type="number"
-            value={form.weight_override}
-            onChange={(e) => setForm((prev) => ({ ...prev, weight_override: e.target.value }))}
-          />
-          <Input
-            label="Время (сек)"
-            type="number"
-            value={form.time_override}
-            onChange={(e) => setForm((prev) => ({ ...prev, time_override: e.target.value }))}
-          />
+          {!exerciseMeta.hasTime && (
+            <Input
+              label="Повторы"
+              type="number"
+              inputMode="numeric"
+              className="w-20"
+              value={form.rep_override}
+              onChange={(e) => setForm((prev) => ({ ...prev, rep_override: e.target.value }))}
+            />
+          )}
+          {!exerciseMeta.hasTime && exerciseMeta.hasWeight && (
+            <Input
+              label="Вес (кг)"
+              type="number"
+              inputMode="decimal"
+              className="w-20"
+              value={form.weight_override}
+              onChange={(e) => setForm((prev) => ({ ...prev, weight_override: e.target.value }))}
+            />
+          )}
+          {exerciseMeta.hasTime && (
+            <Input
+              label="Время (сек)"
+              type="number"
+              inputMode="numeric"
+              className="w-20"
+              value={form.time_override}
+              onChange={(e) => setForm((prev) => ({ ...prev, time_override: e.target.value }))}
+            />
+          )}
           <Input
             label="Отдых (сек)"
             type="number"
+            inputMode="numeric"
+            className="w-20"
             value={form.rest_override}
             onChange={(e) => setForm((prev) => ({ ...prev, rest_override: e.target.value }))}
           />
-          <Input
-            label="Комментарий"
+        </div>
+        <label className="block text-sm text-slate-600">
+          <span>Комментарий</span>
+          <textarea
+            className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/40"
+            rows={3}
             value={form.note}
             onChange={(e) => setForm((prev) => ({ ...prev, note: e.target.value }))}
           />
-        </div>
+        </label>
         <div className="flex justify-end gap-2">
           {state.mode === "edit" && (
             <button
