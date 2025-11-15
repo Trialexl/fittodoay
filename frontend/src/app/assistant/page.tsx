@@ -13,6 +13,7 @@ const defaultValues = {
   gender: "male",
   age: "30",
   weight_kg: "80",
+  height_cm: "180",
   goal: "cut",
   sessions_per_week: "3",
   session_duration: "60",
@@ -23,6 +24,7 @@ type PreferencesPayload = {
   gender?: string | null;
   age?: number | null;
   weight_kg?: number | null;
+  height_cm?: number | null;
   goal?: string | null;
   sessions_per_week?: number | null;
   session_duration?: number | null;
@@ -45,7 +47,6 @@ type LLMResponse = {
 const genderOptions = [
   { value: "male", label: "Мужской" },
   { value: "female", label: "Женский" },
-  { value: "other", label: "Другое" },
 ];
 
 const goalOptions = [
@@ -80,6 +81,7 @@ export default function AssistantPage() {
           gender: data.gender ?? prev.gender,
           age: data.age ? String(data.age) : prev.age,
           weight_kg: data.weight_kg ? String(data.weight_kg) : prev.weight_kg,
+          height_cm: data.height_cm ? String(data.height_cm) : prev.height_cm,
           goal: data.goal ?? prev.goal,
           sessions_per_week: data.sessions_per_week
             ? String(data.sessions_per_week)
@@ -114,6 +116,12 @@ export default function AssistantPage() {
             name: "weight_kg",
             label: "Вес (кг)",
             placeholder: "82",
+            type: "number" as const,
+          },
+          {
+            name: "height_cm",
+            label: "Рост (см)",
+            placeholder: "182",
             type: "number" as const,
           },
         ],
@@ -179,6 +187,7 @@ export default function AssistantPage() {
         goal: form.goal,
         age: form.age ? Number(form.age) : null,
         weight_kg: form.weight_kg ? Number(form.weight_kg) : null,
+        height_cm: form.height_cm ? Number(form.height_cm) : null,
         sessions_per_week: form.sessions_per_week ? Number(form.sessions_per_week) : null,
         session_duration: form.session_duration ? Number(form.session_duration) : null,
         notes: form.notes?.trim() ? form.notes.trim() : null,
@@ -230,7 +239,7 @@ export default function AssistantPage() {
               {currentStep.fields.map((field) => (
                 <div key={field.name}>
                   {field.type === "select" ? (
-                    <label className="text-sm">
+                    <label className="mb-3 flex flex-col gap-1 text-sm">
                       <span className="font-medium text-slate-700">{field.label}</span>
                       <select
                         className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
@@ -245,7 +254,7 @@ export default function AssistantPage() {
                       </select>
                     </label>
                   ) : field.type === "textarea" ? (
-                    <label className="text-sm">
+                    <label className="mb-3 flex flex-col gap-1 text-sm">
                       <span className="font-medium text-slate-700">{field.label}</span>
                       <textarea
                         className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
