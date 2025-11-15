@@ -581,8 +581,9 @@ ${note}`;
               key={folder.id}
               className={clsx(
                 "rounded-2xl border p-3 sm:p-4 transition-colors",
-                "border-violet-200 bg-violet-50/80",
-                folderComplete && "ring-1 ring-emerald-300",
+                folderComplete
+                  ? "border-emerald-400 bg-emerald-200"
+                  : "border-violet-200 bg-violet-50/80",
               )}
             >
               <div className="flex items-start justify-between gap-2">
@@ -599,8 +600,8 @@ ${note}`;
                 >
                   <span className="text-base text-slate-400">{expanded ? "▾" : "▸"}</span>
                   <div className="flex items-center gap-2">
-                    <h3 className="text-base font-semibold text-slate-900 sm:text-lg">{folder.name}</h3>
                     {folderComplete && <CompletionIcon />}
+                    <h3 className="text-base font-semibold text-slate-900 sm:text-lg">{folder.name}</h3>
                   </div>
                 </button>
                 <Link
@@ -643,9 +644,10 @@ ${note}`;
                         <article
                           key={template.id}
                           className={clsx(
-                            "rounded-xl border p-4 sm:p-5",
-                            "border-sky-200 bg-sky-50/80",
-                            templateComplete && "ring-1 ring-emerald-300",
+                            "rounded-xl border p-4 sm:p-5 transition-colors",
+                            templateComplete
+                              ? "border-emerald-300 bg-emerald-100"
+                              : "border-sky-200 bg-sky-50/80",
                           )}
                         >
                           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -658,13 +660,13 @@ ${note}`;
                               <span className="text-sm text-slate-400">{templateExpanded ? "▾" : "▸"}</span>
                               <div className="flex flex-col">
                                 <div className="flex flex-wrap items-center gap-2">
+                                  {templateComplete && <CompletionIcon />}
                                   <h4 className="text-sm font-semibold text-slate-900 sm:text-base">
                                     {template.name}
                                   </h4>
                                   <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                                     {templateProgress.completed}/{templateProgress.total}
                                   </span>
-                                  {templateComplete && <CompletionIcon />}
                                 </div>
                                 {templateMuscles.length > 0 && (
                                   <p className="text-[11px] text-slate-500">
@@ -700,9 +702,10 @@ ${note}`;
                           <div
                             key={exercise.template_exercise_id}
                             className={clsx(
-                              "rounded-xl p-3 shadow-sm ring-1 sm:p-4",
-                              "bg-slate-50/70 ring-slate-200",
-                              exerciseComplete && "ring-emerald-300 bg-emerald-50/60",
+                              "rounded-xl p-3 shadow-sm ring-1 sm:p-4 transition",
+                              exerciseComplete
+                                ? "bg-emerald-50 ring-emerald-200"
+                                : "bg-slate-50/70 ring-slate-200",
                             )}
                           >
                             <div className="flex flex-wrap items-start justify-between gap-2">
@@ -717,6 +720,7 @@ ${note}`;
                                 </span>
                                 <div className="flex flex-col">
                                   <div className="flex flex-wrap items-center gap-2">
+                                    {exerciseComplete && <CompletionIcon />}
                                     <p
                                       className="text-sm font-semibold text-slate-900 sm:text-base"
                                       title={tooltipText(exercise.source.description, exercise.note)}
@@ -726,7 +730,6 @@ ${note}`;
                                     <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                                       {completedSets}/{exercise.sets.length}
                                     </span>
-                                    {exerciseComplete && <CompletionIcon />}
                                   </div>
                                   {exercise.note && (
                                     <p className="text-[11px] text-slate-500">{exercise.note}</p>
@@ -769,8 +772,9 @@ ${note}`;
                                     key={`${exercise.template_exercise_id}-${set.set_index}`}
                                     className={clsx(
                                       "flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2 text-xs transition sm:text-sm",
-                                      "border-slate-200 bg-white",
-                                      isComplete && "border-emerald-200 bg-emerald-50/80",
+                                      isComplete
+                                        ? "border-emerald-100 bg-emerald-50/40"
+                                        : "border-slate-200 bg-white",
                                       isActiveSet && "ring-1 ring-primary/60",
                                     )}
                                     >
