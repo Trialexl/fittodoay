@@ -167,19 +167,21 @@ export const RestTimerOverlay = ({
           )}
           <div className="w-full max-w-md space-y-3 text-left text-slate-200">
             {!pending.hasTime ? (
-              <div className="flex w-full flex-wrap gap-3">
+              <div className="flex w-full flex-wrap items-center justify-center gap-3">
                 <OverlayField
                   label="Повторы"
                   value={values.reps}
                   onChange={(value) => onChange("reps", value)}
-                  className={pending.hasWeight ? "min-w-[140px] flex-1" : "w-full"}
+                  className="w-20"
+                  inputMode="numeric"
                 />
                 {pending.hasWeight && (
                   <OverlayField
                     label="Вес (кг)"
                     value={values.weight}
                     onChange={(value) => onChange("weight", value)}
-                    className="min-w-[140px] flex-1"
+                    className="w-20"
+                    inputMode="decimal"
                   />
                 )}
               </div>
@@ -189,7 +191,8 @@ export const RestTimerOverlay = ({
                   label="Время (сек)"
                   value={values.time}
                   onChange={(value) => onChange("time", value)}
-                  className="mx-auto w-full max-w-[150px] text-center"
+                  className="mx-auto w-20 text-center"
+                  inputMode="numeric"
                 />
               </div>
             )}
@@ -213,18 +216,22 @@ const OverlayField = ({
   value,
   onChange,
   className = "",
+  inputMode = "numeric",
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   className?: string;
+  inputMode?: "numeric" | "decimal";
 }) => (
-  <label className={`block text-sm ${className}`}>
-    <span className="text-xs uppercase tracking-wider text-slate-300">{label}</span>
+  <label className={`block text-xs uppercase tracking-wider text-slate-300 text-center ${className}`}>
+    <span className="block">{label}</span>
     <Input
+      type="number"
+      inputMode={inputMode}
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="mt-1 w-full border-white/50 bg-white/10 text-white placeholder:text-slate-400"
+      className="mt-1 w-20 border-white/50 bg-white/10 text-center text-white placeholder:text-slate-400"
     />
   </label>
 );
