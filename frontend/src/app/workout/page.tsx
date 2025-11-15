@@ -54,21 +54,62 @@ export default function WorkoutPage() {
   const currentDate = plan?.date ?? new Date().toISOString().slice(0, 10);
   const dailyLoad =
     dailyLoads?.items.find((item) => item.date === currentDate)?.load ?? completedSets;
+  const todayMuscles = useMemo(() => {
+    if (!plan) return [];
+    const counts = new Map<string, number>();
+    plan.folders.forEach((folder) => {
+      folder.templates.forEach((template) => {
+        template.exercises.forEach((exercise) => {
+          const muscles =
+            exercise.source.target_muscles
+              ?.split(/[\/,]/)
+              .map((item) => item.trim())
+              .filter(Boolean) ?? [];
+          muscles.forEach((muscle) => {
+            counts.set(muscle, (counts.get(muscle) ?? 0) + 1);
+          });
+        });
+      });
+    });
+    return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
+  }, [plan]);
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <p className="text-sm uppercase tracking-widest text-primary">Дневной чеклист</p>
-          <h1 className="text-3xl font-semibold">Сегодня</h1>
-          <div className="mt-4 inline-flex min-w-[180px] flex-col rounded-2xl border border-slate-100 bg-slate-50 px-5 py-4 shadow-sm">
-            <p className="text-sm font-semibold uppercase tracking-wide text-slate-400">
+      <header className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="space-y-1">
+            <p className="text-sm uppercase tracking-widest text-primary">Дневной чеклист</p>
+            <h1 className="text-3xl font-semibold leading-tight">Сегодня</h1>
+          </div>
+          <div className="inline-flex flex-col rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-center shadow-sm">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
               {currentDate}
             </p>
-            <p className="text-5xl font-black leading-tight text-slate-900">{dailyLoad}</p>
-            <p className="text-xs text-slate-400">нагрузка за день</p>
+            <p className="text-3xl font-black leading-tight text-slate-900">{dailyLoad}</p>
+            <p className="text-[10px] text-slate-400">нагрузка за день</p>
           </div>
         </div>
+        {todayMuscles.length > 0 && (
+          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-500">
+              Сегодня работаем
+            </p>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {todayMuscles.slice(0, 6).map(([muscle, count]) => (
+                <span
+                  key={muscle}
+                  className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/5 px-2 py-0.5 text-[11px] font-medium text-primary"
+                >
+                  {muscle}
+                  {count > 1 && (
+                    <span className="text-[10px] font-semibold text-primary/70">×{count}</span>
+                  )}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
       </header>
       <Checklist plan={plan} refresh={fetchPlan} />
     </div>
