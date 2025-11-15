@@ -34,6 +34,7 @@ export const RestTimerOverlay = ({
 }: Props) => {
   const [mounted, setMounted] = useState(false);
   const [visibleCallout, setVisibleCallout] = useState<string[] | null>(null);
+  const [collapsed, setCollapsed] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -41,12 +42,15 @@ export const RestTimerOverlay = ({
   }, []);
 
   useEffect(() => {
-    if (!pending || !mounted) return;
+    if (!pending || !mounted || collapsed) {
+      document.body.style.overflow = "";
+      return;
+    }
     document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = "";
     };
-  }, [pending, mounted]);
+  }, [pending, mounted, collapsed]);
 
   const restSeconds = pending?.rest ?? 0;
   const showTimer = restSeconds > 0;
@@ -67,6 +71,7 @@ export const RestTimerOverlay = ({
   useEffect(() => {
     if (!pending) {
       setVisibleCallout(null);
+      setCollapsed(false);
       return;
     }
     if (calloutText) {
@@ -76,16 +81,52 @@ export const RestTimerOverlay = ({
 
   if (!pending || !mounted) return null;
 
+  if (collapsed) {
+    const bar = (
+      <div className="pointer-events-none fixed inset-0 z-50 flex items-end justify-center pb-4">
+        <div className="pointer-events-auto flex w-[calc(100%-1.5rem)] max-w-lg items-center justify-between rounded-2xl border border-white/30 bg-slate-900/90 px-4 py-3 text-white shadow-lg backdrop-blur">
+          <div className="flex items-center gap-2 text-sm">
+            {showTimer && (
+              <span className="text-xs uppercase tracking-[0.4em] text-violet-200">
+                {displayRemaining}s
+              </span>
+            )}
+            <span className="font-semibold">{pending.exerciseName}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              className="rounded-full border border-white/30 px-3 py-1 text-xs uppercase tracking-wide hover:bg-white/10"
+              onClick={() => setCollapsed(false)}
+            >
+              Развернуть
+            </button>
+            <button className="text-lg text-white/70 hover:text-white" onClick={onClose} aria-label="Закрыть">
+              ×
+            </button>
+          </div>
+        </div>
+        <div className="pointer-events-none h-full" />
+      </div>
+    );
+    return createPortal(bar, document.body);
+  }
+
   const overlay = (
     <div className="fixed inset-0 z-50 bg-slate-900/90 text-white">
       <div className="relative flex h-full w-full flex-col overflow-hidden p-6">
-        <button
-          className="absolute right-6 top-6 text-slate-200 hover:text-white"
-          onClick={onClose}
-          aria-label="Закрыть"
-        >
-          ×
-        </button>
+        <div className="absolute right-6 top-6 flex items-center gap-3 text-slate-200">
+          {showTimer && (
+            <button
+              className="rounded-full border border-white/30 px-3 py-1 text-xs uppercase tracking-wide hover:bg-white/10"
+              onClick={() => setCollapsed(true)}
+            >
+              Свернуть
+            </button>
+          )}
+          <button className="text-xl hover:text-white" onClick={onClose} aria-label="Закрыть">
+            ×
+          </button>
+        </div>
         <div className="flex flex-1 flex-col items-center justify-center gap-6 pt-12 text-center">
           {visibleCallout && (
             <div className="w-full max-w-xl px-6 text-center">
