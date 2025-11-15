@@ -10,9 +10,17 @@ type Props = {
   remaining: number;
   duration: number;
   onCancel: () => void;
+  onFinishEarly?: (actualTime: number) => void;
 };
 
-export const ExecutionTimerOverlay = ({ pending, isTimerActive, remaining, duration, onCancel }: Props) => {
+export const ExecutionTimerOverlay = ({
+  pending,
+  isTimerActive,
+  remaining,
+  duration,
+  onCancel,
+  onFinishEarly,
+}: Props) => {
   const [mounted, setMounted] = useState(false);
   const [visibleCallout, setVisibleCallout] = useState<string[] | null>(null);
 
@@ -95,7 +103,14 @@ export const ExecutionTimerOverlay = ({ pending, isTimerActive, remaining, durat
             {!isTimerActive && <p className="mt-2 text-xs text-slate-200">Время вышло</p>}
           </div>
           <div className="flex flex-wrap justify-center gap-3">
-            <Button variant="secondary" className="bg-white text-slate-900" onClick={onCancel}>
+            <Button
+              variant="secondary"
+              className="bg-white text-slate-900"
+              onClick={() => onFinishEarly?.(Math.max(duration - displayRemaining, 0))}
+            >
+              Выполнить досрочно
+            </Button>
+            <Button variant="ghost" className="text-slate-100" onClick={onCancel}>
               Прервать
             </Button>
           </div>

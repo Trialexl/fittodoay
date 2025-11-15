@@ -427,6 +427,16 @@ export const Checklist = ({
     setExecutionOverlay(null);
   };
 
+  const finishExecutionEarly = (actualTime: number) => {
+    stopExecTimer();
+    setExecutionOverlay((current) => {
+      if (current) {
+        openRestOverlay(current.exercise, current.set, actualTime, current.template, current.folderId);
+      }
+      return null;
+    });
+  };
+
   const parseNumberInput = (value: string) => {
     if (!value) return null;
     const parsed = Number(value.replace(",", "."));
@@ -926,6 +936,7 @@ ${note}`;
         remaining={execRemaining}
         duration={execDuration}
         onCancel={cancelExecutionOverlay}
+        onFinishEarly={finishExecutionEarly}
       />
 
       <Modal
