@@ -1,6 +1,24 @@
+"use client";
+
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { AnalyticsPanels } from "@/components/analytics/AnalyticsPanels";
+import { useAuth } from "@/state/AuthContext";
 
 export default function AnalyticsPage() {
+  const router = useRouter();
+  const { user, loading } = useAuth();
+
+  useEffect(() => {
+    if (!loading && !user) {
+      router.replace("/");
+    }
+  }, [loading, user, router]);
+
+  if (!user) {
+    return null;
+  }
+
   return (
     <div className="space-y-8">
       <header>

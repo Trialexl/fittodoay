@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import localFont from "next/font/local";
 import { ApiError } from "@/lib/api";
@@ -17,17 +17,17 @@ const greetingFont = localFont({
 
 export default function HomePage() {
   const router = useRouter();
-  const { login, register } = useAuth();
+  const { login, register, user, loading } = useAuth();
   const [form, setForm] = useState({ email: "", password: "" });
   const [error, setError] = useState<string | null>(null);
   const [statusText, setStatusText] = useState("Введите email и пароль");
-  const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (!form.email || !form.password) return;
 
-    setLoading(true);
+    setSubmitting(true);
     setError(null);
     setStatusText("Входим...");
 
@@ -59,9 +59,15 @@ export default function HomePage() {
       setError(message);
       setStatusText("Введите email и пароль");
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   };
+
+  useEffect(() => {
+    if (!loading && user) {
+      router.replace("/workout");
+    }
+  }, [loading, user, router]);
 
   return (
     <main className="flex min-h-[calc(100vh-80px)] flex-col items-center justify-center px-4">
@@ -97,9 +103,9 @@ export default function HomePage() {
             required
           />
           {error && <p className="text-sm text-red-500">{error}</p>}
-          <Button type="submit" className="w-full" loading={loading}>
-            Начать тренировку
-          </Button>
+        <Button type="submit" className="w-full" loading={submitting}>
+          Начать тренировку
+        </Button>
         </form>
         <p className="mt-4 text-xs text-slate-400">{statusText}</p>
       </section>

@@ -86,22 +86,13 @@ export const AppHeader = () => {
                 ))}
               </nav>
               <div className="mt-4 border-t border-slate-100 pt-3 text-slate-600">
-                {user ? (
+                {user && (
                   <div className="flex flex-col gap-2">
                     <span className="text-xs uppercase tracking-wide text-slate-400">Аккаунт</span>
                     <span className="text-sm font-medium text-slate-800">{user.email}</span>
                     <Button variant="ghost" className="justify-start px-2" onClick={logout}>
                       Выйти
                     </Button>
-                  </div>
-                ) : (
-                  <div className="flex flex-col gap-2">
-                    <Link href="/login" className="text-primary">
-                      Войти
-                    </Link>
-                    <Link href="/register" className="text-primary">
-                      Регистрация
-                    </Link>
                   </div>
                 )}
               </div>

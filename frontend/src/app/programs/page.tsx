@@ -1,15 +1,32 @@
+"use client";
+
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { ProgramBoard } from "@/components/programs/ProgramBoard";
+import { useAuth } from "@/state/AuthContext";
 
 type PageProps = {
   searchParams?: Record<string, string | string[] | undefined>;
 };
 
 export default function ProgramsPage({ searchParams }: PageProps) {
+  const router = useRouter();
+  const { user, loading } = useAuth();
   const folderId = searchParams?.folder ? Number(searchParams.folder) : undefined;
   const templateId = searchParams?.template ? Number(searchParams.template) : undefined;
   const templateName =
     typeof searchParams?.templateName === "string" ? (searchParams.templateName as string) : undefined;
   const exerciseId = searchParams?.exercise ? Number(searchParams.exercise) : undefined;
+  useEffect(() => {
+    if (!loading && !user) {
+      router.replace("/");
+    }
+  }, [loading, user, router]);
+
+  if (!user) {
+    return null;
+  }
+
   return (
     <div className="space-y-8">
       <header>

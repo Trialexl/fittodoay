@@ -58,13 +58,19 @@ const goalOptions = [
 const helperText = "Ответьте на несколько вопросов — и помощник подберёт программу на основе каталога упражнений.";
 
 export default function AssistantPage() {
-  const { token } = useAuth();
   const router = useRouter();
+  const { token, user, loading } = useAuth();
   const [step, setStep] = useState(0);
   const [form, setForm] = useState(defaultValues);
-  const [loading, setLoading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<LLMResponse | null>(null);
+
+  useEffect(() => {
+    if (!loading && !user) {
+      router.replace("/");
+    }
+  }, [loading, user, router]);
 
   useEffect(() => {
     if (!token) return;
@@ -165,7 +171,7 @@ export default function AssistantPage() {
   const prevStep = () => setStep((prev) => Math.max(prev - 1, 0));
 
   const submit = async () => {
-    setLoading(true);
+    setIsSubmitting(true);
     setError(null);
     try {
       const payload: PreferencesPayload = {
@@ -194,25 +200,12 @@ export default function AssistantPage() {
         setError("Не удалось создать программу");
       }
     } finally {
-      setLoading(false);
+      setIsSubmitting(false);
     }
   };
 
-  if (!token) {
-    return (
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 text-center">
-        <p className="text-lg font-semibold text-slate-900">Нужна авторизация</p>
-        <p className="mt-2 text-sm text-slate-500">
-          Чтобы воспользоваться помощником, войдите в аккаунт.
-        </p>
-        <div className="mt-4 flex justify-center gap-3">
-          <Button onClick={() => router.push("/login")}>Войти</Button>
-          <Button variant="secondary" onClick={() => router.push("/register")}>
-            Регистрация
-          </Button>
-        </div>
-      </div>
-    );
+  if (!user || !token) {
+    return null;
   }
 
   const currentStep = steps[step] ?? null;
@@ -279,17 +272,17 @@ export default function AssistantPage() {
 
             <div className="flex flex-wrap items-center gap-3">
               {step > 0 && (
-                <Button variant="ghost" onClick={prevStep} disabled={loading}>
+                <Button variant="ghost" onClick={prevStep} disabled={isSubmitting}>
                   Назад
                 </Button>
               )}
               {step < steps.length - 1 && (
-                <Button onClick={nextStep} disabled={loading}>
+                <Button onClick={nextStep} disabled={isSubmitting}>
                   Далее
                 </Button>
               )}
               {step === steps.length - 1 && (
-                <Button onClick={submit} loading={loading}>
+                <Button onClick={submit} loading={isSubmitting}>
                   Сгенерировать программу
                 </Button>
               )}

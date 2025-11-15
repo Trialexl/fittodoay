@@ -2,12 +2,14 @@
 
 import useSWR from "swr";
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Checklist, type WorkoutPlan } from "@/components/workout/Checklist";
 import { apiFetch } from "@/lib/api";
 import { useAuth } from "@/state/AuthContext";
 
 export default function WorkoutPage() {
-  const { token } = useAuth();
+  const router = useRouter();
+  const { token, user, loading } = useAuth();
   const [plan, setPlan] = useState<WorkoutPlan | null>(null);
   const { data: dailyLoads } = useSWR(
     token ? ["/api/analytics/days/", token] : null,
@@ -36,6 +38,12 @@ export default function WorkoutPage() {
     fetchPlan();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
+
+  useEffect(() => {
+    if (!loading && !user) {
+      router.replace("/");
+    }
+  }, [loading, user, router]);
 
   const totalSets = useMemo(() => {
     if (!plan) return 0;
@@ -73,6 +81,10 @@ export default function WorkoutPage() {
     });
     return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
   }, [plan]);
+
+  if (!user) {
+    return null;
+  }
 
   return (
     <div className="space-y-6">
