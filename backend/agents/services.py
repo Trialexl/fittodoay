@@ -102,15 +102,34 @@ class OpenRouterClient:
 
 
 class LLMProgramGenerationService:
-    def __init__(self, user):
+    def __init__(self, user, *, max_attempts: int = 2):
         self.user = user
+        self.max_attempts = max(max_attempts, 1)
 
     def generate(self, preferences: Dict[str, Any]):
         exercises_snapshot = self._serialize_exercises()
-        messages = self._build_messages(preferences, exercises_snapshot)
-        raw_text = self._call_llm(messages)
-        plan = self._parse_plan(raw_text)
-        return self._persist_plan(plan)
+        constraints = self._build_constraints()
+        base_messages = self._build_messages(preferences, exercises_snapshot, constraints)
+
+        last_error: Exception | None = None
+        for attempt in range(1, self.max_attempts + 1):
+            messages = base_messages if attempt == 1 else [*base_messages, self._retry_instruction(attempt)]
+            try:
+                raw_text = self._call_llm(messages)
+                plan = self._parse_plan(raw_text)
+                return self._persist_plan(plan)
+            except LLMInvalidResponse as exc:
+                last_error = exc
+                logger.warning(
+                    "LLM invalid response attempt %s/%s for user %s: %s",
+                    attempt,
+                    self.max_attempts,
+                    self.user.id,
+                    exc,
+                )
+        if last_error:
+            raise last_error
+        raise LLMInvalidResponse("invalid_response")
 
     def _serialize_exercises(self) -> List[Dict[str, Any]]:
         qs = Exercise.objects.all().order_by("id")[:150]
@@ -134,9 +153,18 @@ class LLMProgramGenerationService:
             )
         return snapshot
 
-    def _build_messages(self, preferences, exercises_snapshot):
+    def _build_constraints(self) -> Dict[str, int]:
+        return {
+            "min_programs": 1,
+            "max_programs": 1,
+            "min_days_per_program": 1,
+            "max_days_per_program": 5,
+            "max_exercises_per_day": 8,
+        }
+
+    def _build_messages(self, preferences, exercises_snapshot, constraints):
         system_prompt = (
-            "Ты помощник тренера фитнес-приложения. Составь от 1 до 3 программ тренировок на основе каталога упражнений. "
+            "Ты помощник тренера фитнес-приложения. Составь одну программу тренировок на основе каталога упражнений. "
             "Ответ ОБЯЗАТЕЛЬНО должен быть ПОЛНЫМ JSON-объектом без Markdown-разметки, без ```json, без текста до или после. "
             "JSON должен начинаться с символа '{' и заканчиваться '}'. Никаких комментариев, переносов с ``` и т.п.\n"
             "Строгая схема:\n"
@@ -148,16 +176,28 @@ class LLMProgramGenerationService:
             "\"time\": int|null, \"rest\": int|null, \"note\": string?\n"
             "}]}]}]}\n"
             "Только числа или null (не строки вида \"10 кг\"). Нельзя придумывать новые упражнения; "
-            "используй только id из каталога."
+            "используй только id из каталога. Если ответ и комментарии не помещаются, сократи количество дней или "
+            "упражнений, сделай комментарии короче, но всегда возвращай валидный JSON."
         )
         user_content = {
             "preferences": preferences,
             "available_exercises": exercises_snapshot,
+            "constraints": constraints,
         }
         return [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": json.dumps(user_content, ensure_ascii=False)},
         ]
+
+    def _retry_instruction(self, attempt_number: int) -> Dict[str, Any]:
+        return {
+            "role": "user",
+            "content": (
+                f"Ответ попытки #{attempt_number - 1} оказался невалидным JSON. "
+                "Пожалуйста, отправь строго валидный JSON без Markdown. Если объём слишком большой, уменьши число дней "
+                "или упражнений, сделай комментарии короче, но сохрани грамотный план."
+            ),
+        }
 
     def _call_llm(self, messages):
         try:

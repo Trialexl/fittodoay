@@ -14,6 +14,7 @@ import {
 import { arrayMove, SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import useSWR from "swr";
+import { useRouter } from "next/navigation";
 
 import { apiFetch } from "@/lib/api";
 import { useAuth } from "@/state/AuthContext";
@@ -135,6 +136,7 @@ type ProgramBoardProps = {
 };
 
 export const ProgramBoard = ({ initialFocus }: ProgramBoardProps = {}) => {
+  const router = useRouter();
   const { token } = useAuth();
   const {
     data: folders,
@@ -206,7 +208,8 @@ export const ProgramBoard = ({ initialFocus }: ProgramBoardProps = {}) => {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-end">
+      <div className="flex flex-wrap justify-end gap-3">
+        <Button onClick={() => router.push("/assistant")}>Создать с помощником</Button>
         <Button onClick={() => setProgramModal({ mode: "create" })}>Новая программа</Button>
       </div>
       <div className="space-y-4">
