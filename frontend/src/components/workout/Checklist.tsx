@@ -613,7 +613,7 @@ ${note}`;
                 </Link>
               </div>
               <div
-                className={`overflow-hidden transition-[max-height,opacity] duration-500 ease-out ${expanded ? "max-h-[2000px] opacity-100" : "max-h-0 opacity-0"}`}
+                className={`overflow-hidden transition-[max-height,opacity] duration-500 ease-out ${expanded ? "max-h-[9999px] opacity-100" : "max-h-0 opacity-0"}`}
               >
                 {expanded && (
                   <div className="mt-4 space-y-4 sm:mt-5 sm:space-y-5">
@@ -686,7 +686,7 @@ ${note}`;
                             </Link>
                           </div>
                           <div
-                            className={`mt-3 overflow-hidden transition-[max-height,opacity] duration-500 ease-out ${templateExpanded ? "max-h-[1600px] opacity-100" : "max-h-0 opacity-0"}`}
+                            className={`mt-3 overflow-hidden transition-[max-height,opacity] duration-500 ease-out ${templateExpanded ? "max-h-[9999px] opacity-100" : "max-h-0 opacity-0"}`}
                           >
                             {templateExpanded && (
                               <div className="space-y-3 sm:space-y-4">
@@ -748,7 +748,7 @@ ${note}`;
                               </div>
                             </div>
                             <div
-                              className={`mt-3 overflow-hidden transition-[max-height,opacity] duration-500 ease-out ${exerciseExpanded ? "max-h-[1200px] opacity-100" : "max-h-0 opacity-0"}`}
+                              className={`mt-3 overflow-hidden transition-[max-height,opacity] duration-500 ease-out ${exerciseExpanded ? "max-h-[9999px] opacity-100" : "max-h-0 opacity-0"}`}
                             >
                               {exerciseExpanded &&
                                 exercise.sets.map((set, setPosition) => {
