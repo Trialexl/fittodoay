@@ -580,7 +580,7 @@ ${note}`;
             <section
               key={folder.id}
               className={clsx(
-                "rounded-2xl border p-3 sm:p-4 transition-colors",
+                "rounded-2xl border p-2 sm:p-3 transition-colors",
                 folderComplete
                   ? "border-emerald-400 bg-emerald-200"
                   : "border-violet-200 bg-violet-50/80",
@@ -616,7 +616,7 @@ ${note}`;
                 className={`overflow-hidden transition-[max-height,opacity] duration-500 ease-out ${expanded ? "max-h-[9999px] opacity-100" : "max-h-0 opacity-0"}`}
               >
                 {expanded && (
-                  <div className="mt-4 space-y-4 sm:mt-5 sm:space-y-5">
+                  <div className="mt-3 space-y-3 sm:mt-4 sm:space-y-4">
                     {folder.templates.length === 0 && (
                       <p className="text-sm text-slate-500">В этой папке пока нет активных шаблонов.</p>
                     )}
@@ -644,7 +644,7 @@ ${note}`;
                         <article
                           key={template.id}
                           className={clsx(
-                            "rounded-xl border p-4 sm:p-5 transition-colors",
+                            "rounded-xl border p-3 sm:p-4 transition-colors",
                             templateComplete
                               ? "border-emerald-300 bg-emerald-100"
                               : "border-sky-200 bg-sky-50/80",
@@ -689,7 +689,7 @@ ${note}`;
                             className={`mt-3 overflow-hidden transition-[max-height,opacity] duration-500 ease-out ${templateExpanded ? "max-h-[9999px] opacity-100" : "max-h-0 opacity-0"}`}
                           >
                             {templateExpanded && (
-                              <div className="space-y-3 sm:space-y-4">
+                              <div className="space-y-2.5 sm:space-y-3.5">
                                 {template.exercises.map((exercise) => {
                             const exerciseComplete = isExerciseComplete(exercise);
                             const storedExpanded = expandedExercises[exercise.template_exercise_id];
@@ -702,10 +702,10 @@ ${note}`;
                           <div
                             key={exercise.template_exercise_id}
                             className={clsx(
-                              "rounded-xl p-3 shadow-sm ring-1 sm:p-4 transition",
+                              "rounded-xl border p-2.5 shadow-sm ring-1 sm:p-3.5 transition",
                               exerciseComplete
-                                ? "bg-emerald-50 ring-emerald-200"
-                                : "bg-slate-50/70 ring-slate-200",
+                                ? "border-emerald-200 bg-emerald-50 ring-emerald-200"
+                                : "border-slate-200 bg-slate-50/70 ring-slate-200",
                             )}
                           >
                             <div className="flex flex-wrap items-start justify-between gap-2">
@@ -771,7 +771,7 @@ ${note}`;
                                   <div
                                     key={`${exercise.template_exercise_id}-${set.set_index}`}
                                     className={clsx(
-                                      "flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2 text-xs transition sm:text-sm",
+                                      "flex flex-wrap items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs transition sm:text-sm",
                                       isComplete
                                         ? "border-emerald-100 bg-emerald-50/40"
                                         : "border-slate-200 bg-white",
