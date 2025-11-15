@@ -29,6 +29,13 @@ docker compose up -d backend db redis
 
 ## 3. Фронтенд (Next.js)
 
+### Переменные окружения
+Создайте файл `frontend/.env` (или `.env.local` для разработки) и укажите в нём все переменные, влияющие на фронтенд. Они должны начинаться с `NEXT_PUBLIC_`, чтобы попасть в браузер. Сейчас требуется только URL API:
+```
+NEXT_PUBLIC_API_URL=http://backend:8000
+```
+Для публичных окружений передавайте HTTPS-URL через `.env` или переменные Compose (`NEXT_PUBLIC_API_URL=https://api.example.com`).
+
 ### Docker-образ
 ```bash
 docker build -t fittodoey-frontend -f frontend/Dockerfile .
