@@ -633,10 +633,10 @@ ${note}`;
                   : "border-violet-200 bg-violet-50/80",
               )}
             >
-              <div className="flex items-start justify-between gap-2">
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  className="flex flex-1 items-center gap-2 text-left"
+                  className="flex flex-1 items-center gap-1 text-left"
                   onClick={() =>
                     setExpandedFolders((prev) => ({
                       ...prev,
@@ -654,7 +654,7 @@ ${note}`;
                 <Link
                   href={`/programs?folder=${folder.id}`}
                   aria-label="Редактировать программы"
-                  className="rounded-full p-2 text-slate-400 transition hover:bg-slate-100 hover:text-primary"
+                  className="ml-auto inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-primary"
                 >
                   <EditIcon />
                 </Link>
@@ -697,10 +697,10 @@ ${note}`;
                               : "border-sky-200 bg-sky-50/80",
                           )}
                         >
-                          <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex flex-wrap items-center gap-1">
                             <button
                               type="button"
-                              className="flex flex-1 items-center gap-2 text-left"
+                              className="flex flex-1 items-center gap-1 text-left"
                               onClick={() => toggleTemplate(folder.id, template.id)}
                               aria-expanded={templateExpanded}
                             >
@@ -726,7 +726,7 @@ ${note}`;
                             <Link
                               href={`/programs?template=${template.id}`}
                               aria-label="Редактировать шаблон дня"
-                              className="rounded-full p-2 text-slate-400 transition hover:bg-slate-100 hover:text-primary"
+                              className="ml-auto inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-primary"
                               onClick={(event) => event.stopPropagation()}
                             >
                               <EditIcon />
@@ -751,78 +751,72 @@ ${note}`;
                           <div
                             key={exercise.template_exercise_id}
                             className={clsx(
-                              "rounded-xl border p-2.5 shadow-sm ring-1 sm:p-3.5 transition",
+                              "rounded-xl border pl-1.5 pr-0.5 py-1.5 shadow-sm ring-1 sm:pl-3 sm:pr-1.5 sm:py-2 transition",
                               exerciseComplete
                                 ? "border-emerald-200 bg-emerald-50 ring-emerald-200"
                                 : "border-slate-200 bg-slate-50/70 ring-slate-200",
                             )}
                           >
-                            <div className="flex flex-wrap items-start justify-between gap-2">
+                            <div className="flex w-full flex-wrap items-center gap-1">
                               <button
                                 type="button"
-                                className="flex flex-1 items-center gap-2 text-left"
+                                className="flex flex-1 flex-wrap items-center gap-1 text-left"
                                 onClick={() => toggleExercise(exercise.template_exercise_id)}
                                 aria-expanded={exerciseExpanded}
                               >
-                                <span className="text-sm text-slate-400">
+                                <span className="text-sm leading-none text-slate-400">
                                   {exerciseExpanded ? "▾" : "▸"}
                                 </span>
-                                <div className="flex flex-col">
-                                  <div className="flex flex-wrap items-center gap-1">
-                                    {exerciseComplete && <CompletionIcon />}
-                                    <p
-                                      className="text-sm font-semibold text-slate-900 sm:text-base"
-                                      title={exerciseInfo}
-                                    >
-                                      {exercise.source.name}
-                                    </p>
-                                    {canShowInfo && (
-                                      <span
-                                        role="button"
-                                        tabIndex={0}
-                                        className="inline-flex h-5 w-5 items-center justify-center text-primary transition hover:text-primary/80 focus:outline-none focus:ring-2 focus:ring-primary/40"
-                                        onClick={(event) => {
-                                          event.stopPropagation();
-                                          setInfoExercise({
-                                            name: exercise.source.name,
-                                            content: exerciseInfo ?? "",
-                                          });
-                                        }}
-                                        onKeyDown={(event) => {
-                                          if (event.key === "Enter" || event.key === " ") {
-                                            event.preventDefault();
-                                            event.stopPropagation();
-                                            setInfoExercise({
-                                              name: exercise.source.name,
-                                              content: exerciseInfo ?? "",
-                                            });
-                                          }
-                                        }}
-                                        aria-label="Детали упражнения"
-                                      >
-                                        <InfoIcon />
-                                      </span>
-                                    )}
-                                    <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                                      {completedSets}/{exercise.sets.length}
-                                    </span>
-                                  </div>
-                                  {exercise.note && (
-                                    <p className="text-[11px] text-slate-500">{exercise.note}</p>
-                                  )}
-                                </div>
-                              </button>
-                              <div className="flex items-center gap-2">
-                                <Link
-                                  href={`/programs?template=${template.id}&templateName=${encodeURIComponent(template.name)}&exercise=${exercise.template_exercise_id}`}
-                                  aria-label="Редактировать упражнение"
-                                  className="rounded-full p-2 text-slate-400 transition hover:bg-slate-100 hover:text-primary"
-                                  onClick={(event) => event.stopPropagation()}
+                                {exerciseComplete && <CompletionIcon />}
+                                <p
+                                  className="text-sm font-semibold leading-none text-slate-900 sm:text-base"
+                                  title={exerciseInfo}
                                 >
-                                  <EditIcon />
-                                </Link>
-                              </div>
+                                  {exercise.source.name}
+                                </p>
+                                {canShowInfo && (
+                                  <span
+                                    role="button"
+                                    tabIndex={0}
+                                    className="inline-flex h-5 w-5 items-center justify-center text-primary transition hover:text-primary/80 focus:outline-none focus:ring-2 focus:ring-primary/40"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      setInfoExercise({
+                                        name: exercise.source.name,
+                                        content: exerciseInfo ?? "",
+                                      });
+                                    }}
+                                    onKeyDown={(event) => {
+                                      if (event.key === "Enter" || event.key === " ") {
+                                        event.preventDefault();
+                                        event.stopPropagation();
+                                        setInfoExercise({
+                                          name: exercise.source.name,
+                                          content: exerciseInfo ?? "",
+                                        });
+                                      }
+                                    }}
+                                    aria-label="Детали упражнения"
+                                  >
+                                    <InfoIcon />
+                                  </span>
+                                )}
+                                <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                                  {completedSets}/{exercise.sets.length}
+                                </span>
+                              </button>
+                              <Link
+                                href={`/programs?template=${template.id}&templateName=${encodeURIComponent(template.name)}&exercise=${exercise.template_exercise_id}`}
+                                aria-label="Редактировать упражнение"
+                                className="ml-auto mr-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-primary sm:mr-0"
+                                onClick={(event) => event.stopPropagation()}
+                              >
+                                <EditIcon />
+                              </Link>
                             </div>
+                            {exercise.note && (
+                              <p className="mt-1 text-[11px] text-slate-500">{exercise.note}</p>
+                            )}
                             <div
                               className={`mt-3 overflow-hidden transition-[max-height,opacity] duration-500 ease-out ${exerciseExpanded ? "max-h-[9999px] opacity-100" : "max-h-0 opacity-0"}`}
                             >
