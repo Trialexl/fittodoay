@@ -24,6 +24,8 @@ services:
     build:
       context: .
       dockerfile: frontend/Dockerfile
+    env_file:
+      - frontend/.env
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://backend:8000}
       PORT: 3000
