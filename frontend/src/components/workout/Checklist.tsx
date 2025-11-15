@@ -143,6 +143,8 @@ export const Checklist = ({
     set: SetPayload;
     exerciseName: string;
     duration: number;
+    template?: TemplatePayload;
+    folderId?: number;
   } | null>(null);
   const [restForm, setRestForm] = useState({ reps: "", weight: "", time: "" });
   const [restError, setRestError] = useState<string | null>(null);
@@ -273,7 +275,7 @@ export const Checklist = ({
     if (!isExecActive && execRemaining <= 0) {
       const payload = executionOverlay;
       setExecutionOverlay(null);
-      openRestOverlay(payload.exercise, payload.set, payload.duration);
+      openRestOverlay(payload.exercise, payload.set, payload.duration, payload.template, payload.folderId);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [executionOverlay, isExecActive, execRemaining]);
@@ -314,6 +316,8 @@ export const Checklist = ({
     exercise: ExercisePayload,
     set: SetPayload,
     actualTime?: number,
+    template?: TemplatePayload,
+    folderId?: number,
   ) => {
     const nextExists = hasUpcomingSets(exercise.template_exercise_id, set.set_index);
     const willCompleteExercise = exercise.sets.every((exerciseSet) => {
@@ -327,6 +331,23 @@ export const Checklist = ({
         ...prev,
         [exercise.template_exercise_id]: false,
       }));
+    }
+    if (willCompleteExercise && template && folderId !== undefined) {
+      const willCompleteTemplate = template.exercises.every((tplExercise) => {
+        if (tplExercise.template_exercise_id === exercise.template_exercise_id) {
+          return true;
+        }
+        return isExerciseComplete(tplExercise);
+      });
+      if (willCompleteTemplate) {
+        setExpandedTemplates((prev) => {
+          const folderState = prev[folderId] ?? {};
+          return {
+            ...prev,
+            [folderId]: { ...folderState, [template.id]: false },
+          };
+        });
+      }
     }
     const baseRest = set.rest ?? exercise.defaults.rest ?? 0;
     const restSeconds = nextExists ? baseRest : 10;
@@ -360,10 +381,15 @@ export const Checklist = ({
     setRestError(null);
   };
 
-  const startTimedExecution = (exercise: ExercisePayload, set: SetPayload) => {
+  const startTimedExecution = (
+    exercise: ExercisePayload,
+    set: SetPayload,
+    template?: TemplatePayload,
+    folderId?: number,
+  ) => {
     const duration = Number(set.default_time ?? exercise.defaults.time ?? 0);
     if (!duration || duration <= 0) {
-      openRestOverlay(exercise, set);
+      openRestOverlay(exercise, set, undefined, template, folderId);
       return;
     }
     setExecutionOverlay({
@@ -371,6 +397,8 @@ export const Checklist = ({
       set,
       exerciseName: exercise.source.name,
       duration,
+      template,
+      folderId,
     });
     startExecTimer(duration);
   };
@@ -800,8 +828,8 @@ ${note}`;
                                               disabled={Boolean(restOverlay) || Boolean(executionOverlay)}
                                               onClick={() =>
                                                 isTimedExercise
-                                                  ? startTimedExecution(exercise, set)
-                                                  : openRestOverlay(exercise, set)
+                                                  ? startTimedExecution(exercise, set, template, folder.id)
+                                                  : openRestOverlay(exercise, set, undefined, template, folder.id)
                                               }
                                             >
                                               {isTimedExercise ? "Начать" : "Выполнено"}
