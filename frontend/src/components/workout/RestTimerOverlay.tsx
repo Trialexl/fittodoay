@@ -1,7 +1,6 @@
 "use client";
 
 import { Button } from "@/components/ui/Button";
-import { Input } from "@/components/ui/Input";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent, PointerEvent } from "react";
 import { createPortal } from "react-dom";
@@ -262,13 +261,15 @@ const OverlayField = ({
         >
           -
         </AdjustButton>
-        <Input
-          type="number"
-          inputMode={inputMode}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className="h-10 w-20 border-white/50 bg-white/10 text-center text-white placeholder:text-slate-400"
-        />
+        <div className="flex items-center">
+          <input
+            type="number"
+            inputMode={inputMode}
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            className="h-10 w-20 rounded-lg border border-white/50 bg-white/10 text-center text-white outline-none ring-offset-transparent transition focus:ring-2 focus:ring-white/40"
+          />
+        </div>
         <AdjustButton
           direction={1}
           baseStep={step}
