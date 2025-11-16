@@ -215,6 +215,50 @@
 
 ---
 
+### GET `/api/workouts/recommendations/?date=2024-06-01`
+Возвращает предполагаемые корректировки по каждой программе (если все подходы выполнены).
+```json
+{
+  "date": "2024-06-01",
+  "folders": [
+    {
+      "folder_id": 1,
+      "folder_name": "Основные",
+      "recommendations": [
+        {
+          "template_exercise_id": 21,
+          "exercise_name": "Тяга штанги в наклоне",
+          "template_name": "День 3",
+          "current_reps": 10,
+          "current_weight": 20,
+          "average_reps": 12,
+          "average_weight": 20,
+          "suggested_reps": 8,
+          "suggested_weight": 22,
+          "has_weight": true,
+          "reason": "Среднее 12.0 повторов — время увеличить вес.",
+          "action": "increase_weight"
+        }
+      ]
+    }
+  ]
+}
+```
+
+### POST `/api/workouts/recommendations/apply/`
+Применяет выбранные значения к `TemplateExercise`.
+```json
+{
+  "date": "2024-06-01",
+  "items": [
+    { "template_exercise_id": 21, "rep_override": 8, "weight_override": 22.0 }
+  ]
+}
+```
+Ответ: `{ "updated": 1 }`.
+
+---
+
 ## 5. Analytics & AI
 
 ### GET `/api/analytics/days/?start=2024-06-01&end=2024-06-07`
@@ -268,6 +312,38 @@
 
 ### GET `/api/analytics/ai-feed/`
 Ответ: массив последних логов (дата, упражнение, фактические значения, рассчитанная нагрузка).
+
+### GET `/api/analytics/program-trends/?range=month&granularity=week`
+Агрегированная динамика по папкам и их упражнениям.
+```json
+{
+  "start": "2024-05-01",
+  "end": "2024-05-31",
+  "granularity": "week",
+  "folders": [
+    {
+      "id": 1,
+      "name": "Основные",
+      "series": [
+        { "date": "2024-05-06", "load": 150.0 },
+        { "date": "2024-05-13", "load": 180.0 }
+      ],
+      "exercises": [
+        {
+          "template_exercise_id": 21,
+          "exercise_name": "Тяга гири",
+          "template_name": "Full Body",
+          "series": [
+            { "date": "2024-05-06", "load": 60.0 },
+            { "date": "2024-05-13", "load": 70.0 }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+Параметры: `range=week|month|half-year|year`, `granularity=day|week`.
 
 ---
 

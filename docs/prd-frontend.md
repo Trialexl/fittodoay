@@ -14,8 +14,12 @@
 4. **Чеклист (`/workout`):**
    - Загрузка плана (`/api/workouts/plan/`), отображение списком папок → шаблонов → упражнений.
    - Каждому сету соответствует отдельная строка с кнопкой «Выполнено». По нажатию отправляется лог (`/api/workouts/logs/`) и запускается полноэкранный таймер отдыха.
-   - Таймер должен работать офлайн, иметь кнопки skip/restart и блокировать прокрутку при активном состоянии.
-5. **Аналитика (`/analytics`):** график нагрузки по дням, список топ упражнений, placeholder блок AI-рекомендаций (данные из `/api/analytics/ai-feed/`).
+   - Таймер должен работать офлайн, иметь кнопки skip/restart и блокировать прокрутку при активном состоянии. Для полей повторы/вес/время используются инпуты с кнопками +/- (поддержка долгого нажатия, шаги 1/2/1 сек).
+   - После завершения программы пользователь видит блок с рекомендациями (по каждой папке отдельно): отображаются фактические средние значения, предложенные корректировки и кнопка «Применить» (патчит TemplateExercise через `/api/workouts/recommendations/apply/`). При открытии блока «Рекомендации» папка автоматически раскрывается, а первое поле получает фокус.
+5. **Аналитика (`/analytics`):** 
+   - карточки ежедневной нагрузки и топ-упражнений (как базовая сводка),
+   - дополнительный график «Динамика по программам» со свитчером периодов (неделя/месяц/полгода/год) и детализациями «по программам»/«по упражнениям». В мобильном варианте график отображается как прокручиваемые столбцы. Источник данных — `/api/analytics/program-trends/?range=…&granularity=day|week`.
+   - блок AI-рекомендаций (placeholder до интеграции).
 
 ## 3. Страницы и компоненты
 | Страница | Ключевые блоки | API |
@@ -24,8 +28,8 @@
 | `/login` | Форма email/пароль, link на onboarding | `POST /api/auth/login/` |
 | `/onboarding` | Wizard из 3 шагов, прогресс, кнопки «Назад/Далее» | `POST /api/auth/register/` |
 | `/programs` | Board папок, конструктор шаблонов | `/api/programs/folders/`, `/api/programs/templates/`, `/api/exercises/`, `/api/programs/template-exercises/` |
-| `/workout` | Контролы обновления плана, список карточек, RestTimerOverlay | `/api/workouts/plan/`, `/api/workouts/logs/` |
-| `/analytics` | Панели Daily/Exercises, AI-feed placeholder | `/api/analytics/days/`, `/api/analytics/exercises/`, `/api/analytics/ai-feed/` |
+| `/workout` | Контролы обновления плана, список карточек, RestTimerOverlay, панель рекомендаций по программе | `/api/workouts/plan/`, `/api/workouts/logs/`, `/api/workouts/recommendations/`, `/api/workouts/recommendations/apply/` |
+| `/analytics` | Панели Daily/Exercises, AI-feed placeholder, «Динамика по программам» | `/api/analytics/days/`, `/api/analytics/exercises/`, `/api/analytics/program-trends/`, `/api/analytics/ai-feed/` |
 
 ## 4. Требования к UX/UI
 - **Глобальный layout:** AppHeader (название, ссылки `Программы / Чеклист / Аналитика`, состояние пользователя + кнопка «Выйти»), OfflineBanner, единые отступы (px-4 pt-20).
