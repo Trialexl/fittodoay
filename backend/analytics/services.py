@@ -131,3 +131,90 @@ def build_ai_feed(user, limit: int = 50) -> List[Dict]:
             }
         )
     return feed
+
+
+def build_program_trends(user, start: date, end: date) -> List[Dict]:
+    logs = (
+        WorkoutSetLog.objects.filter(
+            workout_day__user=user,
+            workout_day__date__range=(start, end),
+            template_exercise__isnull=False,
+        )
+        .select_related(
+            "workout_day",
+            "template_exercise__template__folder",
+            "template_exercise__exercise",
+            "template_exercise__custom_exercise",
+        )
+        .order_by("workout_day__date")
+    )
+    folder_names: Dict[int, str] = {}
+    folder_daily: Dict[int, Dict[date, float]] = defaultdict(lambda: defaultdict(float))
+    exercise_daily: Dict[int, Dict[date, float]] = defaultdict(lambda: defaultdict(float))
+    exercise_meta: Dict[int, Dict] = {}
+
+    for log in logs:
+        te = log.template_exercise
+        if not te:
+            continue
+        folder = te.template.folder
+        folder_names[folder.id] = folder.name
+        workout_date = log.workout_day.date
+        load = _compute_load(log)
+        folder_daily[folder.id][workout_date] += load
+        source = te.exercise or te.custom_exercise
+        exercise_meta[te.id] = {
+            "folder_id": folder.id,
+            "exercise_name": source.name if source else "Упражнение",
+            "template_name": te.template.name,
+        }
+        exercise_daily[te.id][workout_date] += load
+
+    if not folder_names:
+        return []
+
+    dates: List[date] = []
+    cursor = start
+    while cursor <= end:
+        dates.append(cursor)
+        cursor += timedelta(days=1)
+
+    folders_payload: List[Dict] = []
+    for folder_id, folder_name in folder_names.items():
+        series = [
+            {"date": current.isoformat(), "load": round(folder_daily[folder_id].get(current, 0.0), 2)}
+            for current in dates
+        ]
+        exercises_payload = []
+        for te_id, meta in exercise_meta.items():
+            if meta["folder_id"] != folder_id:
+                continue
+            points = [
+                {"date": current.isoformat(), "load": round(exercise_daily[te_id].get(current, 0.0), 2)}
+                for current in dates
+            ]
+            if not any(point["load"] > 0 for point in points):
+                continue
+            exercises_payload.append(
+                {
+                    "template_exercise_id": te_id,
+                    "exercise_name": meta["exercise_name"],
+                    "template_name": meta["template_name"],
+                    "series": points,
+                }
+            )
+        exercises_payload.sort(
+            key=lambda entry: sum(point["load"] for point in entry["series"]),
+            reverse=True,
+        )
+        folders_payload.append(
+            {
+                "id": folder_id,
+                "name": folder_name,
+                "series": series,
+                "exercises": exercises_payload,
+            }
+        )
+
+    folders_payload.sort(key=lambda entry: entry["name"])
+    return folders_payload

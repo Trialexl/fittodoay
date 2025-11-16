@@ -4,11 +4,12 @@ from rest_framework import permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from analytics.serializers import DateRangeSerializer
+from analytics.serializers import DateRangeSerializer, TrendRangeSerializer
 from analytics.services import (
     aggregate_daily_loads,
     aggregate_exercise_loads,
     build_ai_feed,
+    build_program_trends,
 )
 
 
@@ -44,6 +45,23 @@ class AIRecommendationsPlaceholderView(APIView):
                 "status": "pending",
                 "message": "AI-рекомендации появятся после интеграции. Ниже подготовленные данные.",
                 "feed": feed,
+            }
+        )
+
+
+class ProgramTrendsView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        serializer = TrendRangeSerializer(data=request.query_params)
+        serializer.is_valid(raise_exception=True)
+        start, end = serializer.get_range()
+        folders = build_program_trends(request.user, start, end)
+        return Response(
+            {
+                "start": start.isoformat(),
+                "end": end.isoformat(),
+                "folders": folders,
             }
         )
 

@@ -4,6 +4,8 @@ import { apiFetch } from "@/lib/api";
 import { useAuth } from "@/state/AuthContext";
 import useSWR from "swr";
 
+import { ProgramTrendPanel } from "@/components/analytics/ProgramTrendPanel";
+
 type DailyItem = { date: string; load: number };
 type ExerciseItem = { id: string; name: string; type: string; load: number; sets: number };
 
@@ -51,6 +53,7 @@ export const AnalyticsPanels = () => {
           ))}
         </div>
       </div>
+      <ProgramTrendPanel />
     </div>
   );
 };
