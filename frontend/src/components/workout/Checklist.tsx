@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import clsx from "clsx";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
@@ -205,6 +205,7 @@ export const Checklist = ({
   const [recommendationsSaving, setRecommendationsSaving] = useState<number | null>(null);
   const [recommendationsError, setRecommendationsError] = useState<string | null>(null);
   const [recommendationsApplied, setRecommendationsApplied] = useState<Record<number, boolean>>({});
+  const recommendationFocusRefs = useRef<Record<number, HTMLInputElement | null>>({});
 
   const hasTemplates =
     plan?.folders.some((folder) => folder.templates.length > 0) ?? false;
@@ -712,11 +713,17 @@ ${note}`;
     const currentlyOpen = openRecommendationFolders[folderId] ?? false;
     if (!currentlyOpen) {
       await fetchRecommendationsForDay();
+      setExpandedFolders((prev) => ({ ...prev, [folderId]: true }));
     }
     setOpenRecommendationFolders((prev) => ({
       ...prev,
       [folderId]: !currentlyOpen,
     }));
+    if (!currentlyOpen) {
+      setTimeout(() => {
+        recommendationFocusRefs.current[folderId]?.focus();
+      }, 60);
+    }
   };
 
   const handleRecommendationFieldChange = (
@@ -1162,7 +1169,8 @@ ${note}`;
                           )}
                         {folderRecommendation && folderRecommendation.recommendations.length > 0 && (
                           <div className="mt-4 space-y-3">
-                            {folderRecommendation.recommendations.map((rec) => {
+                            {folderRecommendation.recommendations.map((rec, recIndex) => {
+                              const isFirstRec = recIndex === 0;
                               const formValues =
                                 recommendationForms[folder.id]?.[rec.template_exercise_id] ?? {
                                   reps:
@@ -1209,6 +1217,11 @@ ${note}`;
                                     </div>
                                     <div className="space-y-2">
                                       <Input
+                                        ref={(element) => {
+                                          if (isFirstRec) {
+                                            recommendationFocusRefs.current[folder.id] = element;
+                                          }
+                                        }}
                                         label="Повторы"
                                         type="number"
                                         inputMode="numeric"
