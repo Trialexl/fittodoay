@@ -1001,7 +1001,8 @@ const TemplateExerciseModal = ({
     <Modal
       open
       onClose={onClose}
-      title={`${state.mode === "edit" ? "Редактирование" : "Новое"} упражнение • ${state.templateName}`}
+      title={`${state.mode === "edit" ? "Редактирование упражнения" : "Новое упражнение"}`}
+      description={state.templateName}
       className="max-w-2xl"
     >
       <div className="space-y-4">
