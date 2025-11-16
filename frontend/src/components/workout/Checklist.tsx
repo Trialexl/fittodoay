@@ -95,6 +95,27 @@ type WorkoutLog = {
   actual_time: number | null;
 };
 
+type ExerciseRecommendation = {
+  template_exercise_id: number;
+  exercise_name: string;
+  template_name: string;
+  current_reps: number | null;
+  current_weight: number | null;
+  average_reps: number | null;
+  average_weight: number | null;
+  suggested_reps: number | null;
+  suggested_weight: number | null;
+  has_weight: boolean;
+  reason?: string | null;
+  action?: string | null;
+};
+
+type FolderRecommendation = {
+  folder_id: number;
+  folder_name: string;
+  recommendations: ExerciseRecommendation[];
+};
+
 export type PendingSet = {
   templateExerciseId: number;
   setIndex: number;
@@ -174,6 +195,16 @@ export const Checklist = ({
   const [expandedFolders, setExpandedFolders] = useState<Record<number, boolean>>({});
   const [expandedTemplates, setExpandedTemplates] = useState<Record<number, Record<number, boolean>>>({});
   const [expandedExercises, setExpandedExercises] = useState<Record<number, boolean>>({});
+  const [folderRecommendations, setFolderRecommendations] = useState<Record<number, FolderRecommendation>>({});
+  const [recommendationForms, setRecommendationForms] = useState<
+    Record<number, Record<number, { reps: string; weight: string }>>
+  >({});
+  const [openRecommendationFolders, setOpenRecommendationFolders] = useState<Record<number, boolean>>({});
+  const [recommendationsLoadedDate, setRecommendationsLoadedDate] = useState<string | null>(null);
+  const [recommendationsLoading, setRecommendationsLoading] = useState(false);
+  const [recommendationsSaving, setRecommendationsSaving] = useState<number | null>(null);
+  const [recommendationsError, setRecommendationsError] = useState<string | null>(null);
+  const [recommendationsApplied, setRecommendationsApplied] = useState<Record<number, boolean>>({});
 
   const hasTemplates =
     plan?.folders.some((folder) => folder.templates.length > 0) ?? false;
@@ -281,6 +312,15 @@ export const Checklist = ({
   }, [plan?.folders, logsBySet, isExerciseComplete]);
 
   useEffect(() => {
+    setFolderRecommendations({});
+    setRecommendationForms({});
+    setOpenRecommendationFolders({});
+    setRecommendationsLoadedDate(null);
+    setRecommendationsApplied({});
+    setRecommendationsError(null);
+  }, [plan?.date]);
+
+  useEffect(() => {
     if (!restOverlay || restOverlay.autoSubmitted || restOverlay.rest <= 0) return;
     if (restDuration === 0) return;
     if (!isRestActive && restRemaining <= 0) {
@@ -299,20 +339,6 @@ export const Checklist = ({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [executionOverlay, isExecActive, execRemaining]);
-
-  if (!plan || !hasTemplates) {
-    return (
-      <div className="rounded-2xl border border-dashed border-slate-300 bg-white/60 p-6 text-center">
-        <p className="text-lg font-semibold text-slate-900">На сегодня тренировок нет</p>
-        <p className="mt-2 text-sm text-slate-500">
-          Активируйте папку «Основная» или создайте новую программу, чтобы заполнить чеклист.
-        </p>
-        <Link href="/programs" className="inline-block">
-          <Button className="mt-4">Создать программу</Button>
-        </Link>
-      </div>
-    );
-  }
 
   const getLogForSet = (templateExerciseId: number, setIndex: number) =>
     logsBySet.get(keyForSet(templateExerciseId, setIndex));
@@ -634,12 +660,175 @@ ${note}`;
     }));
   };
 
+  const fetchRecommendationsForDay = useCallback(async () => {
+    if (!auth.token || !plan?.date) return null;
+    setRecommendationsLoading(true);
+    setRecommendationsError(null);
+    try {
+      const response = await apiFetch<{ date: string; folders: FolderRecommendation[] }>(
+        `/api/workouts/recommendations/?date=${plan.date}`,
+        { token: auth.token },
+      );
+      const map: Record<number, FolderRecommendation> = {};
+      const forms: Record<number, Record<number, { reps: string; weight: string }>> = {};
+      response.folders.forEach((folder) => {
+        map[folder.folder_id] = folder;
+        const folderControls: Record<number, { reps: string; weight: string }> = {};
+        folder.recommendations.forEach((rec) => {
+          const repValue =
+            rec.suggested_reps ?? rec.current_reps ?? (rec.average_reps ? Math.round(rec.average_reps) : null);
+          const weightValue =
+            rec.suggested_weight ??
+            rec.current_weight ??
+            (rec.average_weight !== null && rec.average_weight !== undefined ? rec.average_weight : null);
+          const normalizedWeight =
+            weightValue !== null && weightValue !== undefined
+              ? Math.round(Number(weightValue) * 100) / 100
+              : null;
+          folderControls[rec.template_exercise_id] = {
+            reps: repValue !== null && repValue !== undefined ? String(repValue) : "",
+            weight:
+              rec.has_weight && normalizedWeight !== null && normalizedWeight !== undefined
+                ? String(normalizedWeight)
+                : "",
+          };
+        });
+        forms[folder.folder_id] = folderControls;
+      });
+      setFolderRecommendations(map);
+      setRecommendationForms(forms);
+      setRecommendationsLoadedDate(response.date);
+      setRecommendationsApplied({});
+      return map;
+    } catch (error: any) {
+      setRecommendationsError(error?.message ?? "Не удалось получить рекомендации");
+      return null;
+    } finally {
+      setRecommendationsLoading(false);
+    }
+  }, [auth.token, plan?.date]);
+
+  const handleRecommendationToggle = async (folderId: number) => {
+    const currentlyOpen = openRecommendationFolders[folderId] ?? false;
+    if (!currentlyOpen) {
+      await fetchRecommendationsForDay();
+    }
+    setOpenRecommendationFolders((prev) => ({
+      ...prev,
+      [folderId]: !currentlyOpen,
+    }));
+  };
+
+  const handleRecommendationFieldChange = (
+    folderId: number,
+    templateExerciseId: number,
+    field: "reps" | "weight",
+    value: string,
+  ) => {
+    setRecommendationForms((prev) => {
+      const folderFields = prev[folderId] ?? {};
+      const current = folderFields[templateExerciseId] ?? { reps: "", weight: "" };
+      return {
+        ...prev,
+        [folderId]: {
+          ...folderFields,
+          [templateExerciseId]: {
+            ...current,
+            [field]: value,
+          },
+        },
+      };
+    });
+    setRecommendationsApplied((prev) => ({ ...prev, [folderId]: false }));
+  };
+
+  const applyRecommendationsForFolder = async (folderId: number) => {
+    if (!auth.token || !plan?.date) {
+      setRecommendationsError("Требуется авторизация");
+      return;
+    }
+    const folderData = folderRecommendations[folderId];
+    if (!folderData || folderData.recommendations.length === 0) {
+      setRecommendationsError("Для этой программы пока нет рекомендаций");
+      return;
+    }
+    const folderFields = recommendationForms[folderId] ?? {};
+    const items = folderData.recommendations
+      .map((rec) => {
+        const controls = folderFields[rec.template_exercise_id];
+        if (!controls) return null;
+        const payload: {
+          template_exercise_id: number;
+          rep_override?: number;
+          weight_override?: number;
+        } = { template_exercise_id: rec.template_exercise_id };
+        let hasValue = false;
+        const repValue = (controls.reps ?? "").trim();
+        if (repValue) {
+          const numeric = Number(repValue.replace(",", "."));
+          if (!Number.isNaN(numeric)) {
+            payload.rep_override = Math.max(1, Math.round(numeric));
+            hasValue = true;
+          }
+        }
+        const weightValue = (controls.weight ?? "").trim();
+        if (rec.has_weight && weightValue) {
+          const numeric = Number(weightValue.replace(",", "."));
+          if (!Number.isNaN(numeric)) {
+            payload.weight_override = Number(numeric.toFixed(2));
+            hasValue = true;
+          }
+        }
+        return hasValue ? payload : null;
+      })
+      .filter((item): item is { template_exercise_id: number; rep_override?: number; weight_override?: number } =>
+        Boolean(item),
+      );
+    if (items.length === 0) {
+      setRecommendationsError("Заполните значения для применения");
+      return;
+    }
+    setRecommendationsSaving(folderId);
+    setRecommendationsError(null);
+    try {
+      await apiFetch("/api/workouts/recommendations/apply/", {
+        method: "POST",
+        token: auth.token,
+        body: JSON.stringify({
+          date: plan.date,
+          items,
+        }),
+      });
+      setRecommendationsApplied((prev) => ({ ...prev, [folderId]: true }));
+    } catch (error: any) {
+      setRecommendationsError(error?.message ?? "Не удалось применить рекомендации");
+    } finally {
+      setRecommendationsSaving(null);
+    }
+  };
+
+  if (!plan || !hasTemplates) {
+    return (
+      <div className="rounded-2xl border border-dashed border-slate-300 bg-white/60 p-6 text-center">
+        <p className="text-lg font-semibold text-slate-900">На сегодня тренировок нет</p>
+        <p className="mt-2 text-sm text-slate-500">
+          Активируйте папку «Основная» или создайте новую программу, чтобы заполнить чеклист.
+        </p>
+        <Link href="/programs" className="inline-block">
+          <Button className="mt-4">Создать программу</Button>
+        </Link>
+      </div>
+    );
+  }
+
   return (
     <>
       <div className="space-y-4 sm:space-y-5">
         {plan.folders.map((folder) => {
           const expanded = expandedFolders[folder.id] ?? true;
           const folderComplete = isFolderComplete(folder);
+          const folderRecommendation = folderRecommendations[folder.id];
+          const recommendationOpen = openRecommendationFolders[folder.id] ?? false;
           return (
             <section
               key={folder.id}
@@ -668,13 +857,26 @@ ${note}`;
                     <h3 className="text-base font-semibold text-slate-900 sm:text-lg">{folder.name}</h3>
                   </div>
                 </button>
-                <Link
-                  href={`/programs?folder=${folder.id}`}
-                  aria-label="Редактировать программы"
-                  className="ml-auto inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-primary"
-                >
-                  <EditIcon />
-                </Link>
+                <div className="ml-auto flex items-center gap-2">
+                  {folderComplete && (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      className="rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide"
+                      onClick={() => handleRecommendationToggle(folder.id)}
+                      disabled={recommendationsLoading && !recommendationOpen}
+                    >
+                      {recommendationOpen ? "Скрыть рекомендации" : "Рекомендации"}
+                    </Button>
+                  )}
+                  <Link
+                    href={`/programs?folder=${folder.id}`}
+                    aria-label="Редактировать программы"
+                    className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-primary"
+                  >
+                    <EditIcon />
+                  </Link>
+                </div>
               </div>
               <div
                 className={`overflow-hidden transition-[max-height,opacity] duration-500 ease-out ${expanded ? "max-h-[9999px] opacity-100" : "max-h-0 opacity-0"}`}
@@ -915,9 +1117,138 @@ ${note}`;
                         </div>
                       )}
                     </div>
-                  </article>
-                );
+                        </article>
+                      );
                     })}
+                    {folderComplete && recommendationOpen && (
+                      <div className="rounded-2xl border border-slate-300 bg-white/80 p-3 shadow-sm sm:p-4">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <p className="text-sm font-semibold text-slate-900">Рекомендации по программе</p>
+                            <p className="text-xs text-slate-500">Средние результаты за сегодня</p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {recommendationsApplied[folder.id] && (
+                              <span className="text-xs font-semibold text-emerald-600">Сохранено</span>
+                            )}
+                            <Button
+                              type="button"
+                              variant="primary"
+                              className="rounded-full px-4"
+                              loading={recommendationsSaving === folder.id}
+                              disabled={
+                                recommendationsSaving === folder.id ||
+                                recommendationsLoading ||
+                                !folderRecommendation ||
+                                folderRecommendation.recommendations.length === 0
+                              }
+                              onClick={() => applyRecommendationsForFolder(folder.id)}
+                            >
+                              Применить
+                            </Button>
+                          </div>
+                        </div>
+                        {recommendationsError && (
+                          <p className="mt-2 text-sm text-red-500">{recommendationsError}</p>
+                        )}
+                        {recommendationsLoading && !folderRecommendation && (
+                          <p className="mt-3 text-sm text-slate-500">Считаем рекомендации…</p>
+                        )}
+                        {!recommendationsLoading &&
+                          (!folderRecommendation || folderRecommendation.recommendations.length === 0) && (
+                            <p className="mt-3 text-sm text-slate-500">
+                              Пока нет изменений — план соответствует вашим результатам.
+                            </p>
+                          )}
+                        {folderRecommendation && folderRecommendation.recommendations.length > 0 && (
+                          <div className="mt-4 space-y-3">
+                            {folderRecommendation.recommendations.map((rec) => {
+                              const formValues =
+                                recommendationForms[folder.id]?.[rec.template_exercise_id] ?? {
+                                  reps:
+                                    rec.suggested_reps !== null && rec.suggested_reps !== undefined
+                                      ? String(rec.suggested_reps)
+                                      : "",
+                                  weight:
+                                    rec.has_weight && rec.suggested_weight !== null && rec.suggested_weight !== undefined
+                                      ? String(rec.suggested_weight)
+                                      : "",
+                                };
+                              const planWeight = formatNumberDisplay(rec.current_weight);
+                              const averageWeight = formatNumberDisplay(rec.average_weight);
+                              return (
+                                <div
+                                  key={rec.template_exercise_id}
+                                  className="rounded-xl border border-slate-200 bg-white/90 p-3 shadow-sm"
+                                >
+                                  <div className="flex flex-wrap items-start justify-between gap-2">
+                                    <div>
+                                      <p className="text-sm font-semibold text-slate-900">{rec.exercise_name}</p>
+                                      <p className="text-xs text-slate-500">{rec.template_name}</p>
+                                    </div>
+                                    {rec.reason && (
+                                      <p className="text-xs text-slate-500 sm:max-w-xs">{rec.reason}</p>
+                                    )}
+                                  </div>
+                                  <div className="mt-3 grid gap-3 text-sm sm:grid-cols-3">
+                                    <div>
+                                      <p className="text-[11px] uppercase tracking-wide text-slate-400">План</p>
+                                      <p className="font-semibold text-slate-900">
+                                        {rec.current_reps ?? "—"}
+                                        {planWeight && ` · ${planWeight} кг`}
+                                      </p>
+                                    </div>
+                                    <div>
+                                      <p className="text-[11px] uppercase tracking-wide text-slate-400">Среднее</p>
+                                      <p className="text-slate-900">
+                                        {rec.average_reps !== null && rec.average_reps !== undefined
+                                          ? rec.average_reps.toFixed(1)
+                                          : "—"}
+                                        {averageWeight && ` · ${averageWeight} кг`}
+                                      </p>
+                                    </div>
+                                    <div className="space-y-2">
+                                      <Input
+                                        label="Повторы"
+                                        type="number"
+                                        inputMode="numeric"
+                                        className="w-full"
+                                        value={formValues.reps}
+                                        onChange={(event) =>
+                                          handleRecommendationFieldChange(
+                                            folder.id,
+                                            rec.template_exercise_id,
+                                            "reps",
+                                            event.target.value,
+                                          )
+                                        }
+                                      />
+                                      {rec.has_weight && (
+                                        <Input
+                                          label="Вес (кг)"
+                                          type="number"
+                                          inputMode="decimal"
+                                          className="w-full"
+                                          value={formValues.weight}
+                                          onChange={(event) =>
+                                            handleRecommendationFieldChange(
+                                              folder.id,
+                                              rec.template_exercise_id,
+                                              "weight",
+                                              event.target.value,
+                                            )
+                                          }
+                                        />
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
