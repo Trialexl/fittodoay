@@ -1,8 +1,8 @@
 "use client";
 
 import { Button } from "@/components/ui/Button";
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { MouseEvent, PointerEvent } from "react";
+import { AdjustNumberControl } from "@/components/workout/AdjustNumberControl";
+import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 
 import type { PendingSet } from "./Checklist";
@@ -172,7 +172,7 @@ export const RestTimerOverlay = ({
           <div className="w-full max-w-md space-y-3 text-left text-slate-200">
             {!pending.hasTime ? (
               <div className="flex w-full flex-wrap items-center justify-center gap-3">
-                <OverlayField
+                <AdjustNumberControl
                   label="Повторы"
                   value={values.reps}
                   onChange={(value) => onChange("reps", value)}
@@ -181,7 +181,7 @@ export const RestTimerOverlay = ({
                   className="min-w-[140px] flex-1"
                 />
                 {pending.hasWeight && (
-                  <OverlayField
+                  <AdjustNumberControl
                     label="Вес (кг)"
                     value={values.weight}
                     onChange={(value) => onChange("weight", value)}
@@ -193,7 +193,7 @@ export const RestTimerOverlay = ({
               </div>
             ) : (
               <div className="flex justify-center">
-                <OverlayField
+                <AdjustNumberControl
                   label="Время (сек)"
                   value={values.time}
                   onChange={(value) => onChange("time", value)}
@@ -216,155 +216,4 @@ export const RestTimerOverlay = ({
   );
 
   return createPortal(overlay, document.body);
-};
-
-const HOLD_DELAY_MS = 450;
-const HOLD_REPEAT_MS = 120;
-const HOLD_MULTIPLIER = 5;
-
-const OverlayField = ({
-  label,
-  value,
-  onChange,
-  className = "",
-  inputMode = "numeric",
-  step,
-  holdStep,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  className?: string;
-  inputMode?: "numeric" | "decimal";
-  step: number;
-  holdStep?: number;
-}) => {
-  const effectiveHoldStep = holdStep ?? step * HOLD_MULTIPLIER;
-
-  const adjustValue = (delta: number) => {
-    const parsed = Number.parseFloat(value);
-    const current = Number.isFinite(parsed) ? parsed : 0;
-    const next = Math.max(0, Math.round((current + delta) * 100) / 100);
-    onChange(next.toString());
-  };
-
-  return (
-    <label className={`block text-center text-xs uppercase tracking-wider text-slate-300 ${className}`}>
-      <span className="block">{label}</span>
-      <div className="mt-1 flex items-center justify-center gap-2">
-        <AdjustButton
-          direction={-1}
-          baseStep={step}
-          holdStep={effectiveHoldStep}
-          onAdjust={adjustValue}
-          ariaLabel={`Уменьшить ${label.toLowerCase()}`}
-        >
-          -
-        </AdjustButton>
-        <div className="flex items-center">
-          <input
-            type="number"
-            inputMode={inputMode}
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            className="h-10 w-20 rounded-lg border border-white/50 bg-white/10 text-center text-white outline-none ring-offset-transparent transition focus:ring-2 focus:ring-white/40"
-          />
-        </div>
-        <AdjustButton
-          direction={1}
-          baseStep={step}
-          holdStep={effectiveHoldStep}
-          onAdjust={adjustValue}
-          ariaLabel={`Увеличить ${label.toLowerCase()}`}
-        >
-          +
-        </AdjustButton>
-      </div>
-    </label>
-  );
-};
-
-type AdjustButtonProps = {
-  direction: 1 | -1;
-  baseStep: number;
-  holdStep: number;
-  onAdjust: (delta: number) => void;
-  ariaLabel: string;
-  children: string;
-};
-
-const AdjustButton = ({ direction, baseStep, holdStep, onAdjust, ariaLabel, children }: AdjustButtonProps) => {
-  const holdTimeoutRef = useRef<number | null>(null);
-  const holdIntervalRef = useRef<number | null>(null);
-  const pointerActiveRef = useRef(false);
-  const holdActiveRef = useRef(false);
-  const suppressClickRef = useRef(false);
-
-  const clearTimers = () => {
-    if (holdTimeoutRef.current !== null) {
-      window.clearTimeout(holdTimeoutRef.current);
-      holdTimeoutRef.current = null;
-    }
-    if (holdIntervalRef.current !== null) {
-      window.clearInterval(holdIntervalRef.current);
-      holdIntervalRef.current = null;
-    }
-    holdActiveRef.current = false;
-  };
-
-  const release = (shouldApplyBase: boolean) => {
-    if (pointerActiveRef.current && !holdActiveRef.current && shouldApplyBase) {
-      onAdjust(direction * baseStep);
-    }
-    pointerActiveRef.current = false;
-    suppressClickRef.current = true;
-    clearTimers();
-  };
-
-  const handlePointerDown = (event: PointerEvent<HTMLButtonElement>) => {
-    event.preventDefault();
-    pointerActiveRef.current = true;
-    holdActiveRef.current = false;
-    suppressClickRef.current = false;
-    holdTimeoutRef.current = window.setTimeout(() => {
-      holdActiveRef.current = true;
-      onAdjust(direction * holdStep);
-      holdIntervalRef.current = window.setInterval(() => {
-        onAdjust(direction * holdStep);
-      }, HOLD_REPEAT_MS);
-    }, HOLD_DELAY_MS);
-  };
-
-  const handlePointerUp = (event: PointerEvent<HTMLButtonElement>) => {
-    event.preventDefault();
-    release(true);
-  };
-
-  const handlePointerLeave = () => release(false);
-  const handlePointerCancel = () => release(false);
-
-  const handleClick = (event: MouseEvent<HTMLButtonElement>) => {
-    if (pointerActiveRef.current || suppressClickRef.current) {
-      event.preventDefault();
-      suppressClickRef.current = false;
-      return;
-    }
-    event.preventDefault();
-    onAdjust(direction * baseStep);
-  };
-
-  return (
-    <button
-      type="button"
-      aria-label={ariaLabel}
-      className="flex h-10 w-10 items-center justify-center rounded-full border border-white/40 bg-white/10 text-lg font-semibold text-white transition hover:bg-white/20 active:bg-white/30"
-      onPointerDown={handlePointerDown}
-      onPointerUp={handlePointerUp}
-      onPointerLeave={handlePointerLeave}
-      onPointerCancel={handlePointerCancel}
-      onClick={handleClick}
-    >
-      {children}
-    </button>
-  );
 };

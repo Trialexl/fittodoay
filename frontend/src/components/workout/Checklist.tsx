@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
+import { AdjustNumberControl } from "@/components/workout/AdjustNumberControl";
 import { RestTimerOverlay } from "@/components/workout/RestTimerOverlay";
 import { ExecutionTimerOverlay } from "@/components/workout/ExecutionTimerOverlay";
 import { useRestTimer } from "@/hooks/useRestTimer";
@@ -316,8 +317,19 @@ export const Checklist = ({
   const getLogForSet = (templateExerciseId: number, setIndex: number) =>
     logsBySet.get(keyForSet(templateExerciseId, setIndex));
 
-  const toInput = (value: number | null | undefined) =>
-    value === null || value === undefined ? "" : String(value);
+  const formatNumberDisplay = (value: number | null | undefined) => {
+    if (value === null || value === undefined) return null;
+    const raw = String(value);
+    if (!raw.includes(".")) {
+      return raw;
+    }
+    return raw.replace(/\.?0+$/, "");
+  };
+
+  const toInput = (value: number | null | undefined) => {
+    const formatted = formatNumberDisplay(value);
+    return formatted === null ? "" : formatted;
+  };
 
   const hasUpcomingSets = (templateExerciseId: number, setIndex: number) => {
     const key = keyForSet(templateExerciseId, setIndex);
@@ -547,15 +559,6 @@ ${note}`;
     setRestForm((prev) => ({ ...prev, [field]: value }));
   };
 
-  const formatNumberDisplay = (value: number | null | undefined) => {
-    if (value === null || value === undefined) return null;
-    const raw = String(value);
-    if (!raw.includes(".")) {
-      return raw;
-    }
-    return raw.replace(/\.?0+$/, "");
-  };
-
   const formatPlanSet = (exercise: ExercisePayload, set: SetPayload) => {
     const reps = formatNumberDisplay(set.default_reps ?? exercise.defaults.reps);
     const weight = formatNumberDisplay(set.default_weight ?? exercise.defaults.weight);
@@ -596,16 +599,20 @@ ${note}`;
 
   const editModalFooter = editState ? (
     <>
-      <Button variant="ghost" onClick={closeEditModal}>
+      <button
+        type="button"
+        onClick={closeEditModal}
+        className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+      >
         Отмена
-      </Button>
-      <Button
-        variant="ghost"
-        className="text-red-600 hover:text-red-700"
+      </button>
+      <button
+        type="button"
         onClick={deleteEditLog}
+        className="rounded-xl border border-violet-200 px-4 py-2 text-sm font-semibold text-violet-600 transition hover:border-violet-300 hover:bg-violet-50"
       >
         Отменить выполнение
-      </Button>
+      </button>
       <Button onClick={saveEditLog}>Сохранить</Button>
     </>
   ) : null;
@@ -961,36 +968,37 @@ ${note}`;
         {editState && (
           <div className="space-y-4">
             {!editState.hasTime ? (
-              <div className="flex flex-wrap items-center justify-center gap-3 text-center">
-                <Input
+              <div className="flex flex-wrap items-center justify-center gap-4 text-center">
+                <AdjustNumberControl
                   label="Повторы"
-                  type="number"
-                  inputMode="numeric"
-                  className="w-20"
                   value={editForm.reps}
-                  onChange={(event) => setEditForm((prev) => ({ ...prev, reps: event.target.value }))}
+                  onChange={(value) => setEditForm((prev) => ({ ...prev, reps: value }))}
+                  step={1}
+                  inputMode="numeric"
+                  variant="light"
+                  className="min-w-[140px]"
                 />
                 {editState.hasWeight && (
-                  <Input
+                  <AdjustNumberControl
                     label="Вес (кг)"
-                    type="number"
-                    inputMode="decimal"
-                    className="w-20"
                     value={editForm.weight}
-                    onChange={(event) =>
-                      setEditForm((prev) => ({ ...prev, weight: event.target.value }))
-                    }
+                    onChange={(value) => setEditForm((prev) => ({ ...prev, weight: value }))}
+                    step={2}
+                    inputMode="decimal"
+                    variant="light"
+                    className="min-w-[140px]"
                   />
                 )}
               </div>
             ) : (
-              <Input
+              <AdjustNumberControl
                 label="Время (сек)"
-                type="number"
-                inputMode="numeric"
-                className="w-20"
                 value={editForm.time}
-                onChange={(event) => setEditForm((prev) => ({ ...prev, time: event.target.value }))}
+                onChange={(value) => setEditForm((prev) => ({ ...prev, time: value }))}
+                step={1}
+                inputMode="numeric"
+                variant="light"
+                className="mx-auto max-w-[200px]"
               />
             )}
             {editError && <p className="text-sm text-red-500 text-center">{editError}</p>}
