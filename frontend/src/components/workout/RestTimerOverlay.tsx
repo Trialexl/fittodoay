@@ -2,7 +2,8 @@
 
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { MouseEvent, PointerEvent } from "react";
 import { createPortal } from "react-dom";
 
 import type { PendingSet } from "./Checklist";
@@ -148,7 +149,11 @@ export const RestTimerOverlay = ({
             <div className="flex flex-col items-center">
               <div className="relative flex h-40 w-40 items-center justify-center rounded-full border border-white/30 sm:h-48 sm:w-48">
                 <span className="text-4xl font-bold tabular-nums sm:text-5xl">{displayRemaining}s</span>
-                <svg className="absolute inset-0 h-full w-full">
+                <svg
+                  className="absolute inset-0 h-full w-full"
+                  viewBox="0 0 160 160"
+                  preserveAspectRatio="xMidYMid meet"
+                >
                   <circle cx="80" cy="80" r="70" stroke="rgba(255,255,255,0.2)" strokeWidth="8" fill="none" />
                   <circle
                     cx="80"
@@ -172,16 +177,18 @@ export const RestTimerOverlay = ({
                   label="Повторы"
                   value={values.reps}
                   onChange={(value) => onChange("reps", value)}
-                  className="w-20"
+                  step={1}
                   inputMode="numeric"
+                  className="min-w-[140px] flex-1"
                 />
                 {pending.hasWeight && (
                   <OverlayField
                     label="Вес (кг)"
                     value={values.weight}
                     onChange={(value) => onChange("weight", value)}
-                    className="w-20"
+                    step={2}
                     inputMode="decimal"
+                    className="min-w-[140px] flex-1"
                   />
                 )}
               </div>
@@ -191,8 +198,9 @@ export const RestTimerOverlay = ({
                   label="Время (сек)"
                   value={values.time}
                   onChange={(value) => onChange("time", value)}
-                  className="mx-auto w-20 text-center"
+                  step={1}
                   inputMode="numeric"
+                  className="min-w-[140px]"
                 />
               </div>
             )}
@@ -211,27 +219,151 @@ export const RestTimerOverlay = ({
   return createPortal(overlay, document.body);
 };
 
+const HOLD_DELAY_MS = 450;
+const HOLD_REPEAT_MS = 120;
+const HOLD_MULTIPLIER = 5;
+
 const OverlayField = ({
   label,
   value,
   onChange,
   className = "",
   inputMode = "numeric",
+  step,
+  holdStep,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   className?: string;
   inputMode?: "numeric" | "decimal";
-}) => (
-  <label className={`block text-xs uppercase tracking-wider text-slate-300 text-center ${className}`}>
-    <span className="block">{label}</span>
-    <Input
-      type="number"
-      inputMode={inputMode}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="mt-1 w-20 border-white/50 bg-white/10 text-center text-white placeholder:text-slate-400"
-    />
-  </label>
-);
+  step: number;
+  holdStep?: number;
+}) => {
+  const effectiveHoldStep = holdStep ?? step * HOLD_MULTIPLIER;
+
+  const adjustValue = (delta: number) => {
+    const parsed = Number.parseFloat(value);
+    const current = Number.isFinite(parsed) ? parsed : 0;
+    const next = Math.max(0, Math.round((current + delta) * 100) / 100);
+    onChange(next.toString());
+  };
+
+  return (
+    <label className={`block text-center text-xs uppercase tracking-wider text-slate-300 ${className}`}>
+      <span className="block">{label}</span>
+      <div className="mt-1 flex items-center justify-center gap-2">
+        <AdjustButton
+          direction={-1}
+          baseStep={step}
+          holdStep={effectiveHoldStep}
+          onAdjust={adjustValue}
+          ariaLabel={`Уменьшить ${label.toLowerCase()}`}
+        >
+          -
+        </AdjustButton>
+        <Input
+          type="number"
+          inputMode={inputMode}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="h-10 w-20 border-white/50 bg-white/10 text-center text-white placeholder:text-slate-400"
+        />
+        <AdjustButton
+          direction={1}
+          baseStep={step}
+          holdStep={effectiveHoldStep}
+          onAdjust={adjustValue}
+          ariaLabel={`Увеличить ${label.toLowerCase()}`}
+        >
+          +
+        </AdjustButton>
+      </div>
+    </label>
+  );
+};
+
+type AdjustButtonProps = {
+  direction: 1 | -1;
+  baseStep: number;
+  holdStep: number;
+  onAdjust: (delta: number) => void;
+  ariaLabel: string;
+  children: string;
+};
+
+const AdjustButton = ({ direction, baseStep, holdStep, onAdjust, ariaLabel, children }: AdjustButtonProps) => {
+  const holdTimeoutRef = useRef<number | null>(null);
+  const holdIntervalRef = useRef<number | null>(null);
+  const pointerActiveRef = useRef(false);
+  const holdActiveRef = useRef(false);
+  const suppressClickRef = useRef(false);
+
+  const clearTimers = () => {
+    if (holdTimeoutRef.current !== null) {
+      window.clearTimeout(holdTimeoutRef.current);
+      holdTimeoutRef.current = null;
+    }
+    if (holdIntervalRef.current !== null) {
+      window.clearInterval(holdIntervalRef.current);
+      holdIntervalRef.current = null;
+    }
+    holdActiveRef.current = false;
+  };
+
+  const release = (shouldApplyBase: boolean) => {
+    if (pointerActiveRef.current && !holdActiveRef.current && shouldApplyBase) {
+      onAdjust(direction * baseStep);
+    }
+    pointerActiveRef.current = false;
+    suppressClickRef.current = true;
+    clearTimers();
+  };
+
+  const handlePointerDown = (event: PointerEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    pointerActiveRef.current = true;
+    holdActiveRef.current = false;
+    suppressClickRef.current = false;
+    holdTimeoutRef.current = window.setTimeout(() => {
+      holdActiveRef.current = true;
+      onAdjust(direction * holdStep);
+      holdIntervalRef.current = window.setInterval(() => {
+        onAdjust(direction * holdStep);
+      }, HOLD_REPEAT_MS);
+    }, HOLD_DELAY_MS);
+  };
+
+  const handlePointerUp = (event: PointerEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    release(true);
+  };
+
+  const handlePointerLeave = () => release(false);
+  const handlePointerCancel = () => release(false);
+
+  const handleClick = (event: MouseEvent<HTMLButtonElement>) => {
+    if (pointerActiveRef.current || suppressClickRef.current) {
+      event.preventDefault();
+      suppressClickRef.current = false;
+      return;
+    }
+    event.preventDefault();
+    onAdjust(direction * baseStep);
+  };
+
+  return (
+    <button
+      type="button"
+      aria-label={ariaLabel}
+      className="flex h-10 w-10 items-center justify-center rounded-full border border-white/40 bg-white/10 text-lg font-semibold text-white transition hover:bg-white/20 active:bg-white/30"
+      onPointerDown={handlePointerDown}
+      onPointerUp={handlePointerUp}
+      onPointerLeave={handlePointerLeave}
+      onPointerCancel={handlePointerCancel}
+      onClick={handleClick}
+    >
+      {children}
+    </button>
+  );
+};
