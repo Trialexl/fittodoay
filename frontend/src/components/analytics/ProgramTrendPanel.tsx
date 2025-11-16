@@ -88,7 +88,7 @@ export const ProgramTrendPanel = () => {
 
   const dates = useMemo(() => data?.folders?.[0]?.series?.map((point) => point.date) ?? [], [data]);
 
-  const activeGranularity = data?.granularity ?? granularity;
+  const activeGranularity = (data?.granularity ?? granularity) as "day" | "week";
 
   const programStacks = useMemo(() => {
     if (!data || !dates.length) return [];

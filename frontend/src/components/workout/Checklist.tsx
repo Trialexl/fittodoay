@@ -484,7 +484,7 @@ export const Checklist = ({
   };
 
   const submitRestSet = async () => {
-    if (!restOverlay) return;
+    if (!restOverlay || !plan) return;
     const payload = restOverlay.hasTime
       ? {
           actual_time: parseNumberInput(restForm.time),
