@@ -22,6 +22,7 @@ type TrendFolder = {
 type TrendResponse = {
   start: string;
   end: string;
+  granularity: "day" | "week";
   folders: TrendFolder[];
 };
 
@@ -37,21 +38,40 @@ const VIEW_OPTIONS = [
   { key: "exercises", label: "По упражнениям" },
 ];
 
+const GRANULARITY_OPTIONS = [
+  { key: "day", label: "День" },
+  { key: "week", label: "Неделя" },
+];
+
 const COLORS = ["#7c3aed", "#f97316", "#0ea5e9", "#22c55e", "#f973ab", "#94a3b8", "#facc15", "#14b8a6"];
 
 type Segment = { key: string | number; color: string; value: number; label: string };
 
-const formatLabelDate = (iso: string) => {
-  const [, month, day] = iso.split("-");
-  return `${day}.${month}`;
+const parseISODate = (iso: string) => {
+  const [year, month, day] = iso.split("-").map(Number);
+  return new Date(year, month - 1, day);
+};
+
+const formatShort = (dateObj: Date) =>
+  `${String(dateObj.getDate()).padStart(2, "0")}.${String(dateObj.getMonth() + 1).padStart(2, "0")}`;
+
+const formatLabelDate = (iso: string, granularity: "day" | "week") => {
+  if (granularity === "week") {
+    const startDate = parseISODate(iso);
+    const endDate = new Date(startDate);
+    endDate.setDate(endDate.getDate() + 6);
+    return `${formatShort(startDate)}-${formatShort(endDate)}`;
+  }
+  return formatShort(parseISODate(iso));
 };
 
 export const ProgramTrendPanel = () => {
   const { token } = useAuth();
   const [range, setRange] = useState<(typeof RANGE_OPTIONS)[number]["key"]>("month");
   const [view, setView] = useState<(typeof VIEW_OPTIONS)[number]["key"]>("programs");
+  const [granularity, setGranularity] = useState<(typeof GRANULARITY_OPTIONS)[number]["key"]>("day");
   const { data, isValidating } = useSWR(
-    token ? [`/api/analytics/program-trends/?range=${range}`, token] : null,
+    token ? [`/api/analytics/program-trends/?range=${range}&granularity=${granularity}`, token] : null,
     ([url]) => apiFetch<TrendResponse>(url as string, { token: token ?? undefined }),
   );
   const [selectedFolderId, setSelectedFolderId] = useState<number | null>(null);
@@ -67,6 +87,8 @@ export const ProgramTrendPanel = () => {
   }, [data, selectedFolderId]);
 
   const dates = useMemo(() => data?.folders?.[0]?.series?.map((point) => point.date) ?? [], [data]);
+
+  const activeGranularity = data?.granularity ?? granularity;
 
   const programStacks = useMemo(() => {
     if (!data || !dates.length) return [];
@@ -115,7 +137,11 @@ export const ProgramTrendPanel = () => {
     }, 0);
   }, [exerciseStacks]);
 
-  const renderStacks = (stacks: { date: string; segments: Segment[] }[], maxValue: number) => {
+  const renderStacks = (
+    stacks: { date: string; segments: Segment[] }[],
+    maxValue: number,
+    currentGranularity: "day" | "week",
+  ) => {
     if (!stacks.length) {
       return <p className="text-sm text-slate-500">Данные появятся после выполнения программ в выбранном диапазоне.</p>;
     }
@@ -138,7 +164,7 @@ export const ProgramTrendPanel = () => {
                 );
               })}
             </div>
-            <span className="mt-1">{formatLabelDate(stack.date)}</span>
+            <span className="mt-1">{formatLabelDate(stack.date, currentGranularity)}</span>
           </div>
         ))}
       </div>
@@ -192,6 +218,19 @@ export const ProgramTrendPanel = () => {
           </button>
         ))}
       </div>
+      <div className="mt-2 flex flex-wrap gap-2 text-xs">
+        {GRANULARITY_OPTIONS.map((option) => (
+          <button
+            key={option.key}
+            className={`rounded-full px-3 py-1 font-semibold ${
+              granularity === option.key ? "bg-emerald-500 text-white" : "border border-slate-200 text-slate-600"
+            }`}
+            onClick={() => setGranularity(option.key)}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
       {view === "exercises" && data?.folders?.length ? (
         <div className="mt-3">
           <label className="text-xs uppercase text-slate-500">Программа</label>
@@ -210,8 +249,8 @@ export const ProgramTrendPanel = () => {
       ) : null}
       <div className="mt-2 rounded-lg border border-dashed border-slate-200 p-3">
         {view === "programs"
-          ? renderStacks(programStacks, programMaxLoad)
-          : renderStacks(exerciseStacks, exerciseMaxLoad)}
+          ? renderStacks(programStacks, programMaxLoad, activeGranularity)
+          : renderStacks(exerciseStacks, exerciseMaxLoad, activeGranularity)}
       </div>
       {legendItems && legendItems.length > 0 && (
         <div className="mt-4 flex flex-wrap gap-3 text-xs text-slate-600">

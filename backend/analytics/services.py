@@ -133,7 +133,29 @@ def build_ai_feed(user, limit: int = 50) -> List[Dict]:
     return feed
 
 
-def build_program_trends(user, start: date, end: date) -> List[Dict]:
+def _bucket_start(target: date, granularity: str) -> date:
+    if granularity == "week":
+        return target - timedelta(days=target.weekday())
+    return target
+
+
+def _bucket_sequence(start: date, end: date, granularity: str) -> List[date]:
+    buckets: List[date] = []
+    if granularity == "week":
+        cursor = _bucket_start(start, "week")
+        end_bucket = _bucket_start(end, "week")
+        while cursor <= end_bucket:
+            buckets.append(cursor)
+            cursor += timedelta(days=7)
+    else:
+        cursor = start
+        while cursor <= end:
+            buckets.append(cursor)
+            cursor += timedelta(days=1)
+    return buckets
+
+
+def build_program_trends(user, start: date, end: date, granularity: str = "day") -> List[Dict]:
     logs = (
         WorkoutSetLog.objects.filter(
             workout_day__user=user,
@@ -159,7 +181,7 @@ def build_program_trends(user, start: date, end: date) -> List[Dict]:
             continue
         folder = te.template.folder
         folder_names[folder.id] = folder.name
-        workout_date = log.workout_day.date
+        workout_date = _bucket_start(log.workout_day.date, granularity)
         load = _compute_load(log)
         folder_daily[folder.id][workout_date] += load
         source = te.exercise or te.custom_exercise
@@ -173,11 +195,7 @@ def build_program_trends(user, start: date, end: date) -> List[Dict]:
     if not folder_names:
         return []
 
-    dates: List[date] = []
-    cursor = start
-    while cursor <= end:
-        dates.append(cursor)
-        cursor += timedelta(days=1)
+    dates: List[date] = _bucket_sequence(start, end, granularity)
 
     folders_payload: List[Dict] = []
     for folder_id, folder_name in folder_names.items():

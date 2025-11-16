@@ -26,8 +26,10 @@ class TrendRangeSerializer(serializers.Serializer):
         ("half-year", "180 дней"),
         ("year", "365 дней"),
     )
+    GRANULARITY_CHOICES = (("day", "По дням"), ("week", "По неделям"))
 
     range = serializers.ChoiceField(choices=RANGE_CHOICES, default="month")
+    granularity = serializers.ChoiceField(choices=GRANULARITY_CHOICES, default="day")
 
     def get_range(self):
         if not self.is_valid():

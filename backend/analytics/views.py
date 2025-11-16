@@ -56,11 +56,13 @@ class ProgramTrendsView(APIView):
         serializer = TrendRangeSerializer(data=request.query_params)
         serializer.is_valid(raise_exception=True)
         start, end = serializer.get_range()
-        folders = build_program_trends(request.user, start, end)
+        granularity = serializer.validated_data.get("granularity", "day")
+        folders = build_program_trends(request.user, start, end, granularity=granularity)
         return Response(
             {
                 "start": start.isoformat(),
                 "end": end.isoformat(),
+                "granularity": granularity,
                 "folders": folders,
             }
         )
