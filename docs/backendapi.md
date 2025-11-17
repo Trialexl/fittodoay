@@ -236,7 +236,7 @@
           "suggested_reps": 8,
           "suggested_weight": 22,
           "has_weight": true,
-          "reason": "Среднее 12.0 повторов — время увеличить вес.",
+          "reason": "Плановый вес оказался тяжёлым; корректируем нагрузку под фактические показатели.",
           "action": "increase_weight"
         }
       ]

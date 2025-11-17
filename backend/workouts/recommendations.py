@@ -101,22 +101,46 @@ def _build_recommendation(
 
     rounded_avg = int(round(avg_reps))
 
-    increase_condition = avg_reps >= planned_reps + REPS_INCREASE_THRESHOLD or (
-        is_first_time and avg_reps >= planned_reps
-    )
-    if has_weight and planned_weight is not None and increase_condition:
-        next_weight = Decimal(str(planned_weight)) + WEIGHT_STEP
-        suggested_weight = float(next_weight.quantize(Decimal("0.01")))
-        suggested_reps = WEIGHT_RESET_REPS
-        if is_first_time and avg_reps >= planned_reps and avg_reps < planned_reps + REPS_INCREASE_THRESHOLD:
-            reason = f"Первое выполнение и среднее {avg_reps:.1f} повторов — вес был лёгкий, повышаем нагрузку."
-        else:
-            reason = f"Среднее {avg_reps:.1f} повторов — время увеличить вес."
-        action = "increase_weight"
-    elif rounded_avg != planned_reps:
-        suggested_reps = max(1, rounded_avg)
-        reason = f"Фактическое среднее {avg_reps:.1f} повторов."
-        action = "update_reps"
+    if (
+        has_weight
+        and planned_weight is not None
+        and avg_weight is not None
+        and avg_weight < planned_weight
+    ):
+        actual_tonnage = avg_weight * avg_reps
+        best_weight: Optional[float] = None
+        best_reps: Optional[int] = None
+        min_diff = float("inf")
+        for rep_target in range(max(8, planned_reps - 2), 13):
+            for weight_candidate in range(2, int(planned_weight) + 2, 2):
+                tonnage = weight_candidate * rep_target
+                diff = abs(actual_tonnage - tonnage)
+                if diff < min_diff:
+                    min_diff = diff
+                    best_weight = weight_candidate
+                    best_reps = rep_target
+        suggested_weight = best_weight or float(round(avg_weight / 2) * 2)
+        suggested_reps = best_reps or max(1, int(round(avg_reps)))
+        reason = "Плановый вес оказался тяжёлым; корректируем нагрузку под фактические показатели."
+        action = "adjust_weight"
+    else:
+        increase_condition = avg_reps >= planned_reps + REPS_INCREASE_THRESHOLD or (
+            is_first_time and avg_reps >= planned_reps
+        )
+        if has_weight and planned_weight is not None and increase_condition:
+            next_weight = Decimal(str(planned_weight)) + WEIGHT_STEP
+            suggested_weight = float(next_weight.quantize(Decimal("0.01")))
+            suggested_reps = WEIGHT_RESET_REPS
+            if is_first_time and avg_reps >= planned_reps and avg_reps < planned_reps + REPS_INCREASE_THRESHOLD:
+                reason = f"Первое выполнение и среднее {avg_reps:.1f} повторов — вес был лёгкий, повышаем нагрузку."
+            else:
+                reason = f"Среднее {avg_reps:.1f} повторов — время увеличить вес."
+            action = "increase_weight"
+        elif rounded_avg != planned_reps:
+            upper_cap = min(12, max(rounded_avg, planned_reps))
+            suggested_reps = max(1, upper_cap)
+            reason = f"Фактическое среднее {avg_reps:.1f} повторов."
+            action = "update_reps"
 
     if (
         is_first_time
