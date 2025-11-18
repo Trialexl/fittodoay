@@ -20,7 +20,7 @@ class LLMRequestLog(TimestampedModel):
     response = models.JSONField(null=True, blank=True)
     status = models.CharField(max_length=64)
     success = models.BooleanField(default=False)
-    error_message = models.TextField(blank=True)
+    error_message = models.TextField(blank=True, null=True)
 
     class Meta:
         ordering = ["-created_at"]

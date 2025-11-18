@@ -326,7 +326,7 @@ class LLMProgramGenerationService:
                 response=response,
                 status=status,
                 success=success,
-                error_message=error,
+                error_message=error or "",
                 created_at=timezone.now(),
             )
         except Exception:  # pragma: no cover - лог безопасный
