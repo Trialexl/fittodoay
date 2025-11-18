@@ -9,8 +9,11 @@ from typing import Any, Dict, List
 import httpx
 from django.db import transaction
 
+from django.utils import timezone
+
 from exercises.models import Exercise
 from programs.models import DayTemplate, ProgramFolder, TemplateExercise
+from agents.models import LLMRequestLog
 
 logger = logging.getLogger(__name__)
 
@@ -117,7 +120,14 @@ class LLMProgramGenerationService:
             try:
                 raw_text = self._call_llm(messages)
                 plan = self._parse_plan(raw_text)
-                return self._persist_plan(plan)
+                result = self._persist_plan(plan)
+                self._log_request(
+                    payload=messages,
+                    response=plan,
+                    success=True,
+                    status="ok",
+                )
+                return result
             except LLMInvalidResponse as exc:
                 last_error = exc
                 logger.warning(
@@ -127,6 +137,14 @@ class LLMProgramGenerationService:
                     self.user.id,
                     exc,
                 )
+        status_code = getattr(last_error, "args", ["invalid_response"])[0] if last_error else "invalid_response"
+        self._log_request(
+            payload=base_messages,
+            response=None,
+            success=False,
+            status=status_code,
+            error=str(last_error) if last_error else None,
+        )
         if last_error:
             raise last_error
         raise LLMInvalidResponse("invalid_response")
@@ -203,10 +221,24 @@ class LLMProgramGenerationService:
         try:
             client = OpenRouterClient()
             return client.create_chat_completion(messages)
-        except LLMServiceError:
+        except LLMServiceError as exc:
+            self._log_request(
+                payload=messages,
+                response=None,
+                success=False,
+                status=getattr(exc, "args", ["service_error"])[0],
+                error=str(exc),
+            )
             raise
         except Exception as exc:  # pragma: no cover - unforeseen errors
             logger.exception("Unexpected LLM error: %s", exc)
+            self._log_request(
+                payload=messages,
+                response=None,
+                success=False,
+                status="unexpected_error",
+                error=str(exc),
+            )
             raise LLMUnavailableError("unexpected_error") from exc
 
     def _parse_plan(self, raw_text: str) -> Dict[str, Any]:
@@ -285,3 +317,17 @@ class LLMProgramGenerationService:
             counter += 1
             name = f"{base_name} ({counter})"
         return name
+
+    def _log_request(self, *, payload, response, success: bool, status: str, error: str | None = None):
+        try:
+            LLMRequestLog.objects.create(
+                user=self.user,
+                payload=payload,
+                response=response,
+                status=status,
+                success=success,
+                error_message=error,
+                created_at=timezone.now(),
+            )
+        except Exception:  # pragma: no cover - лог безопасный
+            logger.exception("Failed to log LLM request")
