@@ -130,7 +130,9 @@ export default function WorkoutPage() {
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="space-y-1">
             <p className="text-sm uppercase tracking-widest text-primary">Дневной чеклист</p>
-            <h1 className="text-3xl font-semibold leading-tight">Сегодня</h1>
+            <h1 className="text-3xl font-semibold leading-tight">
+              {selectedDate === todayIso ? "Сегодня" : selectedDate}
+            </h1>
           </div>
           <button
             type="button"
@@ -147,7 +149,7 @@ export default function WorkoutPage() {
         {todayMuscles.length > 0 && (
           <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
             <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-500">
-              Сегодня работаем
+              {selectedDate === todayIso ? "Сегодня работаем" : `День (${selectedDate})`}
             </p>
             <div className="mt-2 flex flex-wrap gap-1.5">
               {todayMuscles.slice(0, 6).map(([muscle, count]) => (

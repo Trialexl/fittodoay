@@ -39,7 +39,7 @@ export const WorkoutCalendar = ({
   gridStart.setDate(startOfMonth.getDate() - weekOffset);
   const todayIso = toISODate(new Date());
 
-  const days: { iso: string; inMonth: boolean; load: number; isSelected: boolean }[] = [];
+  const days: { iso: string; inMonth: boolean; load: number; isSelected: boolean; isToday: boolean }[] = [];
   for (let index = 0; index < 42; index += 1) {
     const current = new Date(gridStart);
     current.setDate(gridStart.getDate() + index);
@@ -49,6 +49,7 @@ export const WorkoutCalendar = ({
       inMonth: current.getMonth() === startOfMonth.getMonth(),
       load: loads[iso] ?? 0,
       isSelected: iso === selectedDate,
+      isToday: iso === todayIso,
     });
   }
 
@@ -96,11 +97,15 @@ export const WorkoutCalendar = ({
                 "flex h-16 flex-col items-center justify-center rounded-lg border text-center transition",
                 day.inMonth ? "border-slate-200 bg-white" : "border-slate-100 bg-slate-50 text-slate-400",
                 day.isSelected && "border-primary bg-primary/10 text-primary font-semibold",
-                day.iso === todayIso && !day.isSelected && "border-emerald-200 bg-emerald-50",
+                day.isToday && day.isSelected
+                  ? "border-primary bg-primary/20 text-white font-semibold"
+                  : day.isToday && !day.isSelected
+                    ? "border-primary/40 bg-primary/5 text-primary"
+                    : null,
               )}
               onClick={() => onSelectDate(day.iso)}
             >
-              <span>{day.iso.split("-")[2]}</span>
+              <span>{Number(day.iso.split("-")[2])}</span>
               <span className="text-[10px] text-slate-500">{day.load ? Math.round(day.load) : "—"}</span>
             </button>
           ))}
