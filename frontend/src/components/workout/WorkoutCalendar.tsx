@@ -3,7 +3,12 @@
 import { Modal } from "@/components/ui/Modal";
 import clsx from "clsx";
 
-const toISODate = (value: Date) => value.toISOString().slice(0, 10);
+const formatISODate = (value: Date) => {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
 
 const parseISODate = (value: string) => {
   const [year, month, day] = value.split("-").map(Number);
@@ -37,13 +42,13 @@ export const WorkoutCalendar = ({
   const weekOffset = (startOfMonth.getDay() + 6) % 7;
   const gridStart = new Date(startOfMonth);
   gridStart.setDate(startOfMonth.getDate() - weekOffset);
-  const todayIso = toISODate(new Date());
+  const todayIso = formatISODate(new Date());
 
   const days: { iso: string; inMonth: boolean; load: number; isSelected: boolean; isToday: boolean }[] = [];
   for (let index = 0; index < 42; index += 1) {
     const current = new Date(gridStart);
     current.setDate(gridStart.getDate() + index);
-    const iso = toISODate(current);
+    const iso = formatISODate(current);
     days.push({
       iso,
       inMonth: current.getMonth() === startOfMonth.getMonth(),
@@ -55,12 +60,12 @@ export const WorkoutCalendar = ({
 
   const handlePrevMonth = () => {
     const prev = new Date(startOfMonth.getFullYear(), startOfMonth.getMonth() - 1, 1);
-    onCursorChange(toISODate(prev));
+    onCursorChange(formatISODate(prev));
   };
 
   const handleNextMonth = () => {
     const next = new Date(startOfMonth.getFullYear(), startOfMonth.getMonth() + 1, 1);
-    onCursorChange(toISODate(next));
+    onCursorChange(formatISODate(next));
   };
 
   return (
@@ -70,7 +75,7 @@ export const WorkoutCalendar = ({
           <button
             type="button"
             className="rounded-full border border-slate-200 px-3 py-1 text-sm"
-            onClick={handlePrevMonth}
+                    onClick={handlePrevMonth}
           >
             ←
           </button>

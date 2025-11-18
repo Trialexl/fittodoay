@@ -8,11 +8,18 @@ import { WorkoutCalendar } from "@/components/workout/WorkoutCalendar";
 import { apiFetch } from "@/lib/api";
 import { useAuth } from "@/state/AuthContext";
 
+const formatISODate = (value: Date) => {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
 export default function WorkoutPage() {
   const router = useRouter();
   const { token, user, loading } = useAuth();
   const [plan, setPlan] = useState<WorkoutPlan | null>(null);
-  const todayIso = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const todayIso = useMemo(() => formatISODate(new Date()), []);
   const [selectedDate, setSelectedDate] = useState(todayIso);
   const [calendarCursor, setCalendarCursor] = useState(todayIso);
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
@@ -22,14 +29,8 @@ export default function WorkoutPage() {
     return new Date(year, month - 1, day);
   }, [calendarCursor]);
 
-  const monthStartIso = useMemo(() => {
-    const start = new Date(cursorDateObj.getFullYear(), cursorDateObj.getMonth(), 1);
-    return start.toISOString().slice(0, 10);
-  }, [cursorDateObj]);
-  const monthEndIso = useMemo(() => {
-    const end = new Date(cursorDateObj.getFullYear(), cursorDateObj.getMonth() + 1, 0);
-    return end.toISOString().slice(0, 10);
-  }, [cursorDateObj]);
+  const monthStartIso = useMemo(() => formatISODate(new Date(cursorDateObj.getFullYear(), cursorDateObj.getMonth(), 1)), [cursorDateObj]);
+  const monthEndIso = useMemo(() => formatISODate(new Date(cursorDateObj.getFullYear(), cursorDateObj.getMonth() + 1, 0)), [cursorDateObj]);
 
   const { data: dailyLoads } = useSWR(
     token ? ["daily-loads", monthStartIso, monthEndIso, token] : null,
