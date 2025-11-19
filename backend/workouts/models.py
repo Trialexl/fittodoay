@@ -16,6 +16,92 @@ class TimestampedModel(models.Model):
         abstract = True
 
 
+class Exercise_DB(TimestampedModel):
+    """
+    Базовая таблица с упражнениями из общего каталога.
+    Названы в соответствии с исходным JSON (EN/RU).
+    """
+
+    id = models.CharField(primary_key=True, max_length=120)
+    name_en = models.CharField(max_length=255)
+    name_ru = models.CharField(max_length=255)
+    force_en = models.CharField(max_length=64)
+    force_ru = models.CharField(max_length=64)
+    level_en = models.CharField(max_length=64)
+    level_ru = models.CharField(max_length=64)
+    mechanic_en = models.CharField(max_length=64, null=True, blank=True)
+    mechanic_ru = models.CharField(max_length=64, null=True, blank=True)
+    equipment_en = models.CharField(max_length=64)
+    equipment_ru = models.CharField(max_length=64)
+    category_en = models.CharField(max_length=64)
+    category_ru = models.CharField(max_length=64)
+
+    class Meta:
+        verbose_name = "Упражнение"
+        verbose_name_plural = "Упражнения"
+        ordering = ["name_ru", "name_en"]
+
+    def __str__(self):
+        return self.name_ru or self.name_en
+
+
+class ExerciseMuscle(TimestampedModel):
+    exercise = models.ForeignKey(
+        Exercise_DB, on_delete=models.CASCADE, related_name="muscles"
+    )
+    name_en = models.CharField(max_length=128)
+    name_ru = models.CharField(max_length=128)
+    is_primary = models.BooleanField(default=True)
+
+    class Meta:
+        verbose_name = "Мышца упражнения"
+        verbose_name_plural = "Мышцы упражнений"
+        indexes = [
+            models.Index(fields=["is_primary", "name_en"]),
+            models.Index(fields=["is_primary", "name_ru"]),
+        ]
+        unique_together = ("exercise", "name_en", "is_primary")
+        ordering = ["exercise_id", "-is_primary", "name_en"]
+
+    def __str__(self):
+        return f"{self.exercise_id}: {self.name_ru}"
+
+
+class ExerciseInstruction(TimestampedModel):
+    exercise = models.ForeignKey(
+        Exercise_DB, on_delete=models.CASCADE, related_name="instructions"
+    )
+    order = models.PositiveSmallIntegerField()
+    text_en = models.TextField()
+    text_ru = models.TextField()
+
+    class Meta:
+        verbose_name = "Инструкция упражнения"
+        verbose_name_plural = "Инструкции упражнений"
+        unique_together = ("exercise", "order")
+        ordering = ["exercise_id", "order"]
+
+    def __str__(self):
+        return f"{self.exercise_id} — шаг {self.order}"
+
+
+class ExerciseImage(TimestampedModel):
+    exercise = models.ForeignKey(
+        Exercise_DB, on_delete=models.CASCADE, related_name="images"
+    )
+    order = models.PositiveSmallIntegerField()
+    path = models.CharField(max_length=255)
+
+    class Meta:
+        verbose_name = "Изображение упражнения"
+        verbose_name_plural = "Изображения упражнений"
+        unique_together = ("exercise", "order")
+        ordering = ["exercise_id", "order"]
+
+    def __str__(self):
+        return f"{self.exercise_id}: {self.path}"
+
+
 class WorkoutDay(TimestampedModel):
     class Status(models.TextChoices):
         PENDING = "pending", "В процессе"
