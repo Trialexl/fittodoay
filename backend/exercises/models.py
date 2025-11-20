@@ -3,6 +3,8 @@ from __future__ import annotations
 from django.conf import settings
 from django.db import models
 
+from workouts.models import Exercise_DB
+
 User = settings.AUTH_USER_MODEL
 
 
@@ -15,7 +17,7 @@ class TimestampedModel(models.Model):
 
 
 class Exercise(TimestampedModel):
-    """System exercise catalog entry."""
+    """Legacy system exercise kept for historical migrations."""
 
     name = models.CharField(max_length=150, unique=True)
     description = models.TextField(blank=True)
@@ -31,15 +33,13 @@ class Exercise(TimestampedModel):
     default_reps = models.PositiveIntegerField(default=10)
     default_sets = models.PositiveIntegerField(default=3)
     default_rest = models.PositiveIntegerField(default=60, help_text="Отдых в секундах")
-    rating = models.DecimalField(
-        max_digits=3, decimal_places=1, null=True, blank=True, help_text="Рейтинг 0-5"
-    )
-    english_name = models.CharField(max_length=150, blank=True, null=True)
-    difficulty = models.CharField(max_length=50, blank=True, null=True)
-    common_errors = models.TextField(blank=True, null=True)
 
     class Meta:
         ordering = ["name"]
+        managed = False  # table is dropped after migration 0003
+        db_table = "exercises_exercise"
+        verbose_name = "Legacy Exercise"
+        verbose_name_plural = "Legacy Exercises"
 
     def __str__(self) -> str:
         return self.name
@@ -50,7 +50,11 @@ class CustomExercise(TimestampedModel):
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="custom_exercises")
     base_exercise = models.ForeignKey(
-        Exercise, on_delete=models.SET_NULL, null=True, blank=True, related_name="custom_clones"
+        Exercise_DB,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="custom_clones",
     )
     name = models.CharField(max_length=150)
     description = models.TextField(blank=True)

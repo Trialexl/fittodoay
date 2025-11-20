@@ -2,12 +2,21 @@ from __future__ import annotations
 
 from rest_framework import serializers
 
-from .models import CustomExercise, Exercise
+from workouts.models import Exercise_DB
+
+from .models import CustomExercise
 
 
 class ExerciseSerializer(serializers.ModelSerializer):
+    name = serializers.SerializerMethodField()
+    description = serializers.SerializerMethodField()
+    target_muscles = serializers.SerializerMethodField()
+    english_name = serializers.SerializerMethodField()
+    difficulty = serializers.SerializerMethodField()
+    common_errors = serializers.SerializerMethodField()
+
     class Meta:
-        model = Exercise
+        model = Exercise_DB
         fields = [
             "id",
             "name",
@@ -26,11 +35,29 @@ class ExerciseSerializer(serializers.ModelSerializer):
             "common_errors",
         ]
 
+    def get_name(self, obj):
+        return obj.name
+
+    def get_description(self, obj):
+        return obj.description
+
+    def get_target_muscles(self, obj):
+        return obj.target_muscles
+
+    def get_english_name(self, obj):
+        return obj.english_name
+
+    def get_difficulty(self, obj):
+        return obj.difficulty
+
+    def get_common_errors(self, obj):
+        return obj.common_errors
+
 
 class CustomExerciseSerializer(serializers.ModelSerializer):
     base_exercise = ExerciseSerializer(read_only=True)
     base_exercise_id = serializers.PrimaryKeyRelatedField(
-        queryset=Exercise.objects.all(), write_only=True, required=False, allow_null=True
+        queryset=Exercise_DB.objects.all(), write_only=True, required=False, allow_null=True
     )
 
     class Meta:

@@ -4,7 +4,8 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 
-from exercises.models import CustomExercise, Exercise
+from exercises.models import CustomExercise
+from workouts.models import Exercise_DB
 
 User = settings.AUTH_USER_MODEL
 
@@ -70,7 +71,7 @@ class TemplateExercise(TimestampedModel):
         DayTemplate, on_delete=models.CASCADE, related_name="template_exercises"
     )
     exercise = models.ForeignKey(
-        Exercise, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+        Exercise_DB, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
     )
     custom_exercise = models.ForeignKey(
         CustomExercise, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"

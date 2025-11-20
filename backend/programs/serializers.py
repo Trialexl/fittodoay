@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from rest_framework import serializers
 
-from exercises.models import CustomExercise, Exercise
+from exercises.models import CustomExercise
 from exercises.serializers import CustomExerciseSerializer, ExerciseSerializer
 from programs.models import DayTemplate, ProgramFolder, TemplateExercise
+from workouts.models import Exercise_DB
 
 
 class ProgramFolderSerializer(serializers.ModelSerializer):
@@ -26,7 +27,7 @@ class TemplateExerciseSerializer(serializers.ModelSerializer):
     exercise = ExerciseSerializer(read_only=True)
     exercise_id = serializers.PrimaryKeyRelatedField(
         source="exercise",
-        queryset=Exercise.objects.all(),
+        queryset=Exercise_DB.objects.all(),
         write_only=True,
         required=False,
         allow_null=True,
@@ -60,7 +61,7 @@ class TemplateExerciseSerializer(serializers.ModelSerializer):
     def __init__(self, *args, **kwargs):
         self.request = kwargs.get("context", {}).get("request")
         super().__init__(*args, **kwargs)
-        self.fields["exercise_id"].queryset = Exercise.objects.all()
+        self.fields["exercise_id"].queryset = Exercise_DB.objects.all()
         custom_qs = CustomExercise.objects.none()
         if self.request and self.request.user.is_authenticated:
             custom_qs = CustomExercise.objects.filter(user=self.request.user)

@@ -6,9 +6,8 @@ import pytest
 from django.contrib.auth import get_user_model
 
 from analytics.services import aggregate_daily_loads, aggregate_exercise_loads
-from exercises.models import Exercise
 from programs.models import ProgramFolder, DayTemplate, TemplateExercise
-from workouts.models import WorkoutDay, WorkoutSetLog
+from workouts.models import WorkoutDay, WorkoutSetLog, Exercise_DB
 
 User = get_user_model()
 
@@ -23,12 +22,24 @@ def test_aggregate_daily_loads_handles_weight_and_time():
         schedule_type=DayTemplate.ScheduleType.WEEKLY,
         schedule_config={"days_of_week": [0]},
     )
-    exercise = Exercise.objects.create(
-        name="Жим лежа",
-        target_muscles="грудь",
+    exercise = Exercise_DB.objects.create(
+        id="bench_press",
+        name_en="Bench Press",
+        name_ru="Жим лежа",
+        force_en="push",
+        force_ru="",
+        level_en="intermediate",
+        level_ru="средний",
+        mechanic_en="compound",
+        mechanic_ru="",
+        equipment_en="barbell",
+        equipment_ru="штанга",
+        category_en="strength",
+        category_ru="Силовая",
         has_weight=True,
         default_weight=50,
         default_reps=10,
+        default_sets=3,
     )
     template_exercise = TemplateExercise.objects.create(
         template=template,
@@ -63,12 +74,24 @@ def test_aggregate_exercise_loads_sums_per_entry():
         schedule_type=DayTemplate.ScheduleType.INTERVAL,
         schedule_config={"every_x_days": 2},
     )
-    exercise = Exercise.objects.create(
-        name="Присед",
-        target_muscles="ноги",
+    exercise = Exercise_DB.objects.create(
+        id="squat",
+        name_en="Squat",
+        name_ru="Присед",
+        force_en="push",
+        force_ru="",
+        level_en="intermediate",
+        level_ru="средний",
+        mechanic_en="compound",
+        mechanic_ru="",
+        equipment_en="barbell",
+        equipment_ru="штанга",
+        category_en="strength",
+        category_ru="Силовая",
         has_weight=True,
         default_weight=70,
         default_reps=8,
+        default_sets=3,
     )
     template_exercise = TemplateExercise.objects.create(
         template=template,

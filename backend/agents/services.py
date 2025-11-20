@@ -11,9 +11,9 @@ from django.db import transaction
 
 from django.utils import timezone
 
-from exercises.models import Exercise
 from programs.models import DayTemplate, ProgramFolder, TemplateExercise
 from agents.models import LLMRequestLog
+from workouts.models import Exercise_DB
 
 logger = logging.getLogger(__name__)
 
@@ -150,7 +150,7 @@ class LLMProgramGenerationService:
         raise LLMInvalidResponse("invalid_response")
 
     def _serialize_exercises(self) -> List[Dict[str, Any]]:
-        qs = Exercise.objects.all().order_by("id")[:150]
+        qs = Exercise_DB.objects.all().order_by("id")[:300]
         snapshot = []
         for exercise in qs:
             snapshot.append(
@@ -159,6 +159,8 @@ class LLMProgramGenerationService:
                     "name": exercise.name,
                     "english_name": exercise.english_name,
                     "target_muscles": exercise.target_muscles,
+                    "has_weight": exercise.has_weight,
+                    "has_time": exercise.has_time,
                     "default_sets": exercise.default_sets,
                     "default_reps": exercise.default_reps,
                     "default_weight": float(exercise.default_weight)
@@ -167,6 +169,7 @@ class LLMProgramGenerationService:
                     "default_time": exercise.default_time,
                     "default_rest": exercise.default_rest,
                     "difficulty": exercise.difficulty,
+                    "equipment": exercise.equipment_ru or exercise.equipment_en,
                 }
             )
         return snapshot
@@ -280,7 +283,9 @@ class LLMProgramGenerationService:
                     sort_order=day_index,
                 )
                 for order, exercise_entry in enumerate(day.get("exercises", [])):
-                    exercise_obj = Exercise.objects.filter(id=exercise_entry.get("exercise_id")).first()
+                    exercise_obj = Exercise_DB.objects.filter(
+                        id=exercise_entry.get("exercise_id")
+                    ).first()
                     if not exercise_obj:
                         continue
                     TemplateExercise.objects.create(

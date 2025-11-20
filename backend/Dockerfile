@@ -12,7 +12,7 @@ COPY backend/requirements.txt ./requirements.txt
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
 COPY backend /app
-COPY docs/ex800.CSV /docs/ex800.CSV
+COPY docs/exercises/exercises_ru_all.json /docs/exercises/exercises_ru_all.json
 
 RUN mkdir -p /data
 VOLUME ["/data"]

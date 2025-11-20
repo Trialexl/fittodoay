@@ -40,7 +40,7 @@
   - В шаблон добавляются упражнения в порядке выполнения с настройкой параметров (см. 5.3).
 
 ### 5.3 Упражнения и параметры
-- Каталог по умолчанию хранится в `docs/exercise.csv` (100 популярных упражнений с колонками: `Название, Вес, Время, Количество повторений, Количество подходов, Время отдыха между повторениями, Краткое описание, Целевые мышцы`).
+- Каталог по умолчанию хранится в `docs/exercises/exercises_ru_all.json` (полный список упражнений с названиями EN/RU, мышцами, инструкциями и дефолтными параметрами нагрузки).
 - В БД: модель `Exercise` (системные записи) и модель `CustomExercise` (привязана к пользователю, не участвует в AI). Обе модели обязаны хранить дефолтные значения веса/повторов/подходов/времени/отдыха, чтобы каждое упражнение «знало» свою типовую нагрузку.
 - Добавление упражнения в шаблон работает по ссылке: `TemplateExercise` хранит `exercise_id` или `custom_exercise_id` и только override-поля (вес, повторы, подходы, время, отдых, заметка). Если override не задан, используется дефолт базового упражнения.
 - Чтобы изменить параметры «на постоянной основе», пользователь создаёт `CustomExercise`, копируя системное движение и настраивая собственные дефолты. Системный каталог остаётся неизменяемым.
@@ -80,7 +80,7 @@
 - `ProgramFolder`: user_id, название, комментарий, активность, сортировка, timestamps.
 - `DayTemplate`: folder_id, название, комментарий, активность, правила повторения (enum + параметры), порядок.
 - `TemplateExercise`: template_id, exercise_id или custom_exercise_id, порядок, `weight_override`, `rep_override`, `set_override`, `time_override`, `rest_override`, заметка.
-- `Exercise`: системный справочник (данные из `exercise.csv`), флаги `has_weight`, `has_time`, `default_sets`, `default_reps`, `default_rest`, `default_time`, `target_muscle_groups`.
+- `Exercise`: системный справочник (данные из `docs/exercises/exercises_ru_all.json`), флаги `has_weight`, `has_time`, `default_sets`, `default_reps`, `default_rest`, `default_time`, `target_muscle_groups`.
 - `CustomExercise`: user_id, название, описание, флаги `has_weight`/`has_time`, `default_sets`, `default_reps`, `default_rest`, `default_time`, целевые мышцы.
 - `WorkoutDay`: user_id, дата, статус, список активных шаблонов.
 - `WorkoutSetLog`: workout_day_id, template_exercise_id, фактические вес/повторы/время/подход, timestamp.

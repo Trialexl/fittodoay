@@ -3,8 +3,6 @@ from __future__ import annotations
 from django.conf import settings
 from django.db import models
 
-from programs.models import TemplateExercise
-
 User = settings.AUTH_USER_MODEL
 
 
@@ -55,6 +53,38 @@ class Exercise_DB(TimestampedModel):
 
     def __str__(self):
         return self.name_ru or self.name_en
+
+    @property
+    def name(self) -> str:
+        return self.name_ru or self.name_en
+
+    @property
+    def english_name(self) -> str | None:
+        return self.name_en
+
+    @property
+    def difficulty(self) -> str | None:
+        return self.level_ru or self.level_en
+
+    @property
+    def common_errors(self) -> str:
+        return ""
+
+    @property
+    def description(self) -> str:
+        ru_steps = list(self.instructions.order_by("order").values_list("text_ru", flat=True))
+        if ru_steps:
+            return " ".join(step.strip() for step in ru_steps if step).strip()
+        en_steps = list(self.instructions.order_by("order").values_list("text_en", flat=True))
+        return " ".join(step.strip() for step in en_steps if step).strip()
+
+    @property
+    def target_muscles(self) -> str:
+        muscles = self.muscles.order_by("-is_primary", "name_ru", "name_en")
+        parts = []
+        for muscle in muscles:
+            parts.append(muscle.name_ru or muscle.name_en)
+        return "/".join(filter(None, parts))
 
 
 class ExerciseMuscle(TimestampedModel):
@@ -139,7 +169,7 @@ class WorkoutSetLog(TimestampedModel):
         WorkoutDay, on_delete=models.CASCADE, related_name="set_logs"
     )
     template_exercise = models.ForeignKey(
-        TemplateExercise, on_delete=models.SET_NULL, null=True, blank=True
+        "programs.TemplateExercise", on_delete=models.SET_NULL, null=True, blank=True
     )
     set_index = models.PositiveIntegerField()
     actual_reps = models.PositiveIntegerField(null=True, blank=True)

@@ -28,7 +28,7 @@ END
 fi
 
 if [ "$(echo "$IMPORT_EXERCISES_ON_START" | tr '[:upper:]' '[:lower:]')" = "true" ]; then
-  python manage.py import_exercises --truncate
+  python manage.py import_exercise_db --truncate
 fi
 
 exec "$@"

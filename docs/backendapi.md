@@ -356,4 +356,4 @@
 ---
 
 ## 7. Импорт данных
-`python manage.py import_exercises --truncate` — загружает `docs/exercise.csv` в модель `Exercise`.
+`python manage.py import_exercise_db --truncate` — загружает `docs/exercises/exercises_ru_all.json` в каталог `Exercise_DB`.

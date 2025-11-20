@@ -7,7 +7,7 @@ from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
 
 from programs.models import DayTemplate, ProgramFolder, TemplateExercise
-from exercises.models import Exercise
+from workouts.models import Exercise_DB
 
 User = get_user_model()
 
@@ -18,9 +18,20 @@ def test_template_creation_with_exercises():
     client = APIClient()
     client.force_authenticate(user=user)
     folder = ProgramFolder.objects.create(user=user, name="Основные")
-    exercise = Exercise.objects.create(
-        name="Тяга штанги",
-        target_muscles="спина",
+    exercise = Exercise_DB.objects.create(
+        id="barbell_row",
+        name_en="Barbell Row",
+        name_ru="Тяга штанги",
+        force_en="pull",
+        force_ru="",
+        level_en="intermediate",
+        level_ru="средний",
+        mechanic_en="compound",
+        mechanic_ru="",
+        equipment_en="barbell",
+        equipment_ru="штанга",
+        category_en="strength",
+        category_ru="Силовая",
         default_sets=4,
         default_reps=8,
     )

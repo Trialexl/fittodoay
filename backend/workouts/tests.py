@@ -5,8 +5,8 @@ from datetime import date, timedelta
 import pytest
 from django.contrib.auth import get_user_model
 
-from exercises.models import Exercise
 from programs.models import DayTemplate, ProgramFolder, TemplateExercise
+from workouts.models import Exercise_DB
 from workouts.services import generate_daily_plan, template_matches_date
 
 User = get_user_model()
@@ -42,9 +42,20 @@ def test_generate_daily_plan_prioritizes_primary_folder():
         schedule_type=DayTemplate.ScheduleType.WEEKLY,
         schedule_config={"days_of_week": [0]},
     )
-    exercise = Exercise.objects.create(
-        name="Жим гантелей",
-        target_muscles="грудь",
+    exercise = Exercise_DB.objects.create(
+        id="db_press",
+        name_en="Dumbbell Press",
+        name_ru="Жим гантелей",
+        force_en="push",
+        force_ru="",
+        level_en="beginner",
+        level_ru="начальный",
+        mechanic_en="compound",
+        mechanic_ru="",
+        equipment_en="dumbbell",
+        equipment_ru="гантели",
+        category_en="strength",
+        category_ru="Силовая",
         default_sets=3,
         default_reps=10,
         has_weight=True,
