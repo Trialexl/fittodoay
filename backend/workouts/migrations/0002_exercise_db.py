@@ -35,6 +35,8 @@ class Migration(migrations.Migration):
                 ('default_reps', models.PositiveIntegerField(default=10)),
                 ('default_rest', models.PositiveIntegerField(default=60)),
                 ('default_time', models.PositiveIntegerField(blank=True, null=True)),
+                ('default_weight', models.DecimalField(blank=True, decimal_places=2, max_digits=6, null=True)),
+                ('rating', models.DecimalField(blank=True, decimal_places=1, max_digits=3, null=True)),
             ],
             options={
                 'verbose_name': 'Упражнение',

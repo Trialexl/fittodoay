@@ -43,6 +43,10 @@ class Exercise_DB(TimestampedModel):
     default_time = models.PositiveIntegerField(
         null=True, blank=True, help_text="Время в секундах"
     )
+    default_weight = models.DecimalField(
+        max_digits=6, decimal_places=2, null=True, blank=True
+    )
+    rating = models.DecimalField(max_digits=3, decimal_places=1, null=True, blank=True)
 
     class Meta:
         verbose_name = "Упражнение"
