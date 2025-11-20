@@ -29,6 +29,12 @@ class Migration(migrations.Migration):
                 ('equipment_ru', models.CharField(max_length=64)),
                 ('category_en', models.CharField(max_length=64)),
                 ('category_ru', models.CharField(max_length=64)),
+                ('has_weight', models.BooleanField(default=True)),
+                ('has_time', models.BooleanField(default=False)),
+                ('default_sets', models.PositiveIntegerField(default=3)),
+                ('default_reps', models.PositiveIntegerField(default=10)),
+                ('default_rest', models.PositiveIntegerField(default=60)),
+                ('default_time', models.PositiveIntegerField(blank=True, null=True)),
             ],
             options={
                 'verbose_name': 'Упражнение',

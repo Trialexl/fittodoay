@@ -35,6 +35,14 @@ class Exercise_DB(TimestampedModel):
     equipment_ru = models.CharField(max_length=64)
     category_en = models.CharField(max_length=64)
     category_ru = models.CharField(max_length=64)
+    has_weight = models.BooleanField(default=True)
+    has_time = models.BooleanField(default=False)
+    default_sets = models.PositiveIntegerField(default=3)
+    default_reps = models.PositiveIntegerField(default=10)
+    default_rest = models.PositiveIntegerField(default=60, help_text="Отдых в секундах")
+    default_time = models.PositiveIntegerField(
+        null=True, blank=True, help_text="Время в секундах"
+    )
 
     class Meta:
         verbose_name = "Упражнение"
