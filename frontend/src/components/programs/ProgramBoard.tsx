@@ -16,7 +16,7 @@ import { CSS } from "@dnd-kit/utilities";
 import useSWR from "swr";
 import { useRouter } from "next/navigation";
 
-import { apiFetch } from "@/lib/api";
+import { API_BASE_URL, apiFetch } from "@/lib/api";
 import { useAuth } from "@/state/AuthContext";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -102,7 +102,16 @@ type ExerciseOption = {
   target_muscles?: string | null;
   has_weight?: boolean;
   has_time?: boolean;
+  description?: string | { text?: string } | null;
+  images?: { order: number; path: string }[];
 };
+
+const STATIC_BASE_URL = API_BASE_URL.replace(/\/$/, "");
+const buildExerciseImageUrl = (path: string) =>
+  `${STATIC_BASE_URL}/static/${path
+    .split("/")
+    .map((segment) => encodeURIComponent(segment))
+    .join("/")}`;
 
 type TemplateDetailResponse = {
   id: number;
@@ -634,6 +643,20 @@ const PlusIcon = () => (
   </svg>
 );
 
+const InfoIcon = () => (
+  <svg
+    viewBox="0 0 20 20"
+    xmlns="http://www.w3.org/2000/svg"
+    className="h-4 w-4"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.8}
+  >
+    <path d="M10 7v6M10 4h.01" strokeLinecap="round" strokeLinejoin="round" />
+    <circle cx="10" cy="10" r="8" />
+  </svg>
+);
+
 const ProgramModal = ({
   state,
   onClose,
@@ -852,6 +875,7 @@ const TemplateExerciseModal = ({
   const { token } = useAuth();
   const [search, setSearch] = useState("");
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [selectedExercise, setSelectedExercise] = useState<ExerciseOption | null>(null);
   const [form, setForm] = useState({
     exercise_id: 0,
     rep_override: "",
@@ -864,6 +888,12 @@ const TemplateExerciseModal = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [exerciseMeta, setExerciseMeta] = useState({ hasTime: false, hasWeight: true });
+  const [previewExercise, setPreviewExercise] = useState<{
+    name: string;
+    text: string;
+    images: { order: number; path: string }[];
+  } | null>(null);
+  const [previewImageIndex, setPreviewImageIndex] = useState(0);
 
   const { data: exercises, isLoading: exercisesLoading } = useSWR(
     state ? ["/api/exercises/", token, search] : null,
@@ -874,6 +904,18 @@ const TemplateExerciseModal = ({
       ),
     { keepPreviousData: true },
   );
+
+  useEffect(() => {
+    if (!form.exercise_id || !exercises) return;
+    const match = exercises.find((item) => item.id === form.exercise_id);
+    if (match) {
+      setSelectedExercise(match);
+    }
+  }, [exercises, form.exercise_id]);
+
+  useEffect(() => {
+    setPreviewImageIndex(0);
+  }, [previewExercise]);
 
   useEffect(() => {
     if (state?.mode === "edit") {
@@ -896,6 +938,7 @@ const TemplateExerciseModal = ({
           hasTime: Boolean(detail.exercise?.has_time),
           hasWeight: detail.exercise?.has_weight ?? true,
         });
+        setSelectedExercise(detail.exercise ?? null);
       })();
     } else {
       setForm({
@@ -908,6 +951,7 @@ const TemplateExerciseModal = ({
         note: "",
       });
       setExerciseMeta({ hasTime: false, hasWeight: true });
+      setSelectedExercise(null);
     }
     setError(null);
   }, [state, token]);
@@ -927,9 +971,59 @@ const TemplateExerciseModal = ({
       hasTime: Boolean(selected?.has_time),
       hasWeight: selected?.has_weight ?? true,
     });
+    setSelectedExercise(selected ?? null);
   };
 
   const filteredExercises = useMemo(() => exercises ?? [], [exercises]);
+
+  const selectedForPreview =
+    (form.exercise_id && filteredExercises.find((item) => item.id === form.exercise_id)) ||
+    selectedExercise;
+
+  const hasPreviewData =
+    selectedForPreview &&
+    (Boolean(
+      typeof selectedForPreview.description === "string"
+        ? selectedForPreview.description?.trim()
+        : selectedForPreview.description?.text?.trim(),
+    ) ||
+      Boolean(selectedForPreview.images?.length));
+
+  const openPreview = () => {
+    if (!selectedForPreview || !hasPreviewData) return;
+    setPreviewExercise({
+      name: selectedForPreview.name,
+      text:
+        typeof selectedForPreview.description === "string"
+          ? selectedForPreview.description ?? ""
+          : selectedForPreview.description?.text ?? "",
+      images: selectedForPreview.images ?? [],
+    });
+  };
+
+  const closePreview = () => {
+    setPreviewExercise(null);
+    setPreviewImageIndex(0);
+  };
+
+  const showPrevPreviewImage = () => {
+    setPreviewImageIndex((prev) => {
+      if (!previewExercise || previewExercise.images.length <= 1) return 0;
+      return prev === 0 ? previewExercise.images.length - 1 : prev - 1;
+    });
+  };
+
+  const showNextPreviewImage = () => {
+    setPreviewImageIndex((prev) => {
+      if (!previewExercise || previewExercise.images.length <= 1) return 0;
+      return prev === previewExercise.images.length - 1 ? 0 : prev + 1;
+    });
+  };
+
+  const activePreviewImage =
+    previewExercise && previewExercise.images.length
+      ? previewExercise.images[Math.min(previewImageIndex, previewExercise.images.length - 1)]
+      : null;
 
   const submit = async () => {
     if (!form.exercise_id) {
@@ -998,67 +1092,93 @@ const TemplateExerciseModal = ({
   if (!state) return null;
 
   return (
-    <Modal
-      open
-      onClose={onClose}
-      title={`${state.mode === "edit" ? "Редактирование упражнения" : "Новое упражнение"}`}
-      description={state.templateName}
-      className="max-w-2xl"
-    >
-      <div className="space-y-4">
-        {error && <p className="rounded bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
-        <div className="space-y-2">
-          <div className="relative">
-            <Input
-              label="Поиск"
-              placeholder="Название, английское имя или мышцы"
-              value={search}
-              onFocus={() => setDropdownOpen(true)}
-              onChange={(e) => {
-                setSearch(e.target.value);
-                setDropdownOpen(true);
-              }}
-            />
-            {dropdownOpen && (
-              <div className="absolute z-10 mt-1 max-h-64 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl">
-                {exercisesLoading ? (
-                  <p className="px-3 py-2 text-sm text-slate-500">Ищем упражнения…</p>
-                ) : (filteredExercises.length ? (
-                  <ul className="divide-y divide-slate-100 text-sm">
-                    {filteredExercises.map((exercise) => (
-                      <li
-                        key={exercise.id}
-                        className={clsx(
-                          "cursor-pointer px-3 py-2 transition", 
-                          form.exercise_id === exercise.id
-                            ? "bg-primary/10 text-primary"
-                            : "hover:bg-slate-50",
-                        )}
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => {
-                          populateDefaults(exercise.id);
-                          setSearch(exercise.name);
-                          setDropdownOpen(false);
-                        }}
-                      >
-                        <p className="font-semibold text-slate-900">
-                          {exercise.name}
-                          {exercise.english_name ? ` / ${exercise.english_name}` : ""}
-                        </p>
-                        {exercise.target_muscles && (
-                          <p className="text-xs text-slate-500">{exercise.target_muscles}</p>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="px-3 py-2 text-sm text-slate-500">Ничего не найдено</p>
-                ))}
+    <>
+      <Modal
+        open
+        onClose={onClose}
+        title={`${state.mode === "edit" ? "Редактирование упражнения" : "Новое упражнение"}`}
+        description={state.templateName}
+        className="max-w-2xl"
+      >
+        <div className="space-y-4">
+          {error && <p className="rounded bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
+          <div className="space-y-2">
+            <div className="relative flex items-center gap-2">
+              <div className="relative flex-1">
+                <Input
+                  label="Поиск"
+                  placeholder="Название, английское имя или мышцы"
+                  value={state.mode === "edit" && !search && selectedExercise ? selectedExercise.name : search}
+                  onFocus={() => setDropdownOpen(true)}
+                  onChange={(e) => {
+                    setSearch(e.target.value);
+                    setDropdownOpen(Boolean(e.target.value.trim().length));
+                  }}
+                />
+                {search && (
+                  <button
+                    type="button"
+                    aria-label="Очистить"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-lg text-slate-400 transition hover:text-slate-600"
+                    onClick={() => {
+                      setSearch("");
+                      setDropdownOpen(false);
+                    }}
+                  >
+                    ×
+                  </button>
+                )}
+                {dropdownOpen && (
+                  <div className="absolute z-10 mt-1 max-h-64 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl">
+                    {exercisesLoading ? (
+                      <p className="px-3 py-2 text-sm text-slate-500">Ищем упражнения…</p>
+                    ) : filteredExercises.length ? (
+                      <ul className="divide-y divide-slate-100 text-sm">
+                        {filteredExercises.map((exercise) => (
+                          <li
+                            key={exercise.id}
+                            className={clsx(
+                              "cursor-pointer px-3 py-2 transition",
+                              form.exercise_id === exercise.id
+                                ? "bg-primary/10 text-primary"
+                                : "hover:bg-slate-50",
+                            )}
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => {
+                              populateDefaults(exercise.id);
+                              setSearch(exercise.name);
+                              setDropdownOpen(false);
+                            }}
+                          >
+                            <p className="font-semibold text-slate-900">
+                              {exercise.name}
+                              {exercise.english_name ? ` / ${exercise.english_name}` : ""}
+                            </p>
+                            {exercise.target_muscles && (
+                              <p className="text-xs text-slate-500">{exercise.target_muscles}</p>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="px-3 py-2 text-sm text-slate-500">Ничего не найдено</p>
+                    )}
+                  </div>
+                )}
               </div>
-            )}
+              {hasPreviewData && (
+                <button
+                  type="button"
+                  aria-label="Предпросмотр"
+                  className="mt-6 inline-flex h-8 w-8 items-center justify-center text-primary transition hover:text-primary/80"
+                  onClick={openPreview}
+                >
+                  <InfoIcon />
+                </button>
+              )}
+            </div>
           </div>
-        </div>
-        <div className="flex flex-wrap items-center justify-center gap-3 text-center">
+          <div className="flex flex-wrap items-center justify-center gap-3 text-center">
           <Input
             label="Сеты"
             type="number"
@@ -1105,8 +1225,8 @@ const TemplateExerciseModal = ({
             value={form.rest_override}
             onChange={(e) => setForm((prev) => ({ ...prev, rest_override: e.target.value }))}
           />
-        </div>
-        <label className="block text-sm text-slate-600">
+          </div>
+          <label className="block text-sm text-slate-600">
           <span>Комментарий</span>
           <textarea
             className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/40"
@@ -1114,8 +1234,8 @@ const TemplateExerciseModal = ({
             value={form.note}
             onChange={(e) => setForm((prev) => ({ ...prev, note: e.target.value }))}
           />
-        </label>
-        <div className="flex justify-end gap-2">
+          </label>
+          <div className="flex justify-end gap-2">
           {state.mode === "edit" && (
             <button
               type="button"
@@ -1150,9 +1270,60 @@ const TemplateExerciseModal = ({
           <Button onClick={submit} loading={loading}>
             {state.mode === "edit" ? "Сохранить" : "Добавить"}
           </Button>
+          </div>
         </div>
-      </div>
-    </Modal>
+      </Modal>
+      <Modal
+        open={Boolean(previewExercise)}
+        onClose={closePreview}
+        title={previewExercise ? previewExercise.name : undefined}
+        className="max-w-2xl"
+      >
+        {previewExercise && (
+          <div className="space-y-4">
+            {previewExercise.text && (
+              <p className="whitespace-pre-line text-sm text-slate-600">{previewExercise.text}</p>
+            )}
+            {activePreviewImage && (
+              <div className="space-y-2">
+                <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-white">
+                  <img
+                    src={buildExerciseImageUrl(activePreviewImage.path)}
+                    alt={`${previewExercise.name} — шаг ${previewImageIndex + 1}`}
+                    className="h-60 w-full bg-slate-50 object-contain"
+                  />
+                  {previewExercise.images.length > 1 && (
+                    <>
+                      <button
+                        type="button"
+                        className="absolute left-3 top-1/2 -translate-y-1/2 rounded-full bg-white/80 p-2 text-slate-600 shadow hover:bg-white"
+                        onClick={showPrevPreviewImage}
+                        aria-label="Предыдущее изображение"
+                      >
+                        ‹
+                      </button>
+                      <button
+                        type="button"
+                        className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-white/80 p-2 text-slate-600 shadow hover:bg-white"
+                        onClick={showNextPreviewImage}
+                        aria-label="Следующее изображение"
+                      >
+                        ›
+                      </button>
+                    </>
+                  )}
+                </div>
+                {previewExercise.images.length > 1 && (
+                  <p className="text-center text-xs text-slate-500">
+                    {previewImageIndex + 1} / {previewExercise.images.length}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </Modal>
+    </>
   );
 };
 
