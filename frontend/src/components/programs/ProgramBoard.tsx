@@ -1108,14 +1108,18 @@ const TemplateExerciseModal = ({
                 <Input
                   label="Поиск"
                   placeholder="Название, английское имя или мышцы"
-                  value={state.mode === "edit" && !search && selectedExercise ? selectedExercise.name : search}
-                  onFocus={() => setDropdownOpen(true)}
+                  value={state.mode === "edit" && selectedExercise ? selectedExercise.name : search}
+                  onFocus={() => {
+                    if (state.mode === "create") setDropdownOpen(true);
+                  }}
                   onChange={(e) => {
+                    if (state.mode === "edit") return;
                     setSearch(e.target.value);
                     setDropdownOpen(Boolean(e.target.value.trim().length));
                   }}
+                  disabled={state.mode === "edit"}
                 />
-                {search && (
+                {state.mode === "create" && search && (
                   <button
                     type="button"
                     aria-label="Очистить"
@@ -1128,7 +1132,7 @@ const TemplateExerciseModal = ({
                     ×
                   </button>
                 )}
-                {dropdownOpen && (
+                {state.mode === "create" && dropdownOpen && (
                   <div className="absolute z-10 mt-1 max-h-64 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl">
                     {exercisesLoading ? (
                       <p className="px-3 py-2 text-sm text-slate-500">Ищем упражнения…</p>
