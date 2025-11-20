@@ -115,6 +115,10 @@ USE_TZ = True
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
+STATICFILES_DIRS: list[Path] = []
+EXERCISES_STATIC_DIR = BASE_DIR.parent / "docs" / "exercises"
+if EXERCISES_STATIC_DIR.exists():
+    STATICFILES_DIRS.append(EXERCISES_STATIC_DIR)
 
 MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"

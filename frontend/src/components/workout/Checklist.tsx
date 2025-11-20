@@ -10,7 +10,7 @@ import { AdjustNumberControl } from "@/components/workout/AdjustNumberControl";
 import { RestTimerOverlay } from "@/components/workout/RestTimerOverlay";
 import { ExecutionTimerOverlay } from "@/components/workout/ExecutionTimerOverlay";
 import { useRestTimer } from "@/hooks/useRestTimer";
-import { apiFetch } from "@/lib/api";
+import { API_BASE_URL, apiFetch } from "@/lib/api";
 import { useAuth } from "@/state/AuthContext";
 
 type SetPayload = {
@@ -52,14 +52,20 @@ const InfoIcon = () => (
   </svg>
 );
 
+type ExerciseImage = {
+  order: number;
+  path: string;
+};
+
 type ExercisePayload = {
   template_exercise_id: number;
   source: {
     type: string;
     id: number;
     name: string;
-    description?: string | null;
+    description?: string | { text?: string } | null;
     target_muscles?: string | null;
+    images?: ExerciseImage[];
   };
   defaults: {
     reps: number | null;
@@ -144,6 +150,15 @@ const parseTargetMuscles = (value?: string | null) =>
 const getExerciseMuscles = (exercise: ExercisePayload) =>
   parseTargetMuscles(exercise.source.target_muscles);
 
+const STATIC_BASE_URL = API_BASE_URL.replace(/\/$/, "");
+const buildExerciseImageUrl = (path: string) => {
+  const encodedPath = path
+    .split("/")
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+  return `${STATIC_BASE_URL}/static/${encodedPath}`;
+};
+
 const keyForSet = (templateExerciseId: number, setIndex: number) =>
   `${templateExerciseId}-${setIndex}`;
 
@@ -191,7 +206,8 @@ export const Checklist = ({
   const [editState, setEditState] = useState<EditState | null>(null);
   const [editForm, setEditForm] = useState({ reps: "", weight: "", time: "" });
   const [editError, setEditError] = useState<string | null>(null);
-  const [infoExercise, setInfoExercise] = useState<{ name: string; content: string } | null>(null);
+  const [infoExercise, setInfoExercise] = useState<{ name: string; text: string; images: ExerciseImage[] } | null>(null);
+  const [infoImageIndex, setInfoImageIndex] = useState(0);
   const [expandedFolders, setExpandedFolders] = useState<Record<number, boolean>>({});
   const [expandedTemplates, setExpandedTemplates] = useState<Record<number, Record<number, boolean>>>({});
   const [expandedExercises, setExpandedExercises] = useState<Record<number, boolean>>({});
@@ -202,6 +218,9 @@ export const Checklist = ({
   const [openRecommendationFolders, setOpenRecommendationFolders] = useState<Record<number, boolean>>({});
   const [recommendationsLoadedDate, setRecommendationsLoadedDate] = useState<string | null>(null);
   const [recommendationsLoading, setRecommendationsLoading] = useState(false);
+  useEffect(() => {
+    setInfoImageIndex(0);
+  }, [infoExercise]);
   const [recommendationsSaving, setRecommendationsSaving] = useState<number | null>(null);
   const [recommendationsError, setRecommendationsError] = useState<string | null>(null);
   const [recommendationsApplied, setRecommendationsApplied] = useState<Record<number, boolean>>({});
@@ -539,6 +558,29 @@ export const Checklist = ({
     setEditError(null);
   };
 
+  const closeInfoModal = () => {
+    setInfoExercise(null);
+    setInfoImageIndex(0);
+  };
+
+  const showPrevInfoImage = () => {
+    setInfoImageIndex((prev) => {
+      if (!infoExercise || infoExercise.images.length <= 1) {
+        return 0;
+      }
+      return prev === 0 ? infoExercise.images.length - 1 : prev - 1;
+    });
+  };
+
+  const showNextInfoImage = () => {
+    setInfoImageIndex((prev) => {
+      if (!infoExercise || infoExercise.images.length <= 1) {
+        return 0;
+      }
+      return prev === infoExercise.images.length - 1 ? 0 : prev + 1;
+    });
+  };
+
   const saveEditLog = async () => {
     if (!editState) return;
     const payload = editState.hasTime
@@ -575,11 +617,20 @@ export const Checklist = ({
     }
   };
 
-  const tooltipText = (description?: string | null, note?: string) => {
-    if (description && note) return `${description}
+  const tooltipText = (
+    description?: string | { text?: string } | null,
+    note?: string,
+  ) => {
+    const descriptionText =
+      typeof description === "string"
+        ? description
+        : description?.text ?? "";
+    if (descriptionText && note) {
+      return `${descriptionText}
 
 ${note}`;
-    return description || note || "";
+    }
+    return descriptionText || note || "";
   };
 
   const handleRestFieldChange = (field: "reps" | "weight" | "time", value: string) => {
@@ -828,6 +879,11 @@ ${note}`;
     );
   }
 
+  const activeInfoImage =
+    infoExercise && infoExercise.images.length > 0
+      ? infoExercise.images[Math.min(infoImageIndex, infoExercise.images.length - 1)]
+      : null;
+
   return (
     <>
       <div className="space-y-4 sm:space-y-5">
@@ -1009,7 +1065,8 @@ ${note}`;
                                       event.stopPropagation();
                                       setInfoExercise({
                                         name: exercise.source.name,
-                                        content: exerciseInfo ?? "",
+                                        text: exerciseInfo ?? "",
+                                        images: exercise.source.images ?? [],
                                       });
                                     }}
                                     onKeyDown={(event) => {
@@ -1018,7 +1075,8 @@ ${note}`;
                                         event.stopPropagation();
                                         setInfoExercise({
                                           name: exercise.source.name,
-                                          content: exerciseInfo ?? "",
+                                          text: exerciseInfo ?? "",
+                                          images: exercise.source.images ?? [],
                                         });
                                       }
                                     }}
@@ -1293,11 +1351,51 @@ ${note}`;
       <Modal
         open={Boolean(infoExercise)}
         title={infoExercise ? `Описание — ${infoExercise.name}` : undefined}
-        onClose={() => setInfoExercise(null)}
-        className="max-w-md"
+        onClose={closeInfoModal}
+        className="max-w-2xl"
       >
         {infoExercise && (
-          <p className="whitespace-pre-line text-sm text-slate-600">{infoExercise.content}</p>
+          <div className="space-y-4">
+            {infoExercise.text && (
+              <p className="whitespace-pre-line text-sm text-slate-600">{infoExercise.text}</p>
+            )}
+            {activeInfoImage && (
+              <div className="space-y-2">
+                <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-white">
+                  <img
+                    src={buildExerciseImageUrl(activeInfoImage.path)}
+                    alt={`${infoExercise.name} — шаг ${infoImageIndex + 1}`}
+                    className="h-64 w-full max-w-full bg-slate-50 object-contain"
+                  />
+                  {infoExercise.images.length > 1 && (
+                    <>
+                      <button
+                        type="button"
+                        className="absolute left-3 top-1/2 -translate-y-1/2 rounded-full bg-white/80 p-2 text-slate-600 shadow hover:bg-white"
+                        onClick={showPrevInfoImage}
+                        aria-label="Предыдущее изображение"
+                      >
+                        ‹
+                      </button>
+                      <button
+                        type="button"
+                        className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-white/80 p-2 text-slate-600 shadow hover:bg-white"
+                        onClick={showNextInfoImage}
+                        aria-label="Следующее изображение"
+                      >
+                        ›
+                      </button>
+                    </>
+                  )}
+                </div>
+                {infoExercise.images.length > 1 && (
+                  <p className="text-center text-xs text-slate-500">
+                    {infoImageIndex + 1} / {infoExercise.images.length}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
         )}
       </Modal>
 

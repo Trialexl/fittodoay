@@ -14,6 +14,7 @@ class ExerciseSerializer(serializers.ModelSerializer):
     english_name = serializers.SerializerMethodField()
     difficulty = serializers.SerializerMethodField()
     common_errors = serializers.SerializerMethodField()
+    images = serializers.SerializerMethodField()
 
     class Meta:
         model = Exercise_DB
@@ -33,6 +34,7 @@ class ExerciseSerializer(serializers.ModelSerializer):
             "english_name",
             "difficulty",
             "common_errors",
+            "images",
         ]
 
     def get_name(self, obj):
@@ -52,6 +54,12 @@ class ExerciseSerializer(serializers.ModelSerializer):
 
     def get_common_errors(self, obj):
         return obj.common_errors
+
+    def get_images(self, obj):
+        return [
+            {"order": image.order, "path": image.path}
+            for image in obj.images.order_by("order")
+        ]
 
 
 class CustomExerciseSerializer(serializers.ModelSerializer):

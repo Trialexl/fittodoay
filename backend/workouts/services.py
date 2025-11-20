@@ -90,7 +90,8 @@ def generate_daily_plan(user, target_date: date | None = None) -> WorkoutDay:
         queryset=DayTemplate.objects.prefetch_related(
             Prefetch(
                 "template_exercises",
-                queryset=TemplateExercise.objects.select_related("exercise", "custom_exercise"),
+                queryset=TemplateExercise.objects.select_related("exercise", "custom_exercise")
+                .prefetch_related("exercise__images", "exercise__instructions"),
             )
         ),
     )
@@ -132,6 +133,12 @@ def generate_daily_plan(user, target_date: date | None = None) -> WorkoutDay:
                         }
                     )
                 total_sets += len(sets)
+                images_payload = []
+                if te.exercise_id:
+                    images_payload = [
+                        {"order": image.order, "path": image.path}
+                        for image in te.exercise.images.order_by("order")
+                    ]
                 exercises_payload.append(
                     {
                         "template_exercise_id": te.id,
@@ -141,6 +148,7 @@ def generate_daily_plan(user, target_date: date | None = None) -> WorkoutDay:
                             "name": source.name,
                             "description": getattr(source, "description", "") or "",
                             "target_muscles": getattr(source, "target_muscles", "") or "",
+                            "images": images_payload,
                         },
                         "defaults": defaults,
                         "note": te.note,
