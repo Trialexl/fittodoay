@@ -1350,7 +1350,7 @@ ${note}`;
 
       <Modal
         open={Boolean(infoExercise)}
-        title={infoExercise ? `Описание — ${infoExercise.name}` : undefined}
+        title={infoExercise ? infoExercise.name : undefined}
         onClose={closeInfoModal}
         className="max-w-2xl"
       >

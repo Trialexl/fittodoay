@@ -13,7 +13,7 @@ from django.utils import timezone
 
 from programs.models import DayTemplate, ProgramFolder, TemplateExercise
 from agents.models import LLMRequestLog
-from workouts.models import Exercise_DB
+from workouts.models import Exercise_DB, ExerciseMuscle
 
 logger = logging.getLogger(__name__)
 
@@ -150,26 +150,23 @@ class LLMProgramGenerationService:
         raise LLMInvalidResponse("invalid_response")
 
     def _serialize_exercises(self) -> List[Dict[str, Any]]:
-        qs = Exercise_DB.objects.all().order_by("id")[:300]
-        snapshot = []
+        qs = Exercise_DB.objects.all().order_by("id")
+        primary_muscles = ExerciseMuscle.objects.filter(is_primary=True).order_by("name_en")
+        muscle_map: dict[str, list[str]] = {}
+        for muscle in primary_muscles.values("exercise_id", "name_en"):
+            muscle_map.setdefault(muscle["exercise_id"], []).append(muscle["name_en"])
+
+        snapshot: List[Dict[str, Any]] = []
         for exercise in qs:
             snapshot.append(
                 {
                     "id": exercise.id,
-                    "name": exercise.name,
-                    "english_name": exercise.english_name,
-                    "target_muscles": exercise.target_muscles,
+                    "name": exercise.english_name or exercise.name_en or exercise.name_ru,
+                    "target_muscles": "/".join(muscle_map.get(exercise.id, [])),
+                    "equipment": exercise.equipment_en or exercise.equipment_ru,
+                    "difficulty": exercise.level_en or exercise.level_ru,
                     "has_weight": exercise.has_weight,
                     "has_time": exercise.has_time,
-                    "default_sets": exercise.default_sets,
-                    "default_reps": exercise.default_reps,
-                    "default_weight": float(exercise.default_weight)
-                    if exercise.default_weight is not None
-                    else None,
-                    "default_time": exercise.default_time,
-                    "default_rest": exercise.default_rest,
-                    "difficulty": exercise.difficulty,
-                    "equipment": exercise.equipment_ru or exercise.equipment_en,
                 }
             )
         return snapshot
@@ -185,20 +182,18 @@ class LLMProgramGenerationService:
 
     def _build_messages(self, preferences, exercises_snapshot, constraints):
         system_prompt = (
-            "Ты помощник тренера фитнес-приложения. Составь одну программу тренировок на основе каталога упражнений. "
-            "Ответ ОБЯЗАТЕЛЬНО должен быть ПОЛНЫМ JSON-объектом без Markdown-разметки, без ```json, без текста до или после. "
-            "JSON должен начинаться с символа '{' и заканчиваться '}'. Никаких комментариев, переносов с ``` и т.п.\n"
-            "Строгая схема:\n"
+            "You are a fitness coach assistant. Build exactly one workout program using only the provided exercise catalog. "
+            "Respond ONLY with a valid JSON object (no Markdown). JSON must start with '{' and end with '}'.\n"
+            "Schema:\n"
             "{\"programs\": [{\"name\": string, \"comment\": string?, \"days\": ["
             "{\"name\": string, \"comment\": string?, "
             "\"schedule_type\": \"weekly\", \"schedule_config\": {\"days_of_week\": [int]}, "
             "\"exercises\": [{"
-            "\"exercise_id\": int, \"sets\": int, \"reps\": int|null, \"weight\": number|null, "
+            "\"exercise_id\": string, \"sets\": int, \"reps\": int|null, \"weight\": number|null, "
             "\"time\": int|null, \"rest\": int|null, \"note\": string?\n"
             "}]}]}]}\n"
-            "Только числа или null (не строки вида \"10 кг\"). Нельзя придумывать новые упражнения; "
-            "используй только id из каталога. Если ответ и комментарии не помещаются, сократи количество дней или "
-            "упражнений, сделай комментарии короче, но всегда возвращай валидный JSON."
+            "Rules: use only catalog exercise IDs, determine appropriate sets/reps/weight/time yourself, keep numeric values numbers or null, "
+            "and shorten days/exercises/comments if the response becomes too long."
         )
         user_content = {
             "preferences": preferences,
