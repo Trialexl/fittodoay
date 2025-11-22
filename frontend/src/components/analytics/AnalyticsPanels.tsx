@@ -3,6 +3,7 @@
 import { apiFetch } from "@/lib/api";
 import { useAuth } from "@/state/AuthContext";
 import useSWR from "swr";
+import { useRouter } from "next/navigation";
 
 import { ProgramTrendPanel } from "@/components/analytics/ProgramTrendPanel";
 
@@ -10,6 +11,7 @@ type DailyItem = { date: string; load: number };
 type ExerciseItem = { id: string; name: string; type: string; load: number; sets: number };
 
 export const AnalyticsPanels = () => {
+  const router = useRouter();
   const { token } = useAuth();
   const { data: daily } = useSWR(
     token ? ["/api/analytics/days/", token] : null,
@@ -27,13 +29,15 @@ export const AnalyticsPanels = () => {
         <h3 className="font-semibold">Нагрузка по дням</h3>
         <div className="mt-3 flex flex-wrap gap-2">
           {daily?.items.map((item) => (
-            <div
+            <button
               key={item.date}
-              className="flex min-w-[120px] flex-col rounded bg-slate-50 p-3 text-sm"
+              type="button"
+              onClick={() => router.push(`/workout?date=${item.date}`)}
+              className="flex min-w-[120px] flex-col rounded bg-slate-50 p-3 text-left text-sm transition hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-primary/40"
             >
               <span className="text-slate-500">{item.date}</span>
               <span className="text-lg font-semibold">{item.load}</span>
-            </div>
+            </button>
           ))}
         </div>
       </div>
