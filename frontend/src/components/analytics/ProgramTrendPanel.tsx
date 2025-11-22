@@ -407,7 +407,9 @@ export const ProgramTrendPanel = () => {
           <Scatter
             data={heatmapPoints}
             name="Нагрузка"
-            shape={(props) => <HeatCell {...props} maxValue={Math.max(chartMaxValue, 1)} />}
+            shape={(shapeProps: HeatCellShapeProps) => (
+              <HeatCell {...shapeProps} maxValue={Math.max(chartMaxValue, 1)} />
+            )}
           />
         </ScatterChart>
       </ResponsiveContainer>
@@ -519,11 +521,21 @@ export const ProgramTrendPanel = () => {
   );
 };
 
-const ChartTooltipContent = ({
-  active,
-  payload,
-  granularity,
-}: TooltipProps<number, string> & { granularity: "day" | "week" }) => {
+type ChartTooltipEntry = {
+  color?: string;
+  name?: string | number;
+  dataKey?: string | number;
+  value?: number | string;
+  payload?: { iso?: string; label?: string };
+};
+
+type ChartTooltipProps = {
+  active?: boolean;
+  payload?: ChartTooltipEntry[];
+  granularity: "day" | "week";
+};
+
+const ChartTooltipContent = ({ active, payload, granularity }: ChartTooltipProps) => {
   if (!active || !payload || payload.length === 0) {
     return null;
   }
@@ -549,10 +561,13 @@ const ChartTooltipContent = ({
   );
 };
 
-type HeatCellProps = {
+type HeatCellShapeProps = {
   cx?: number;
   cy?: number;
   payload?: { value: number; color?: string };
+};
+
+type HeatCellProps = HeatCellShapeProps & {
   maxValue: number;
 };
 
