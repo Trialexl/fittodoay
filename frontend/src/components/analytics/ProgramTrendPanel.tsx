@@ -187,16 +187,19 @@ export const ProgramTrendPanel = () => {
       return { series, map };
     });
     const sortedIso = Array.from(isoSet).sort();
-    const combined: TimelineEntry[] = sortedIso.map((iso) => {
-      const entry: TimelineEntry = {
-        iso,
-        label: formatLabelDate(iso, activeGranularity),
-      };
-      pointMaps.forEach(({ series, map }) => {
-        entry[series.key.toString()] = map.get(iso) ?? 0;
+      const combined: TimelineEntry[] = sortedIso.map((iso) => {
+        const entry: TimelineEntry = {
+          iso,
+          label: formatLabelDate(iso, activeGranularity),
+        };
+        pointMaps.forEach(({ series, map }) => {
+          const pointValue = map.get(iso);
+          if (typeof pointValue === "number") {
+            entry[series.key.toString()] = pointValue;
+          }
+        });
+        return entry;
       });
-      return entry;
-    });
     return { timelineData: combined, isoList: sortedIso };
   }, [activeSeries, activeGranularity]);
 
