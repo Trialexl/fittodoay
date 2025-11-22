@@ -69,3 +69,28 @@ NEXT_PUBLIC_API_URL=http://backend:8000 docker compose up -d backend frontend db
 ## 5. CI/CD
 - GitHub Actions (`.github/workflows/ci.yml`) прогоняет линтеры и pytest.
 - Для деплоя можно добавить отдельный job, который пушит образы в регистр и дергает сервер (SSH/Webhook).
+
+
+чистка места после частых билдов контейнеров
+
+df -h
+
+sudo du -xh --max-depth=1 / | sort -h
+
+sudo du -xh --max-depth=1 /var | sort -h
+
+sudo du -xh --max-depth=1 /var/lib/docker | sort -h
+
+docker system df
+
+docker system prune
+
+docker volume prune
+
+sudo journalctl --disk-usage
+
+sudo journalctl --vacuum-time=7d
+
+sudo find / -type f -size +500M -exec ls -lh {} \; 2>/dev/null
+
+sudo rm -rf /tmp/*
