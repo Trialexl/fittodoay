@@ -12,9 +12,13 @@ from programs.models import TemplateExercise
 from workouts.models import WorkoutDay, WorkoutSetLog
 from workouts.services import resolve_defaults
 
-REPS_INCREASE_THRESHOLD = 4
+TARGET_REP_MIN = 8
+TARGET_REP_MAX = 12
+TARGET_RIR = 2.0
+RIR_TOLERANCE = 1.0
 WEIGHT_STEP = Decimal("2.0")
-WEIGHT_RESET_REPS = 8
+AUTO_ALIGN_THRESHOLD = Decimal("0.5")
+AUTO_DROP_THRESHOLD = Decimal("1.0")
 
 
 @dataclass
@@ -33,6 +37,8 @@ class Recommendation:
     has_weight: bool
     reason: Optional[str] = None
     action: Optional[str] = None
+    estimated_rir: Optional[float] = None
+    informational: bool = False
 
 
 def _average(values: List[float | None]) -> Optional[float]:
@@ -40,6 +46,27 @@ def _average(values: List[float | None]) -> Optional[float]:
     if not filtered:
         return None
     return sum(filtered) / len(filtered)
+
+
+def _clamp(value: int, minimum: int, maximum: int) -> int:
+    return max(minimum, min(maximum, value))
+
+
+def _round_weight_up(value: Decimal) -> float:
+    rounded = value.to_integral_value(rounding="ROUND_HALF_UP")
+    if rounded % 2:
+        rounded += 1
+    if rounded < value:
+        rounded += 2
+    return float(rounded)
+
+
+def _estimate_rir(avg_reps: float) -> float:
+    """
+    Принимаем нижнюю границу диапазона (8 повторений) как RIR=0.
+    Относительно неё считаем, сколько повторений остаётся «в запасе».
+    """
+    return avg_reps - TARGET_REP_MIN
 
 
 def _build_snapshot_index(day: WorkoutDay):
@@ -77,8 +104,7 @@ def _build_recommendation(
     if not logs:
         return None
     defaults = resolve_defaults(te)
-    has_time = defaults.get("has_time")
-    if has_time:
+    if defaults.get("has_time"):
         return None
 
     planned_reps = defaults.get("reps")
@@ -94,73 +120,114 @@ def _build_recommendation(
         [float(log.actual_weight) if log.actual_weight is not None else None for log in logs]
     )
 
+    rounded_avg = round(avg_reps, 1)
+    estimated_rir = _estimate_rir(rounded_avg)
     suggested_reps: Optional[int] = None
     suggested_weight: Optional[float] = None
     reason: Optional[str] = None
     action: Optional[str] = None
+    informational = False
 
-    rounded_avg = int(round(avg_reps))
-
-    if (
-        has_weight
-        and planned_weight is not None
-        and avg_weight is not None
-        and avg_weight < planned_weight
-    ):
-        actual_tonnage = avg_weight * avg_reps
-        best_weight: Optional[float] = None
-        best_reps: Optional[int] = None
-        min_diff = float("inf")
-        for rep_target in range(max(8, planned_reps - 2), 13):
-            for weight_candidate in range(2, int(planned_weight) + 2, 2):
-                tonnage = weight_candidate * rep_target
-                diff = abs(actual_tonnage - tonnage)
-                if diff < min_diff:
-                    min_diff = diff
-                    best_weight = weight_candidate
-                    best_reps = rep_target
-        suggested_weight = best_weight or float(round(avg_weight / 2) * 2)
-        suggested_reps = best_reps or max(1, int(round(avg_reps)))
-        reason = "Плановый вес оказался тяжёлым; корректируем нагрузку под фактические показатели."
-        action = "adjust_weight"
-    else:
-        increase_condition = avg_reps >= planned_reps + REPS_INCREASE_THRESHOLD or (
-            is_first_time and avg_reps >= planned_reps
-        )
-        if has_weight and planned_weight is not None and increase_condition:
-            next_weight = Decimal(str(planned_weight)) + WEIGHT_STEP
-            suggested_weight = float(next_weight.quantize(Decimal("0.01")))
-            suggested_reps = WEIGHT_RESET_REPS
-            if is_first_time and avg_reps >= planned_reps and avg_reps < planned_reps + REPS_INCREASE_THRESHOLD:
-                reason = f"Первое выполнение и среднее {avg_reps:.1f} повторов — вес был лёгкий, повышаем нагрузку."
-            else:
-                reason = f"Среднее {avg_reps:.1f} повторов — время увеличить вес."
-            action = "increase_weight"
-        elif rounded_avg != planned_reps:
-            upper_cap = min(12, max(rounded_avg, planned_reps))
-            suggested_reps = max(1, upper_cap)
-            reason = f"Фактическое среднее {avg_reps:.1f} повторов."
-            action = "update_reps"
-
-    if (
-        is_first_time
-        and has_weight
-        and avg_weight is not None
-        and suggested_weight is None
-    ):
-        normalized_weight = round(avg_weight, 2)
-        suggested_weight = normalized_weight
-        addition = f" Первое выполнение — фиксируем рабочий вес {normalized_weight} кг."
-        reason = (reason or "").strip()
-        reason = (reason + addition).strip() if reason else addition.strip()
-        if not action:
-            action = "set_initial_weight"
-
-    if suggested_reps is None and suggested_weight is None:
-        return None
-
+    rep_goal = _clamp(int(round(planned_reps)), TARGET_REP_MIN, TARGET_REP_MAX)
+    actual_rep_goal = _clamp(int(round(rounded_avg)), TARGET_REP_MIN, TARGET_REP_MAX)
     source = te.exercise or te.custom_exercise
     exercise_name = source.name if source else f"Упражнение {te.id}"
+
+    if has_weight and planned_weight is not None:
+        planned_decimal = Decimal(str(planned_weight))
+        actual_decimal = Decimal(str(avg_weight)) if avg_weight is not None else None
+        if actual_decimal and actual_decimal > planned_decimal + AUTO_ALIGN_THRESHOLD:
+            target_weight = _round_weight_up(actual_decimal)
+            reason = (
+                f"Фактически работаете со средним весом {target_weight} кг — фиксируем его и сохраняем диапазон повторений на уровне {actual_rep_goal}."
+            )
+            return Recommendation(
+                template_exercise_id=te.id,
+                exercise_name=exercise_name,
+                template_name=te.template.name,
+                folder_id=te.template.folder.id,
+                folder_name=te.template.folder.name,
+                current_reps=planned_reps,
+                current_weight=float(planned_weight),
+                average_reps=rounded_avg,
+                average_weight=round(avg_weight, 2) if avg_weight is not None else None,
+                suggested_reps=actual_rep_goal,
+                suggested_weight=target_weight,
+                has_weight=has_weight,
+                reason=reason,
+                action="align_weight",
+                estimated_rir=round(estimated_rir, 1),
+            )
+        if actual_decimal and actual_decimal < planned_decimal - AUTO_DROP_THRESHOLD:
+            new_weight = _round_weight_up(max(Decimal("0"), actual_decimal))
+            reason = (
+                f"Средний рабочий вес {actual_decimal} кг заметно ниже плана — возвращаемся к нему и удерживаем цель на уровне {actual_rep_goal} повторов."
+            )
+            return Recommendation(
+                template_exercise_id=te.id,
+                exercise_name=exercise_name,
+                template_name=te.template.name,
+                folder_id=te.template.folder.id,
+                folder_name=te.template.folder.name,
+                current_reps=planned_reps,
+                current_weight=float(planned_weight),
+                average_reps=rounded_avg,
+                average_weight=round(avg_weight, 2) if avg_weight is not None else None,
+                suggested_reps=actual_rep_goal,
+                suggested_weight=new_weight,
+                has_weight=has_weight,
+                reason=reason,
+                action="reduce_weight_to_actual",
+                estimated_rir=round(estimated_rir, 1),
+            )
+        if rounded_avg < TARGET_REP_MIN - 0.5:
+            new_weight = max(Decimal("0"), planned_decimal - WEIGHT_STEP)
+            if new_weight != planned_decimal:
+                suggested_weight = float(new_weight)
+            suggested_reps = TARGET_REP_MIN
+            reason = (
+                f"Среднее {rounded_avg:.1f} повт. не дотягивает до 8 — уменьшаем вес и закрепляем план на 8 повторениях."
+            )
+            action = "decrease_weight"
+        elif rounded_avg < TARGET_REP_MIN + 0.5 and planned_reps > TARGET_REP_MIN:
+            reason = (
+                f"Фактически удерживаете около {rounded_avg:.1f} повт. — сконцентрируйтесь на технике, после чего вернёмся к росту повторений."
+            )
+            action = "info_low_reps"
+            informational = True
+        elif (avg_weight is None or abs(float(avg_weight) - planned_weight) <= float(AUTO_ALIGN_THRESHOLD)):
+            if planned_reps < TARGET_REP_MAX:
+                if rounded_avg >= planned_reps:
+                    next_reps = min(planned_reps + 1, TARGET_REP_MAX)
+                    suggested_reps = next_reps
+                    reason = (
+                        f"Вы уверенно держите {rounded_avg:.1f} повт. — повышаем целевой шаг до {next_reps}, "
+                        "продолжайте наращивать повторы перед следующим ростом веса."
+                    )
+                    action = "increase_reps_after_weight"
+        elif rounded_avg >= TARGET_REP_MAX and estimated_rir > TARGET_RIR + RIR_TOLERANCE:
+            suggested_weight = _round_weight_up(planned_decimal + WEIGHT_STEP)
+            suggested_reps = TARGET_REP_MIN
+            reason = (
+                f"Повторы вышли на {rounded_avg:.1f} (RIR≈{estimated_rir:.1f}) — повышаем вес и начинаем новый цикл с 8 повторений."
+            )
+            action = "increase_weight"
+        elif rep_goal != planned_reps:
+            suggested_reps = rep_goal
+            reason = "Фиксируем план в диапазоне 8–12 повт., чтобы отслеживать прогрессию."
+            action = "adjust_reps"
+    else:
+        target_reps = _clamp(int(round(avg_reps)), TARGET_REP_MIN, TARGET_REP_MAX)
+        if target_reps != planned_reps or (is_first_time and target_reps == planned_reps):
+            suggested_reps = target_reps
+            reason = (
+                f"Средний результат {rounded_avg:.1f} повт. (RIR≈{estimated_rir:.1f}). "
+                f"Обновите цель на {target_reps} повторов, чтобы держать диапазон 8–12."
+            )
+            action = "adjust_reps"
+
+    if not informational and suggested_reps is None and suggested_weight is None:
+        return None
 
     current_weight = float(planned_weight) if planned_weight is not None and has_weight else None
 
@@ -172,13 +239,15 @@ def _build_recommendation(
         folder_name=te.template.folder.name,
         current_reps=planned_reps,
         current_weight=current_weight,
-        average_reps=round(avg_reps, 2),
+        average_reps=rounded_avg,
         average_weight=round(avg_weight, 2) if avg_weight is not None else None,
         suggested_reps=suggested_reps,
         suggested_weight=suggested_weight,
         has_weight=has_weight,
         reason=reason,
         action=action,
+        estimated_rir=round(estimated_rir, 1),
+        informational=informational,
     )
 
 
@@ -249,6 +318,8 @@ def generate_recommendations_for_day(day: WorkoutDay) -> List[Dict]:
                         "has_weight": recommendation.has_weight,
                         "reason": recommendation.reason,
                         "action": recommendation.action,
+                        "estimated_rir": recommendation.estimated_rir,
+                        "informational": recommendation.informational,
                     }
                 )
         if folder_recs:

@@ -113,6 +113,8 @@ type ExerciseRecommendation = {
   suggested_reps: number | null;
   suggested_weight: number | null;
   has_weight: boolean;
+  informational: boolean;
+  estimated_rir: number | null;
   reason?: string | null;
   action?: string | null;
 };
@@ -821,6 +823,9 @@ export const Checklist = ({
     const folderFields = recommendationForms[folderId] ?? {};
     const items = folderData.recommendations
       .map((rec) => {
+        if (rec.informational) {
+          return null;
+        }
         const controls = folderFields[rec.template_exercise_id];
         if (!controls) return null;
         const payload: {
@@ -1213,7 +1218,7 @@ export const Checklist = ({
                                 recommendationsSaving === folder.id ||
                                 recommendationsLoading ||
                                 !folderRecommendation ||
-                                folderRecommendation.recommendations.length === 0
+                                !folderRecommendation.recommendations.some((rec) => !rec.informational)
                               }
                               onClick={() => applyRecommendationsForFolder(folder.id)}
                             >
@@ -1233,97 +1238,126 @@ export const Checklist = ({
                               Пока нет изменений — план соответствует вашим результатам.
                             </p>
                           )}
+                        {!recommendationsLoading &&
+                          folderRecommendation &&
+                          folderRecommendation.recommendations.length > 0 &&
+                          !folderRecommendation.recommendations.some((rec) => !rec.informational) && (
+                            <p className="mt-3 text-sm text-slate-500">
+                              Только информационные замечания — корректировки не требуются.
+                            </p>
+                          )}
                         {folderRecommendation && folderRecommendation.recommendations.length > 0 && (
                           <div className="mt-4 space-y-3">
-                            {folderRecommendation.recommendations.map((rec, recIndex) => {
-                              const isFirstRec = recIndex === 0;
-                              const formValues =
-                                recommendationForms[folder.id]?.[rec.template_exercise_id] ?? {
-                                  reps:
-                                    rec.suggested_reps !== null && rec.suggested_reps !== undefined
-                                      ? String(rec.suggested_reps)
-                                      : "",
-                                  weight:
-                                    rec.has_weight && rec.suggested_weight !== null && rec.suggested_weight !== undefined
-                                      ? String(rec.suggested_weight)
-                                      : "",
-                                };
-                              const planWeight = formatNumberDisplay(rec.current_weight);
-                              const averageWeight = formatNumberDisplay(rec.average_weight);
-                              return (
-                                <div
-                                  key={rec.template_exercise_id}
-                                  className="rounded-xl border border-slate-200 bg-white/90 p-3 shadow-sm"
-                                >
-                                  <div className="flex flex-wrap items-start justify-between gap-2">
-                                    <div>
-                                      <p className="text-sm font-semibold text-slate-900">{rec.exercise_name}</p>
-                                      <p className="text-xs text-slate-500">{rec.template_name}</p>
+                            {(() => {
+                              let firstActionableAssigned = false;
+                              return folderRecommendation.recommendations.map((rec) => {
+                                const planWeight = formatNumberDisplay(rec.current_weight);
+                                const averageWeight = formatNumberDisplay(rec.average_weight);
+                                const formValues =
+                                  recommendationForms[folder.id]?.[rec.template_exercise_id] ?? {
+                                    reps:
+                                      rec.suggested_reps !== null && rec.suggested_reps !== undefined
+                                        ? String(rec.suggested_reps)
+                                        : "",
+                                    weight:
+                                      rec.has_weight &&
+                                      rec.suggested_weight !== null &&
+                                      rec.suggested_weight !== undefined
+                                        ? String(rec.suggested_weight)
+                                        : "",
+                                  };
+                                const isFirstActionable = !rec.informational && !firstActionableAssigned;
+                                if (isFirstActionable) {
+                                  firstActionableAssigned = true;
+                                }
+                                return (
+                                  <div
+                                    key={rec.template_exercise_id}
+                                    className="rounded-xl border border-slate-200 bg-white/90 p-3 shadow-sm"
+                                  >
+                                    <div className="flex flex-wrap items-start justify-between gap-2">
+                                      <div>
+                                        <p className="text-sm font-semibold text-slate-900">{rec.exercise_name}</p>
+                                        <p className="text-xs text-slate-500">{rec.template_name}</p>
+                                      </div>
+                                      {rec.reason && (
+                                        <p className="text-xs text-slate-500 sm:max-w-xs">{rec.reason}</p>
+                                      )}
                                     </div>
-                                    {rec.reason && (
-                                      <p className="text-xs text-slate-500 sm:max-w-xs">{rec.reason}</p>
-                                    )}
-                                  </div>
-                                  <div className="mt-3 grid gap-3 text-sm sm:grid-cols-3">
-                                    <div>
-                                      <p className="text-[11px] uppercase tracking-wide text-slate-400">План</p>
-                                      <p className="font-semibold text-slate-900">
-                                        {rec.current_reps ?? "—"}
-                                        {planWeight && ` · ${planWeight} кг`}
-                                      </p>
-                                    </div>
-                                    <div>
-                                      <p className="text-[11px] uppercase tracking-wide text-slate-400">Среднее</p>
-                                      <p className="text-slate-900">
-                                        {rec.average_reps !== null && rec.average_reps !== undefined
-                                          ? rec.average_reps.toFixed(1)
-                                          : "—"}
-                                        {averageWeight && ` · ${averageWeight} кг`}
-                                      </p>
-                                    </div>
-                                    <div className="space-y-2">
-                                      <Input
-                                        ref={(element) => {
-                                          if (isFirstRec) {
-                                            recommendationFocusRefs.current[folder.id] = element;
-                                          }
-                                        }}
-                                        label="Повторы"
-                                        type="number"
-                                        inputMode="numeric"
-                                        className="w-full"
-                                        value={formValues.reps}
-                                        onChange={(event) =>
-                                          handleRecommendationFieldChange(
-                                            folder.id,
-                                            rec.template_exercise_id,
-                                            "reps",
-                                            event.target.value,
-                                          )
-                                        }
-                                      />
-                                      {rec.has_weight && (
-                                        <Input
-                                          label="Вес (кг)"
-                                          type="number"
-                                          inputMode="decimal"
-                                          className="w-full"
-                                          value={formValues.weight}
-                                          onChange={(event) =>
-                                            handleRecommendationFieldChange(
-                                              folder.id,
-                                              rec.template_exercise_id,
-                                              "weight",
-                                              event.target.value,
-                                            )
-                                          }
-                                        />
+                                    <div className="mt-3 grid gap-3 text-sm sm:grid-cols-3">
+                                      <div>
+                                        <p className="text-[11px] uppercase tracking-wide text-slate-400">План</p>
+                                        <p className="font-semibold text-slate-900">
+                                          {rec.current_reps ?? "—"}
+                                          {planWeight && ` · ${planWeight} кг`}
+                                        </p>
+                                      </div>
+                                      <div>
+                                        <p className="text-[11px] uppercase tracking-wide text-slate-400">Среднее</p>
+                                        <p className="text-slate-900">
+                                          {rec.average_reps !== null && rec.average_reps !== undefined
+                                            ? rec.average_reps.toFixed(1)
+                                            : "—"}
+                                          {averageWeight && ` · ${averageWeight} кг`}
+                                        </p>
+                                        <p className="text-[11px] text-slate-500">
+                                          RIR ≈{" "}
+                                          {rec.estimated_rir !== null && rec.estimated_rir !== undefined
+                                            ? rec.estimated_rir.toFixed(1)
+                                            : "—"}
+                                        </p>
+                                      </div>
+                                      {rec.informational ? (
+                                        <div className="text-xs text-slate-500">
+                                          {rec.reason ||
+                                            "Держите темп — в этот раз изменений плана не требуется."}
+                                        </div>
+                                      ) : (
+                                        <div className="space-y-2">
+                                          <Input
+                                            ref={(element) => {
+                                              if (isFirstActionable) {
+                                                recommendationFocusRefs.current[folder.id] = element;
+                                              }
+                                            }}
+                                            label="Повторы"
+                                            type="number"
+                                            inputMode="numeric"
+                                            className="w-full"
+                                            value={formValues.reps}
+                                            onChange={(event) =>
+                                              handleRecommendationFieldChange(
+                                                folder.id,
+                                                rec.template_exercise_id,
+                                                "reps",
+                                                event.target.value,
+                                              )
+                                            }
+                                          />
+                                          {rec.has_weight && (
+                                            <Input
+                                              label="Вес (кг)"
+                                              type="number"
+                                              inputMode="decimal"
+                                              className="w-full"
+                                              value={formValues.weight}
+                                              onChange={(event) =>
+                                                handleRecommendationFieldChange(
+                                                  folder.id,
+                                                  rec.template_exercise_id,
+                                                  "weight",
+                                                  event.target.value,
+                                                )
+                                              }
+                                            />
+                                          )}
+                                        </div>
                                       )}
                                     </div>
                                   </div>
-                                </div>
-                              );
-                            })}
+                                );
+                              });
+                            })()}
                           </div>
                         )}
                       </div>

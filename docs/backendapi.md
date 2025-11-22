@@ -238,19 +238,32 @@
           "template_name": "День 3",
           "current_reps": 10,
           "current_weight": 20,
-          "average_reps": 12,
-          "average_weight": 20,
+          "average_reps": 12.0,
+          "average_weight": 20.0,
           "suggested_reps": 8,
-          "suggested_weight": 22,
+          "suggested_weight": 22.0,
           "has_weight": true,
-          "reason": "Плановый вес оказался тяжёлым; корректируем нагрузку под фактические показатели.",
-          "action": "increase_weight"
+          "reason": "Повторы вышли на 12.0 (RIR≈4.0) — повышаем вес и начинаем новый цикл с 8 повторений.",
+          "action": "increase_weight",
+          "estimated_rir": 4.0
         }
       ]
     }
   ]
 }
 ```
+
+Поле `action` может принимать значения:
+- `increase_weight` — поднять вес и начать новый цикл с 8 повторений;
+- `decrease_weight` — снизить вес и удерживать диапазон 8–12;
+- `adjust_reps_down` — временно снизить целевое число повторов, если в нижней границе диапазона;
+- `increase_reps_after_weight` — продолжить наращивать повторения на текущем весе;
+- `align_weight` — зафиксировать фактический средний вес, если он выше плана;
+- `reduce_weight_to_actual` — опустить план до фактического среднего веса, если пользователь не держит прежний уровень;
+- `info_low_reps` — информационный совет сфокусироваться на технике, без автоматической корректировки;
+- `adjust_reps` — скорректировать цель по повторам для упражнений без веса.
+
+Каждая рекомендация содержит флаг `informational` — если `true`, поля `suggested_*` могут быть пустыми и это просто текстовое сообщение.
 
 ### POST `/api/workouts/recommendations/apply/`
 Применяет выбранные значения к `TemplateExercise`.
