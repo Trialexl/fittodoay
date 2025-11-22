@@ -1,5 +1,7 @@
 "use client";
 
+import { notifyInvalidToken } from "@/state/authEvents";
+
 export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -62,6 +64,9 @@ export async function apiFetch<T>(
       .json()
       .catch(() => ({ detail: response.statusText }));
     const message = extractErrorMessage(detail);
+    if (response.status === 401 || response.status === 403) {
+      notifyInvalidToken();
+    }
     throw new ApiError(message, response.status, detail);
   }
 

@@ -9,6 +9,7 @@ import React, {
   useState,
 } from "react";
 import { apiFetch } from "@/lib/api";
+import { registerLogoutHandler } from "@/state/authEvents";
 
 type User = {
   id: number;
@@ -100,6 +101,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       localStorage.removeItem("user");
     }
   }, []);
+
+  useEffect(() => {
+    registerLogoutHandler(() => logout());
+    return () => {
+      registerLogoutHandler(null);
+    };
+  }, [logout]);
 
   const value = useMemo(
     () => ({ user, token, loading, login, logout, setUser, register }),
