@@ -15,6 +15,14 @@ const formatISODate = (value: Date) => {
   return `${year}-${month}-${day}`;
 };
 
+const normalizeIsoDate = (value: string) => {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+  return formatISODate(parsed);
+};
+
 export default function WorkoutPage() {
   const router = useRouter();
   const { token, user, loading } = useAuth();
@@ -23,6 +31,7 @@ export default function WorkoutPage() {
   const [selectedDate, setSelectedDate] = useState(todayIso);
   const [calendarCursor, setCalendarCursor] = useState(todayIso);
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+  const normalizedSelectedDate = useMemo(() => normalizeIsoDate(selectedDate), [selectedDate]);
 
   const cursorDateObj = useMemo(() => {
     const [year, month, day] = calendarCursor.split("-").map(Number);
@@ -54,13 +63,14 @@ export default function WorkoutPage() {
         set_logs?: WorkoutPlan["logs"];
       }>(`/api/workouts/plan/${params}`, { token });
       const resolvedDate = data.date ?? data.plan_snapshot.date ?? query;
+      const normalizedDate = normalizeIsoDate(resolvedDate);
       setPlan({
         id: data.id,
-        date: resolvedDate,
+        date: normalizedDate,
         folders: data.plan_snapshot.folders,
         logs: data.set_logs ?? [],
       });
-      setSelectedDate(resolvedDate);
+      setSelectedDate(normalizedDate);
     },
     [token, todayIso],
   );
@@ -91,7 +101,7 @@ export default function WorkoutPage() {
     );
   }, [plan]);
   const completedSets = plan?.logs?.length ?? 0;
-  const currentDate = selectedDate;
+  const currentDate = normalizedSelectedDate;
   const loadMap = useMemo(() => {
     const map: Record<string, number> = {};
     dailyLoads?.items.forEach((item) => {
@@ -132,7 +142,7 @@ export default function WorkoutPage() {
           <div className="space-y-1">
             <p className="text-sm uppercase tracking-widest text-primary">Дневной чеклист</p>
             <h1 className="text-3xl font-semibold leading-tight">
-              {selectedDate === todayIso ? "Сегодня" : selectedDate}
+              {normalizedSelectedDate === todayIso ? "Сегодня" : normalizedSelectedDate}
             </h1>
           </div>
           <button
@@ -150,7 +160,7 @@ export default function WorkoutPage() {
         {todayMuscles.length > 0 && (
           <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
             <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-500">
-              {selectedDate === todayIso ? "Сегодня работаем" : `День (${selectedDate})`}
+              {normalizedSelectedDate === todayIso ? "Сегодня работаем" : `День (${normalizedSelectedDate})`}
             </p>
             <div className="mt-2 flex flex-wrap gap-1.5">
               {todayMuscles.slice(0, 6).map(([muscle, count]) => (
@@ -168,16 +178,17 @@ export default function WorkoutPage() {
           </div>
         )}
       </header>
-      <Checklist plan={plan} refresh={() => fetchPlan(selectedDate)} />
+      <Checklist plan={plan} refresh={() => fetchPlan(normalizedSelectedDate)} />
       <WorkoutCalendar
         open={isCalendarOpen}
         onClose={() => setIsCalendarOpen(false)}
-        selectedDate={selectedDate}
+        selectedDate={normalizedSelectedDate}
         cursorDate={calendarCursor}
         onCursorChange={(iso) => setCalendarCursor(iso)}
         loads={loadMap}
         onSelectDate={(iso) => {
           setCalendarCursor(iso);
+          setSelectedDate(iso);
           setIsCalendarOpen(false);
           fetchPlan(iso);
         }}

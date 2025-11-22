@@ -10,6 +10,24 @@ const formatISODate = (value: Date) => {
   return `${year}-${month}-${day}`;
 };
 
+const toDateOnly = (value: string) => {
+  if (!value) {
+    return value;
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return value;
+  }
+  const [datePart] = value.split("T");
+  if (datePart && /^\d{4}-\d{2}-\d{2}$/.test(datePart)) {
+    return datePart;
+  }
+  const parsed = new Date(value);
+  if (!Number.isNaN(parsed.getTime())) {
+    return formatISODate(parsed);
+  }
+  return value;
+};
+
 const parseISODate = (value: string) => {
   const [year, month, day] = value.split("-").map(Number);
   return new Date(year, month - 1, day);
@@ -37,6 +55,7 @@ export const WorkoutCalendar = ({
   onSelectDate,
 }: Props) => {
   const cursor = parseISODate(cursorDate);
+  const normalizedSelectedDate = toDateOnly(selectedDate);
   const startOfMonth = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
   const monthName = startOfMonth.toLocaleDateString("ru-RU", { month: "long", year: "numeric" });
   const weekOffset = (startOfMonth.getDay() + 6) % 7;
@@ -53,7 +72,7 @@ export const WorkoutCalendar = ({
       iso,
       inMonth: current.getMonth() === startOfMonth.getMonth(),
       load: loads[iso] ?? 0,
-      isSelected: iso === selectedDate,
+      isSelected: iso === normalizedSelectedDate,
       isToday: iso === todayIso,
     });
   }
@@ -100,8 +119,11 @@ export const WorkoutCalendar = ({
               type="button"
               className={clsx(
                 "flex h-16 flex-col items-center justify-center rounded-lg border text-center transition",
-                day.inMonth ? "border-slate-200 bg-white" : "border-slate-100 bg-slate-50 text-slate-400",
-                day.isSelected && "border-purple-600 bg-purple-600 text-white font-semibold",
+                day.isSelected
+                  ? "border-purple-600 bg-purple-600 text-white font-semibold"
+                  : day.inMonth
+                    ? "border-slate-200 bg-white"
+                    : "border-slate-100 bg-slate-50 text-slate-400",
                 day.isToday && !day.isSelected ? "border-primary/40 bg-primary/5 text-primary" : null,
               )}
               onClick={() => onSelectDate(day.iso)}
@@ -110,7 +132,7 @@ export const WorkoutCalendar = ({
               <span
                 className={clsx(
                   "text-[10px]",
-                  day.isSelected ? "text-white/80" : "text-slate-500",
+                  day.isSelected ? "text-white/80" : day.inMonth ? "text-slate-500" : "text-slate-400",
                 )}
               >
                 {day.load ? Math.round(day.load) : "—"}
