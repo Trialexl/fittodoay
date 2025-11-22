@@ -65,6 +65,7 @@ type ExercisePayload = {
     name: string;
     description?: string | { text?: string } | null;
     target_muscles?: string | null;
+    difficulty?: string | null;
     images?: ExerciseImage[];
   };
   defaults: {
@@ -617,20 +618,27 @@ export const Checklist = ({
     }
   };
 
-  const tooltipText = (
-    description?: string | { text?: string } | null,
-    note?: string,
-  ) => {
-    const descriptionText =
-      typeof description === "string"
-        ? description
-        : description?.text ?? "";
-    if (descriptionText && note) {
-      return `${descriptionText}
-
-${note}`;
+  const buildExerciseInfoText = (exercise: ExercisePayload) => {
+    const parts: string[] = [];
+    const difficulty = exercise.source.difficulty?.trim();
+    if (difficulty) {
+      parts.push(`Сложность: ${difficulty}`);
     }
-    return descriptionText || note || "";
+    const muscles = getExerciseMuscles(exercise);
+    if (muscles.length) {
+      parts.push(`Мышцы: ${muscles.join(", ")}`);
+    }
+    const descriptionText =
+      typeof exercise.source.description === "string"
+        ? exercise.source.description
+        : exercise.source.description?.text ?? "";
+    if (descriptionText) {
+      parts.push(descriptionText);
+    }
+    if (exercise.note) {
+      parts.push(exercise.note);
+    }
+    return parts.join("\n\n");
   };
 
   const handleRestFieldChange = (field: "reps" | "weight" | "time", value: string) => {
@@ -1027,7 +1035,7 @@ ${note}`;
                         const completedSets = exercise.sets.filter((set) =>
                           getLogForSet(exercise.template_exercise_id, set.set_index),
                         ).length;
-                        const exerciseInfo = tooltipText(exercise.source.description, exercise.note);
+                        const exerciseInfo = buildExerciseInfoText(exercise);
                         const canShowInfo = Boolean(exerciseInfo);
                         return (
                           <div

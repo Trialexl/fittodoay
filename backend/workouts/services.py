@@ -139,6 +139,11 @@ def generate_daily_plan(user, target_date: date | None = None) -> WorkoutDay:
                         {"order": image.order, "path": image.path}
                         for image in te.exercise.images.order_by("order")
                     ]
+                difficulty = getattr(source, "difficulty", "") or ""
+                if not difficulty:
+                    base_exercise = getattr(source, "base_exercise", None)
+                    if base_exercise is not None:
+                        difficulty = getattr(base_exercise, "difficulty", "") or ""
                 exercises_payload.append(
                     {
                         "template_exercise_id": te.id,
@@ -148,6 +153,7 @@ def generate_daily_plan(user, target_date: date | None = None) -> WorkoutDay:
                             "name": source.name,
                             "description": getattr(source, "description", "") or "",
                             "target_muscles": getattr(source, "target_muscles", "") or "",
+                            "difficulty": difficulty,
                             "images": images_payload,
                         },
                         "defaults": defaults,

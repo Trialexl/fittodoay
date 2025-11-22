@@ -179,7 +179,14 @@
             "exercises": [
               {
                 "template_exercise_id": 21,
-                "source": { "type": "system", "id": 10, "name": "Жим лежа" },
+                "source": {
+                  "type": "system",
+                  "id": 10,
+                  "name": "Жим лежа",
+                  "description": "Лягте на скамью, опустите штангу до груди и выжмите вверх.",
+                  "target_muscles": "грудь/трицепс",
+                  "difficulty": "Средний"
+                },
                 "defaults": {
                   "reps": 10,
                   "sets": 4,
