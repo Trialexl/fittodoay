@@ -119,6 +119,7 @@ export const ProgramTrendPanel = () => {
     ([url]) => apiFetch<TrendResponse>(url as string, { token: token ?? undefined }),
   );
   const [selectedFolderId, setSelectedFolderId] = useState<number | null>(null);
+  const [focusedSeriesKey, setFocusedSeriesKey] = useState<string | number | null>(null);
 
   useEffect(() => {
     if (!data?.folders?.length) {
@@ -165,20 +166,27 @@ export const ProgramTrendPanel = () => {
   }, [selectedFolder]);
 
   const activeSeries = view === "programs" ? programSeries : exerciseSeries;
+  const effectiveSeries = useMemo(() => {
+    if (focusedSeriesKey === null) {
+      return activeSeries;
+    }
+    const filtered = activeSeries.filter((series) => series.key === focusedSeriesKey);
+    return filtered.length > 0 ? filtered : activeSeries;
+  }, [activeSeries, focusedSeriesKey]);
 
-  const hasData = useMemo(() => activeSeries.some((series) => series.points.length > 0), [activeSeries]);
+  const hasData = useMemo(() => effectiveSeries.some((series) => series.points.length > 0), [effectiveSeries]);
 
   const chartMaxValue = useMemo(() => {
-    return activeSeries.reduce((max, series) => {
+    return effectiveSeries.reduce((max, series) => {
       const localMax = series.points.reduce((seriesMax, point) => Math.max(seriesMax, point.value), 0);
       return Math.max(max, localMax);
     }, 0);
-  }, [activeSeries]);
+  }, [effectiveSeries]);
 
   type TimelineEntry = Record<string, string | number>;
   const { timelineData, isoList } = useMemo(() => {
     const isoSet = new Set<string>();
-    const pointMaps = activeSeries.map((series) => {
+    const pointMaps = effectiveSeries.map((series) => {
       const map = new Map<string, number>();
       series.points.forEach((point) => {
         isoSet.add(point.iso);
@@ -201,11 +209,11 @@ export const ProgramTrendPanel = () => {
         return entry;
       });
     return { timelineData: combined, isoList: sortedIso };
-  }, [activeSeries, activeGranularity]);
+  }, [effectiveSeries, activeGranularity]);
 
   const scatterSeriesData = useMemo(
     () =>
-      activeSeries.map((series) => ({
+      effectiveSeries.map((series) => ({
         key: series.key,
         label: series.label,
         color: series.color,
@@ -216,25 +224,25 @@ export const ProgramTrendPanel = () => {
           timestamp: parseISODate(point.iso).getTime(),
         })),
       })),
-    [activeSeries, activeGranularity],
+    [effectiveSeries, activeGranularity],
   );
 
   const summaryData = useMemo(
     () =>
-      activeSeries.map((series) => ({
+      effectiveSeries.map((series) => ({
         key: series.key,
         label: series.label,
         color: series.color,
         total: series.points.reduce((sum, point) => sum + point.value, 0),
       })),
-    [activeSeries],
+    [effectiveSeries],
   );
 
   const isoOrderMap = useMemo(() => new Map(isoList.map((iso, index) => [iso, index])), [isoList]);
 
   const heatmapPoints = useMemo(
     () =>
-      activeSeries.flatMap((series) =>
+      effectiveSeries.flatMap((series) =>
         series.points.map((point) => ({
           iso: point.iso,
           isoLabel: formatLabelDate(point.iso, activeGranularity),
@@ -244,7 +252,7 @@ export const ProgramTrendPanel = () => {
           isoIndex: isoOrderMap.get(point.iso) ?? 0,
         })),
       ),
-    [activeSeries, activeGranularity, isoOrderMap],
+    [effectiveSeries, activeGranularity, isoOrderMap],
   );
 
   const tooltipRenderer = (props: TooltipProps<number, string>) => (
@@ -305,7 +313,7 @@ export const ProgramTrendPanel = () => {
             />
             <YAxis allowDecimals={false} />
             <Tooltip content={tooltipRenderer} />
-            {activeSeries.map((series) => (
+            {effectiveSeries.map((series) => (
               <Line
                 key={series.key}
                 type="monotone"
@@ -341,7 +349,7 @@ export const ProgramTrendPanel = () => {
             />
             <YAxis allowDecimals={false} />
             <Tooltip content={tooltipRenderer} />
-            {activeSeries.map((series) => (
+            {effectiveSeries.map((series) => (
               <Area
                 key={series.key}
                 type="monotone"
@@ -422,13 +430,15 @@ export const ProgramTrendPanel = () => {
 
   const legendItems =
     view === "programs"
-      ? data?.folders?.map((folder, index) => ({
-          label: folder.name,
-          color: COLORS[index % COLORS.length],
+      ? programSeries.map((series) => ({
+          key: series.key,
+          label: series.label,
+          color: series.color,
         }))
-      : selectedFolder?.exercises.map((exercise, index) => ({
-          label: exercise.exercise_name,
-          color: COLORS[index % COLORS.length],
+      : exerciseSeries.map((series) => ({
+          key: series.key,
+          label: series.label,
+          color: series.color,
         }));
 
   return (
@@ -510,14 +520,27 @@ export const ProgramTrendPanel = () => {
         </div>
       ) : null}
       <div className="mt-2 rounded-lg border border-dashed border-slate-200 p-3">{renderChart()}</div>
-      {legendItems && legendItems.length > 0 && (
-        <div className="mt-4 flex flex-wrap gap-3 text-xs text-slate-600">
-          {legendItems.map((item) => (
-            <span key={item.label} className="inline-flex items-center gap-1">
-              <span className="h-2 w-2 rounded-full" style={{ backgroundColor: item.color }} />
-              {item.label}
-            </span>
-          ))}
+      {legendItems.length > 0 && (
+        <div className="mt-4 flex flex-wrap gap-2 text-xs text-slate-600">
+          {legendItems.map((item) => {
+            const isFocused = focusedSeriesKey === item.key;
+            return (
+              <button
+                key={String(item.key)}
+                type="button"
+                className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 transition ${
+                  isFocused ? "border-primary bg-primary/10 text-primary" : "border-slate-200 hover:border-primary/40"
+                }`}
+                onClick={() => setFocusedSeriesKey(isFocused ? null : item.key)}
+              >
+                <span
+                  className="h-2 w-2 rounded-full"
+                  style={{ backgroundColor: item.color }}
+                />
+                {item.label}
+              </button>
+            );
+          })}
         </div>
       )}
       {isValidating && <p className="mt-2 text-xs text-slate-400">Обновляем данные…</p>}
