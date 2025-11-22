@@ -9,8 +9,9 @@ import { Modal } from "@/components/ui/Modal";
 import { AdjustNumberControl } from "@/components/workout/AdjustNumberControl";
 import { RestTimerOverlay } from "@/components/workout/RestTimerOverlay";
 import { ExecutionTimerOverlay } from "@/components/workout/ExecutionTimerOverlay";
+import { useOfflineWorkoutQueue } from "@/hooks/useOfflineWorkoutQueue";
 import { useRestTimer } from "@/hooks/useRestTimer";
-import { API_BASE_URL, apiFetch } from "@/lib/api";
+import { API_BASE_URL, ApiError, apiFetch } from "@/lib/api";
 import { useAuth } from "@/state/AuthContext";
 
 type SetPayload = {
@@ -100,6 +101,7 @@ type WorkoutLog = {
   actual_reps: number | null;
   actual_weight: number | null;
   actual_time: number | null;
+  offlineId?: string;
 };
 
 type ExerciseRecommendation = {
@@ -228,17 +230,26 @@ export const Checklist = ({
   const [recommendationsError, setRecommendationsError] = useState<string | null>(null);
   const [recommendationsApplied, setRecommendationsApplied] = useState<Record<number, boolean>>({});
   const recommendationFocusRefs = useRef<Record<number, HTMLInputElement | null>>({});
+  const {
+    pendingLogs,
+    pendingCount,
+    enqueueLog: enqueueOfflineLog,
+    syncing: isOfflineSyncing,
+    syncError: offlineSyncError,
+  } = useOfflineWorkoutQueue(plan?.id ?? null, auth.token ?? null, refresh);
 
   const hasTemplates =
     plan?.folders.some((folder) => folder.templates.length > 0) ?? false;
 
+  const combinedLogs = useMemo(() => [...(plan?.logs ?? []), ...pendingLogs], [plan?.logs, pendingLogs]);
+
   const logsBySet = useMemo(() => {
     const map = new Map<string, WorkoutLog>();
-    plan?.logs?.forEach((log) => {
+    combinedLogs.forEach((log) => {
       map.set(`${log.template_exercise}-${log.set_index}`, log);
     });
     return map;
-  }, [plan?.logs]);
+  }, [combinedLogs]);
 
   const isExerciseComplete = useCallback(
     (exercise: ExercisePayload) =>
@@ -507,7 +518,7 @@ export const Checklist = ({
 
   const submitRestSet = async () => {
     if (!restOverlay || !plan) return;
-    const payload = restOverlay.hasTime
+    const normalizedPayload = restOverlay.hasTime
       ? {
           actual_time: parseNumberInput(restForm.time),
           actual_reps: null,
@@ -526,14 +537,28 @@ export const Checklist = ({
           workout_day: plan.id,
           template_exercise: restOverlay.templateExerciseId,
           set_index: restOverlay.setIndex,
-          ...payload,
+          ...normalizedPayload,
         }),
         token: auth.token ?? undefined,
       });
       closeRestOverlay();
       refresh();
     } catch (error: any) {
-      setRestError(error?.message ?? "Не удалось сохранить");
+      if (error instanceof ApiError) {
+        setRestError(error?.message ?? "Не удалось сохранить");
+        return;
+      }
+      const queued = enqueueOfflineLog({
+        workout_day: plan.id,
+        template_exercise: restOverlay.templateExerciseId,
+        set_index: restOverlay.setIndex,
+        ...normalizedPayload,
+      });
+      if (queued) {
+        closeRestOverlay();
+      } else {
+        setRestError("Нет соединения и не удалось сохранить локально");
+      }
     }
   };
 
@@ -899,6 +924,20 @@ export const Checklist = ({
 
   return (
     <>
+      {(pendingCount > 0 || offlineSyncError) && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-3 text-sm text-amber-900">
+          {pendingCount > 0 && (
+            <p>
+              {isOfflineSyncing
+                ? `Синхронизируем ${pendingCount} подход(ов)…`
+                : `${pendingCount} подход(ов) сохранены локально и будут отправлены при появлении интернета.`}
+            </p>
+          )}
+          {offlineSyncError && (
+            <p className="mt-1 text-xs text-amber-800">{offlineSyncError}</p>
+          )}
+        </div>
+      )}
       <div className="space-y-4 sm:space-y-5">
         {plan.folders.map((folder) => {
           const expanded = expandedFolders[folder.id] ?? true;
@@ -1129,6 +1168,7 @@ export const Checklist = ({
                                 );
                                 const isActiveSet = activeSetKey === setKey;
                                 const isComplete = Boolean(log);
+                                const isOfflineLog = Boolean(log?.offlineId);
                                 const isTimedExercise = Boolean(exercise.defaults.has_time);
                                 const setNumber =
                                   set.set_index && set.set_index > 0
@@ -1152,15 +1192,21 @@ export const Checklist = ({
                                           </p>
                                         <div className="flex flex-wrap items-center gap-2">
                                           {isComplete && log ? (
-                                            <button
-                                              type="button"
-                                              title="Редактировать"
-                                              aria-label="Редактировать"
-                                              className="rounded-full p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
-                                              onClick={() => openEditModal(exercise, log)}
-                                            >
-                                              <EditIcon />
-                                            </button>
+                                            isOfflineLog ? (
+                                              <span className="rounded-full bg-amber-100 px-2 py-1 text-[11px] font-semibold text-amber-700">
+                                                В очереди
+                                              </span>
+                                            ) : (
+                                              <button
+                                                type="button"
+                                                title="Редактировать"
+                                                aria-label="Редактировать"
+                                                className="rounded-full p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
+                                                onClick={() => openEditModal(exercise, log)}
+                                              >
+                                                <EditIcon />
+                                              </button>
+                                            )
                                           ) : (
                                             <Button
                                               variant="secondary"
@@ -1180,9 +1226,12 @@ export const Checklist = ({
                                         План: {formatPlanSet(exercise, set)}
                                       </p>
                                       {isComplete && log && (
-                                        <p className="text-[11px] text-emerald-600">
-                                          Факт: {formatLogValues(exercise, log)}
-                                        </p>
+                                        <div className="text-[11px] text-emerald-600">
+                                          <p>Факт: {formatLogValues(exercise, log)}</p>
+                                          {isOfflineLog && (
+                                            <p className="text-[10px] text-amber-700">Синхронизируем при подключении</p>
+                                          )}
+                                        </div>
                                       )}
                                     </div>
                                   </div>
