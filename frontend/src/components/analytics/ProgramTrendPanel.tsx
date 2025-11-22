@@ -314,6 +314,7 @@ export const ProgramTrendPanel = () => {
                 stroke={series.color}
                 strokeWidth={2}
                 dot
+                connectNulls
               />
             ))}
           </LineChart>
@@ -544,11 +545,17 @@ const ChartTooltipContent = ({ active, payload, granularity }: ChartTooltipProps
   }
   const raw = (payload[0].payload as { iso?: string; label?: string }) ?? {};
   const labelText = raw.label ?? (raw.iso ? formatLabelDate(raw.iso, granularity) : "");
+  const visibleEntries = (payload ?? []).filter(
+    (entry) => entry.value !== undefined && entry.value !== null,
+  );
+  if (visibleEntries.length === 0) {
+    return null;
+  }
   return (
     <div className="rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 shadow">
       {labelText && <p className="font-semibold">{labelText}</p>}
       <div className="mt-1 space-y-0.5">
-        {payload.map((entry) => (
+        {visibleEntries.map((entry) => (
           <div
             key={String(entry.dataKey ?? entry.name)}
             className="flex items-center justify-between gap-2"
