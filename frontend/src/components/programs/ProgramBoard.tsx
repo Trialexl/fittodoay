@@ -104,6 +104,7 @@ type ExerciseOption = {
   has_time?: boolean;
   description?: string | { text?: string } | null;
   images?: { order: number; path: string }[];
+  difficulty?: string | null;
 };
 
 const STATIC_BASE_URL = API_BASE_URL.replace(/\/$/, "");
@@ -892,6 +893,8 @@ const TemplateExerciseModal = ({
     name: string;
     text: string;
     images: { order: number; path: string }[];
+    difficulty?: string;
+    muscles?: string;
   } | null>(null);
   const [previewImageIndex, setPreviewImageIndex] = useState(0);
 
@@ -987,7 +990,9 @@ const TemplateExerciseModal = ({
         ? selectedForPreview.description?.trim()
         : selectedForPreview.description?.text?.trim(),
     ) ||
-      Boolean(selectedForPreview.images?.length));
+      Boolean(selectedForPreview.images?.length) ||
+      Boolean(selectedForPreview.target_muscles) ||
+      Boolean(selectedForPreview.difficulty));
 
   const openPreview = () => {
     if (!selectedForPreview || !hasPreviewData) return;
@@ -998,6 +1003,8 @@ const TemplateExerciseModal = ({
           ? selectedForPreview.description ?? ""
           : selectedForPreview.description?.text ?? "",
       images: selectedForPreview.images ?? [],
+      difficulty: selectedForPreview.difficulty ?? undefined,
+      muscles: selectedForPreview.target_muscles ?? undefined,
     });
   };
 
@@ -1285,6 +1292,20 @@ const TemplateExerciseModal = ({
       >
         {previewExercise && (
           <div className="space-y-4">
+            {(previewExercise.difficulty || previewExercise.muscles) && (
+              <div className="flex flex-wrap gap-2 text-xs text-slate-500">
+                {previewExercise.difficulty && (
+                  <span className="rounded-full border border-slate-200 px-3 py-1">
+                    Сложность: {previewExercise.difficulty}
+                  </span>
+                )}
+                {previewExercise.muscles && (
+                  <span className="rounded-full border border-slate-200 px-3 py-1">
+                    Мышцы: {previewExercise.muscles}
+                  </span>
+                )}
+              </div>
+            )}
             {previewExercise.text && (
               <p className="whitespace-pre-line text-sm text-slate-600">{previewExercise.text}</p>
             )}
