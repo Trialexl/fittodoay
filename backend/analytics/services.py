@@ -76,7 +76,11 @@ def aggregate_exercise_loads(user, start: date, end: date) -> List[Dict]:
             "template_exercise__exercise",
             "template_exercise__custom_exercise",
         )
-        .order_by("template_exercise__exercise__name")
+        .order_by(
+            "template_exercise__exercise__name_ru",
+            "template_exercise__exercise__name_en",
+            "template_exercise__custom_exercise__name",
+        )
     )
     per_exercise = defaultdict(lambda: {"load": 0.0, "sets": 0})
     for log in logs:

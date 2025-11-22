@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from django.db.models import Q, Value
-from django.db.models.functions import Coalesce
+from django.db.models import Q
 from rest_framework import generics
 
 from workouts.models import Exercise_DB
@@ -14,11 +13,7 @@ class ExerciseListView(generics.ListAPIView):
     serializer_class = ExerciseSerializer
 
     def get_queryset(self):
-        queryset = (
-            Exercise_DB.objects.all()
-            .prefetch_related("muscles", "instructions")
-            .annotate(annotated_name=Coalesce("name_ru", "name_en", Value("")))
-        )
+        queryset = Exercise_DB.objects.all().prefetch_related("muscles", "instructions")
         query = self.request.query_params.get("q")
         muscles = self.request.query_params.get("muscles")
         if query:
@@ -38,7 +33,7 @@ class ExerciseListView(generics.ListAPIView):
             direction = "-" if ordering.startswith("-") else ""
             field = ordering.lstrip("-")
             ordering_map = {
-                "name": "annotated_name",
+                "name": "name_ru",
                 "name_ru": "name_ru",
                 "name_en": "name_en",
             }
