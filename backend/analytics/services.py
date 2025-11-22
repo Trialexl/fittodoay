@@ -176,8 +176,8 @@ def build_program_trends(user, start: date, end: date, granularity: str = "day")
     )
     folder_names: Dict[int, str] = {}
     folder_daily: Dict[int, Dict[date, float]] = defaultdict(lambda: defaultdict(float))
-    exercise_daily: Dict[int, Dict[date, float]] = defaultdict(lambda: defaultdict(float))
-    exercise_meta: Dict[int, Dict] = {}
+    exercise_daily: Dict[tuple, Dict[date, float]] = defaultdict(lambda: defaultdict(float))
+    exercise_meta: Dict[tuple, Dict] = {}
 
     for log in logs:
         te = log.template_exercise
@@ -189,12 +189,23 @@ def build_program_trends(user, start: date, end: date, granularity: str = "day")
         load = _compute_load(log)
         folder_daily[folder.id][workout_date] += load
         source = te.exercise or te.custom_exercise
-        exercise_meta[te.id] = {
-            "folder_id": folder.id,
-            "exercise_name": source.name if source else "Упражнение",
-            "template_name": te.template.name,
-        }
-        exercise_daily[te.id][workout_date] += load
+        source_name = source.name if source else "Упражнение"
+        if te.exercise_id:
+            group_key = (folder.id, "system", te.exercise_id)
+        elif te.custom_exercise_id:
+            group_key = (folder.id, "custom", te.custom_exercise_id)
+        else:
+            group_key = (folder.id, "template", te.id)
+        if group_key not in exercise_meta:
+            exercise_meta[group_key] = {
+                "folder_id": folder.id,
+                "exercise_name": source_name,
+                "template_names": set([te.template.name]),
+                "primary_te_id": te.id,
+            }
+        else:
+            exercise_meta[group_key]["template_names"].add(te.template.name)
+        exercise_daily[group_key][workout_date] += load
 
     if not folder_names:
         return []
@@ -208,20 +219,21 @@ def build_program_trends(user, start: date, end: date, granularity: str = "day")
             for current in dates
         ]
         exercises_payload = []
-        for te_id, meta in exercise_meta.items():
+        for group_key, meta in exercise_meta.items():
             if meta["folder_id"] != folder_id:
                 continue
             points = [
-                {"date": current.isoformat(), "load": round(exercise_daily[te_id].get(current, 0.0), 2)}
+                {"date": current.isoformat(), "load": round(exercise_daily[group_key].get(current, 0.0), 2)}
                 for current in dates
             ]
             if not any(point["load"] > 0 for point in points):
                 continue
+            template_label = ", ".join(sorted(meta["template_names"]))
             exercises_payload.append(
                 {
-                    "template_exercise_id": te_id,
+                    "template_exercise_id": meta["primary_te_id"],
                     "exercise_name": meta["exercise_name"],
-                    "template_name": meta["template_name"],
+                    "template_name": template_label,
                     "series": points,
                 }
             )
