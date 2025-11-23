@@ -87,6 +87,48 @@ type ChartSeries = {
   points: { iso: string; value: number | null }[];
 };
 
+const interpolateValues = (values: Array<number | null>): number[] => {
+  if (values.length === 0) return [];
+  const result = [...values];
+  let firstIdx = result.findIndex((v) => v !== null && v !== undefined);
+  if (firstIdx === -1) {
+    return result.map(() => 0);
+  }
+  const firstVal = result[firstIdx] as number;
+  for (let i = 0; i < firstIdx; i += 1) {
+    result[i] = firstVal;
+  }
+  let lastKnownIdx = firstIdx;
+  for (let i = firstIdx + 1; i < result.length; i += 1) {
+    if (result[i] === null || result[i] === undefined) {
+      let nextIdx = i + 1;
+      while (nextIdx < result.length && (result[nextIdx] === null || result[nextIdx] === undefined)) {
+        nextIdx += 1;
+      }
+      if (nextIdx < result.length) {
+        const prevVal = result[lastKnownIdx] as number;
+        const nextVal = result[nextIdx] as number;
+        const gap = nextIdx - lastKnownIdx;
+        const step = (nextVal - prevVal) / gap;
+        for (let fill = 1; fill < gap; fill += 1) {
+          result[lastKnownIdx + fill] = prevVal + step * fill;
+        }
+        i = nextIdx - 1;
+        lastKnownIdx = nextIdx;
+      } else {
+        const prevVal = result[lastKnownIdx] as number;
+        for (let fill = lastKnownIdx + 1; fill < result.length; fill += 1) {
+          result[fill] = prevVal;
+        }
+        break;
+      }
+    } else {
+      lastKnownIdx = i;
+    }
+  }
+  return result as number[];
+};
+
 const withAlpha = (hex: string, alpha: number) => {
   const normalized = hex.replace("#", "");
   const bigint = Number.parseInt(normalized.length === 6 ? normalized : normalized.repeat(2), 16);
@@ -225,6 +267,32 @@ export const ProgramTrendPanel = () => {
     [effectiveSeries],
   );
 
+  const interpolatedTimelineData = useMemo(() => {
+    if (!timelineData.length) return [];
+    const seriesKeys = effectiveSeries.map((series) => series.key.toString());
+    const matrix: Record<string, Array<number | null>> = {};
+    seriesKeys.forEach((key) => {
+      matrix[key] = timelineData.map((entry) => {
+        const raw = entry[key];
+        return typeof raw === "number" ? raw : null;
+      });
+    });
+    const interpolated: Record<string, number[]> = {};
+    seriesKeys.forEach((key) => {
+      interpolated[key] = interpolateValues(matrix[key]);
+    });
+    return timelineData.map((entry, idx) => {
+      const next: Record<string, string | number> = {
+        iso: entry.iso as string,
+        label: entry.label as string,
+      };
+      seriesKeys.forEach((key) => {
+        next[key] = interpolated[key][idx];
+      });
+      return next;
+    });
+  }, [timelineData, effectiveSeries]);
+
   const isoOrderMap = useMemo(() => new Map(isoList.map((iso, index) => [iso, index])), [isoList]);
 
   const heatmapPoints = useMemo(
@@ -303,7 +371,7 @@ export const ProgramTrendPanel = () => {
       }
       return (
         <ResponsiveContainer width="100%" height={320}>
-          <AreaChart data={timelineData} margin={{ top: 16, right: 24, bottom: 0, left: 0 }}>
+          <AreaChart data={interpolatedTimelineData} margin={{ top: 16, right: 24, bottom: 0, left: 0 }}>
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis
               dataKey="iso"
@@ -358,7 +426,7 @@ export const ProgramTrendPanel = () => {
       }
       return (
         <ResponsiveContainer width="100%" height={320}>
-          <AreaChart data={timelineData} margin={{ top: 16, right: 24, bottom: 0, left: 0 }}>
+          <AreaChart data={interpolatedTimelineData} margin={{ top: 16, right: 24, bottom: 0, left: 0 }}>
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis
               dataKey="iso"
@@ -418,7 +486,7 @@ export const ProgramTrendPanel = () => {
       }
       return (
         <ResponsiveContainer width="100%" height={320}>
-          <RadarChart data={timelineData} margin={{ top: 16, bottom: 16, left: 16, right: 16 }}>
+          <RadarChart data={interpolatedTimelineData} margin={{ top: 16, bottom: 16, left: 16, right: 16 }}>
             <PolarGrid />
             <PolarAngleAxis dataKey="label" />
             <PolarRadiusAxis />
