@@ -23,6 +23,11 @@ import {
   ZAxis,
   LineChart,
   Line,
+  Radar,
+  RadarChart,
+  PolarGrid,
+  PolarAngleAxis,
+  PolarRadiusAxis,
   type TooltipProps,
 } from "recharts";
 
@@ -59,12 +64,13 @@ const VIEW_OPTIONS = [
 ];
 
 const CHART_OPTIONS = [
-  { key: "scatter", label: "Точки" },
   { key: "line", label: "Линия" },
   { key: "area", label: "Площадь" },
+  { key: "stacked", label: "Сложение" },
   { key: "columns", label: "Столбцы" },
   { key: "heatmap", label: "Тепло" },
   { key: "pie", label: "Круг" },
+  { key: "radar", label: "Радар" },
 ];
 
 const GRANULARITY_OPTIONS = [
@@ -113,7 +119,7 @@ export const ProgramTrendPanel = () => {
   const [range, setRange] = useState<(typeof RANGE_OPTIONS)[number]["key"]>("month");
   const [view, setView] = useState<(typeof VIEW_OPTIONS)[number]["key"]>("programs");
   const [granularity, setGranularity] = useState<(typeof GRANULARITY_OPTIONS)[number]["key"]>("day");
-  const [chartType, setChartType] = useState<(typeof CHART_OPTIONS)[number]["key"]>("scatter");
+  const [chartType, setChartType] = useState<(typeof CHART_OPTIONS)[number]["key"]>("line");
   const { data, isValidating } = useSWR(
     token ? [`/api/analytics/program-trends/?range=${range}&granularity=${granularity}`, token] : null,
     ([url]) => apiFetch<TrendResponse>(url as string, { token: token ?? undefined }),
@@ -211,22 +217,6 @@ export const ProgramTrendPanel = () => {
     return { timelineData: combined, isoList: sortedIso };
   }, [effectiveSeries, activeGranularity]);
 
-  const scatterSeriesData = useMemo(
-    () =>
-      effectiveSeries.map((series) => ({
-        key: series.key,
-        label: series.label,
-        color: series.color,
-        data: series.points.map((point) => ({
-          iso: point.iso,
-          label: formatLabelDate(point.iso, activeGranularity),
-          value: point.value,
-          timestamp: parseISODate(point.iso).getTime(),
-        })),
-      })),
-    [effectiveSeries, activeGranularity],
-  );
-
   const summaryData = useMemo(
     () =>
       effectiveSeries.map((series) => ({
@@ -265,32 +255,6 @@ export const ProgramTrendPanel = () => {
         <p className="text-sm text-slate-500">
           Данные появятся после выполнения программ в выбранном диапазоне.
         </p>
-      );
-    }
-
-    if (chartType === "scatter") {
-      return (
-        <ResponsiveContainer width="100%" height={320}>
-          <ScatterChart margin={{ top: 16, right: 24, bottom: 16, left: 12 }}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis
-              type="number"
-              dataKey="timestamp"
-              domain={[
-                chartStartDate ? chartStartDate.getTime() : "auto",
-                chartEndDate ? chartEndDate.getTime() : "auto",
-              ]}
-              tickFormatter={(value) =>
-                formatLabelDate(new Date(value as number).toISOString().slice(0, 10), activeGranularity)
-              }
-            />
-            <YAxis type="number" dataKey="value" name="Нагрузка" />
-            <Tooltip content={tooltipRenderer} />
-            {scatterSeriesData.map((series) => (
-              <Scatter key={series.key} name={series.label} data={series.data} fill={series.color} line={false} />
-            ))}
-          </ScatterChart>
-        </ResponsiveContainer>
       );
     }
 
@@ -384,6 +348,42 @@ export const ProgramTrendPanel = () => {
       );
     }
 
+    if (chartType === "stacked") {
+      if (!timelineData.length) {
+        return (
+          <p className="text-sm text-slate-500">
+            Данные появятся после выполнения программ в выбранном диапазоне.
+          </p>
+        );
+      }
+      return (
+        <ResponsiveContainer width="100%" height={320}>
+          <AreaChart data={timelineData} margin={{ top: 16, right: 24, bottom: 0, left: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis
+              dataKey="iso"
+              tickFormatter={(iso) => formatLabelDate(iso as string, activeGranularity)}
+              minTickGap={16}
+            />
+            <YAxis allowDecimals={false} />
+            <Tooltip content={tooltipRenderer} />
+            {effectiveSeries.map((series) => (
+              <Area
+                key={series.key}
+                type="monotone"
+                dataKey={series.key.toString()}
+                name={series.label}
+                stroke={series.color}
+                strokeWidth={1.5}
+                fill={withAlpha(series.color, 0.4)}
+                stackId="stacked"
+              />
+            ))}
+          </AreaChart>
+        </ResponsiveContainer>
+      );
+    }
+
     if (chartType === "pie") {
       return (
         <ResponsiveContainer width="100%" height={320}>
@@ -403,6 +403,36 @@ export const ProgramTrendPanel = () => {
               ))}
             </Pie>
           </PieChart>
+        </ResponsiveContainer>
+      );
+    }
+
+    if (chartType === "radar") {
+      if (!timelineData.length) {
+        return (
+          <p className="text-sm text-slate-500">
+            Данные появятся после выполнения программ в выбранном диапазоне.
+          </p>
+        );
+      }
+      return (
+        <ResponsiveContainer width="100%" height={320}>
+          <RadarChart data={timelineData} margin={{ top: 16, bottom: 16, left: 16, right: 16 }}>
+            <PolarGrid />
+            <PolarAngleAxis dataKey="label" />
+            <PolarRadiusAxis />
+            <Tooltip content={tooltipRenderer} />
+            {effectiveSeries.map((series) => (
+              <Radar
+                key={series.key}
+                name={series.label}
+                dataKey={series.key.toString()}
+                stroke={series.color}
+                fill={withAlpha(series.color, 0.5)}
+                fillOpacity={0.6}
+              />
+            ))}
+          </RadarChart>
         </ResponsiveContainer>
       );
     }
