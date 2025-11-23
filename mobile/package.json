@@ -12,14 +12,14 @@
   },
   "dependencies": {
     "@fittodoay/shared": "file:../packages/shared",
-    "expo": "^51.0.13",
-    "expo-status-bar": "~2.0.0",
-    "react": "18.2.0",
-    "react-native": "0.74.1"
+    "expo": "^54.0.0",
+    "expo-status-bar": "~2.6.0",
+    "react": "18.3.1",
+    "react-native": "0.74.5"
   },
   "devDependencies": {
-    "@types/react": "~18.2.45",
-    "@types/react-native": "~0.74.3",
+    "@types/react": "~18.3.3",
+    "@types/react-native": "~0.73.0",
     "typescript": "~5.4.5"
   }
 }

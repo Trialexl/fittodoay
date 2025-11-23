@@ -32,3 +32,22 @@ package-lock.json
 # Obsidian
 .obsidian/
 .obsidian-workspace
+
+
+# OSX
+#
+.DS_Store
+
+# Android/IntelliJ
+#
+build/
+.idea
+.gradle
+local.properties
+*.iml
+*.hprof
+.cxx/
+
+# Bundle artifacts
+*.jsbundle
+mobile/android/app/debug.keystore

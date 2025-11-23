@@ -39,4 +39,14 @@ Frontend wizard → POST /api/llm-agent/programs/ → Backend LLM service
 - Backend логика – `backend/workouts/services.py` (обработчик LLM-потока) и API `/api/llm-agent/programs/`.
 - Любые изменения в `frontend` (включая правки UI, хуков, стилей или конфигов) не принимаются без линта: из каталога `frontend` запускайте `npm run lint` после каждого блока правок и перед любым PR/коммитом, добиваясь чистого вывода.
 
+## 6. MCP / Context7
+
+- Для доступа к внешней документации (Context7) используем MCP клиент Codex. Конфигурация в `~/.codex/config.toml` должна содержать секцию:
+  ```toml
+  [mcp_servers.context7]
+  command = "npx"
+  args = ["-y", "@upstash/context7-mcp"]
+  ```
+- Перед использованием убедитесь, что сервер доступен и отвечает на запросы `list_mcp_resources`/`get-library-docs`. При ошибках (например, `Method not found`) сверяйтесь с документацией Context7 и обновляйте конфиг/эндпоинты.
+
 Этого документа должно хватить, чтобы быстро понять роль и требования к LLM-агенту в fitTODOay.
