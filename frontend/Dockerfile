@@ -1,6 +1,12 @@
 # syntax=docker/dockerfile:1
 FROM node:20-alpine AS builder
 WORKDIR /app
+
+# Build shared package so file: dependency can be resolved during frontend install
+COPY packages/shared ./packages/shared
+RUN cd packages/shared && npm install && npm run build
+
+WORKDIR /app/frontend
 COPY frontend/package*.json ./
 RUN npm install
 COPY frontend ./
@@ -12,10 +18,10 @@ ENV NODE_ENV=production \
     PORT=3000 \
     NEXT_SHARP_PATH=/app/node_modules/sharp
 
-COPY --from=builder /app/package*.json ./
-COPY --from=builder /app/.next ./.next
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/frontend/package*.json ./
+COPY --from=builder /app/frontend/.next ./.next
+COPY --from=builder /app/frontend/public ./public
+COPY --from=builder /app/frontend/node_modules ./node_modules
 
 EXPOSE 3000
 
