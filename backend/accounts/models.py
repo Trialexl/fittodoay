@@ -94,4 +94,18 @@ class UserProfile(models.Model):
     def __str__(self) -> str:
         return f"Profile of {self.user.email}"
 
+
+class UserFeedback(models.Model):
+    """Свободный фидбек от пользователя."""
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="feedback")
+    message = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"Feedback {self.id} from {self.user.email}"
+
 # Create your models here.

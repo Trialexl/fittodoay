@@ -1,7 +1,7 @@
 "use client";
 
 import useSWR from "swr";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Checklist, type WorkoutPlan } from "@/components/workout/Checklist";
 import { WorkoutCalendar } from "@/components/workout/WorkoutCalendar";
@@ -23,7 +23,7 @@ const normalizeIsoDate = (value: string) => {
   return formatISODate(parsed);
 };
 
-export default function WorkoutPage() {
+const WorkoutPageContent = () => {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { token, user, loading } = useAuth();
@@ -202,5 +202,13 @@ export default function WorkoutPage() {
         }}
       />
     </div>
+  );
+};
+
+export default function WorkoutPage() {
+  return (
+    <Suspense fallback={<div className="py-10 text-center text-slate-500">Загрузка...</div>}>
+      <WorkoutPageContent />
+    </Suspense>
   );
 }

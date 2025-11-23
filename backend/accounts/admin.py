@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 
-from .models import User, UserProfile
+from .models import User, UserFeedback, UserProfile
 
 
 @admin.register(User)
@@ -41,5 +41,12 @@ class UserProfileAdmin(admin.ModelAdmin):
     list_display = ("user", "goal", "level", "updated_at")
     search_fields = ("user__email", "user__first_name", "user__last_name")
     list_filter = ("goal", "gender", "level")
+
+
+@admin.register(UserFeedback)
+class UserFeedbackAdmin(admin.ModelAdmin):
+    list_display = ("id", "user", "created_at")
+    search_fields = ("user__email", "message")
+    readonly_fields = ("created_at",)
 
 # Register your models here.

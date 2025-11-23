@@ -184,6 +184,7 @@ class LLMProgramGenerationService:
         system_prompt = (
             "You are a fitness coach assistant. Build exactly one workout program using only the provided exercise catalog. "
             "Respond ONLY with a valid JSON object (no Markdown). JSON must start with '{' and end with '}'.\n"
+            "Important: all names and comments for programs and day templates MUST be in Russian (Cyrillic).\n"
             "Schema:\n"
             "{\"programs\": [{\"name\": string, \"comment\": string?, \"days\": ["
             "{\"name\": string, \"comment\": string?, "

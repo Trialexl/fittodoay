@@ -4,7 +4,7 @@ from django.contrib.auth import authenticate
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
-from .models import User, UserProfile
+from .models import User, UserProfile, UserFeedback
 from .services import build_ai_prompt
 
 
@@ -99,3 +99,10 @@ class PromptPreviewSerializer(serializers.Serializer):
 
     def to_representation(self, instance: UserProfile):
         return {"prompt": build_ai_prompt(instance)}
+
+
+class UserFeedbackSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UserFeedback
+        fields = ["id", "message", "created_at"]
+        read_only_fields = ["id", "created_at"]

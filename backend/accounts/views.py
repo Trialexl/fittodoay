@@ -12,6 +12,7 @@ from .serializers import (
     LLMPreferencesSerializer,
     PromptPreviewSerializer,
     RegisterSerializer,
+    UserFeedbackSerializer,
     UserProfileSerializer,
     UserSerializer,
 )
@@ -82,5 +83,15 @@ class LLMPreferencesView(APIView):
         defaults = {field_name: None for field_name in serializer.fields.keys()}
         defaults.update(data or {})
         return defaults
+
+
+class UserFeedbackView(generics.CreateAPIView):
+    """Принимает свободный текст фидбека от авторизованного пользователя."""
+
+    serializer_class = UserFeedbackSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
 
 # Create your views here.
