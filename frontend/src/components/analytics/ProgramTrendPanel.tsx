@@ -237,7 +237,9 @@ export const ProgramTrendPanel = () => {
       const map = new Map<string, number>();
       series.points.forEach((point) => {
         isoSet.add(point.iso);
-        map.set(point.iso, point.value);
+        if (point.value !== null && point.value !== undefined) {
+          map.set(point.iso, point.value);
+        }
       });
       return { series, map };
     });
