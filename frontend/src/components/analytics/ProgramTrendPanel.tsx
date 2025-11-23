@@ -84,7 +84,7 @@ type ChartSeries = {
   key: string | number;
   label: string;
   color: string;
-  points: { iso: string; value: number }[];
+  points: { iso: string; value: number | null }[];
 };
 
 const withAlpha = (hex: string, alpha: number) => {
@@ -148,9 +148,7 @@ export const ProgramTrendPanel = () => {
       key: folder.id,
       label: folder.name,
       color: COLORS[index % COLORS.length],
-      points: folder.series
-        .filter((point) => point.load > 0)
-        .map((point) => ({ iso: point.date, value: point.load })),
+      points: folder.series.map((point) => ({ iso: point.date, value: point.load ?? null })),
     }));
   }, [data]);
 
@@ -165,9 +163,7 @@ export const ProgramTrendPanel = () => {
       key: exercise.template_exercise_id,
       label: exercise.exercise_name,
       color: COLORS[index % COLORS.length],
-      points: exercise.series
-        .filter((point) => point.load > 0)
-        .map((point) => ({ iso: point.date, value: point.load })),
+      points: exercise.series.map((point) => ({ iso: point.date, value: point.load ?? null })),
     }));
   }, [selectedFolder]);
 
@@ -184,12 +180,15 @@ export const ProgramTrendPanel = () => {
 
   const chartMaxValue = useMemo(() => {
     return effectiveSeries.reduce((max, series) => {
-      const localMax = series.points.reduce((seriesMax, point) => Math.max(seriesMax, point.value), 0);
+      const localMax = series.points.reduce(
+        (seriesMax, point) => Math.max(seriesMax, point.value ?? 0),
+        0,
+      );
       return Math.max(max, localMax);
     }, 0);
   }, [effectiveSeries]);
 
-  type TimelineEntry = Record<string, string | number>;
+  type TimelineEntry = Record<string, string | number | null>;
   const { timelineData, isoList } = useMemo(() => {
     const isoSet = new Set<string>();
     const pointMaps = effectiveSeries.map((series) => {
@@ -208,9 +207,7 @@ export const ProgramTrendPanel = () => {
         };
         pointMaps.forEach(({ series, map }) => {
           const pointValue = map.get(iso);
-          if (typeof pointValue === "number") {
-            entry[series.key.toString()] = pointValue;
-          }
+          entry[series.key.toString()] = pointValue ?? null;
         });
         return entry;
       });
@@ -223,7 +220,7 @@ export const ProgramTrendPanel = () => {
         key: series.key,
         label: series.label,
         color: series.color,
-        total: series.points.reduce((sum, point) => sum + point.value, 0),
+        total: series.points.reduce((sum, point) => sum + (point.value ?? 0), 0),
       })),
     [effectiveSeries],
   );
@@ -233,14 +230,16 @@ export const ProgramTrendPanel = () => {
   const heatmapPoints = useMemo(
     () =>
       effectiveSeries.flatMap((series) =>
-        series.points.map((point) => ({
-          iso: point.iso,
-          isoLabel: formatLabelDate(point.iso, activeGranularity),
-          seriesLabel: series.label,
-          value: point.value,
-          color: series.color,
-          isoIndex: isoOrderMap.get(point.iso) ?? 0,
-        })),
+        series.points
+          .filter((point) => point.value !== null && point.value !== undefined)
+          .map((point) => ({
+            iso: point.iso,
+            isoLabel: formatLabelDate(point.iso, activeGranularity),
+            seriesLabel: series.label,
+            value: point.value as number,
+            color: series.color,
+            isoIndex: isoOrderMap.get(point.iso) ?? 0,
+          })),
       ),
     [effectiveSeries, activeGranularity, isoOrderMap],
   );
@@ -323,6 +322,7 @@ export const ProgramTrendPanel = () => {
                 strokeWidth={2}
                 fill={withAlpha(series.color, 0.25)}
                 fillOpacity={0.6}
+                connectNulls
               />
             ))}
           </AreaChart>
@@ -377,6 +377,7 @@ export const ProgramTrendPanel = () => {
                 strokeWidth={1.5}
                 fill={withAlpha(series.color, 0.4)}
                 stackId="stacked"
+                connectNulls
               />
             ))}
           </AreaChart>

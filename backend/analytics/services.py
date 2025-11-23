@@ -159,7 +159,9 @@ def _bucket_sequence(start: date, end: date, granularity: str) -> List[date]:
     return buckets
 
 
-def build_program_trends(user, start: date, end: date, granularity: str = "day") -> List[Dict]:
+def build_program_trends(
+    user, start: date, end: date, granularity: str = "day"
+) -> tuple[List[Dict], date | None, date | None]:
     logs = (
         WorkoutSetLog.objects.filter(
             workout_day__user=user,
@@ -208,25 +210,41 @@ def build_program_trends(user, start: date, end: date, granularity: str = "day")
         exercise_daily[group_key][workout_date] += load
 
     if not folder_names:
-        return []
+        return [], None, None
 
     dates: List[date] = _bucket_sequence(start, end, granularity)
+    # Обрезаем диапазон до первой/последней даты, где есть хоть какая-то нагрузка
+    active_dates = sorted({dt for per_folder in folder_daily.values() for dt, load in per_folder.items() if load})
+    trimmed_start = active_dates[0] if active_dates else None
+    trimmed_end = active_dates[-1] if active_dates else None
+    if trimmed_start and trimmed_end:
+        dates = [dt for dt in dates if trimmed_start <= dt <= trimmed_end]
 
     folders_payload: List[Dict] = []
     for folder_id, folder_name in folder_names.items():
-        series = [
-            {"date": current.isoformat(), "load": round(folder_daily[folder_id].get(current, 0.0), 2)}
-            for current in dates
-        ]
+        series = []
+        for current in dates:
+            value = folder_daily[folder_id].get(current)
+            series.append(
+                {
+                    "date": current.isoformat(),
+                    "load": None if value is None or value == 0 else round(value, 2),
+                }
+            )
         exercises_payload = []
         for group_key, meta in exercise_meta.items():
             if meta["folder_id"] != folder_id:
                 continue
-            points = [
-                {"date": current.isoformat(), "load": round(exercise_daily[group_key].get(current, 0.0), 2)}
-                for current in dates
-            ]
-            if not any(point["load"] > 0 for point in points):
+            points = []
+            for current in dates:
+                value = exercise_daily[group_key].get(current)
+                points.append(
+                    {
+                        "date": current.isoformat(),
+                        "load": None if value is None else round(value, 2),
+                    }
+                )
+            if not any((point["load"] or 0) > 0 for point in points):
                 continue
             template_label = ", ".join(sorted(meta["template_names"]))
             exercises_payload.append(
@@ -238,7 +256,7 @@ def build_program_trends(user, start: date, end: date, granularity: str = "day")
                 }
             )
         exercises_payload.sort(
-            key=lambda entry: sum(point["load"] for point in entry["series"]),
+            key=lambda entry: sum(point["load"] or 0 for point in entry["series"]),
             reverse=True,
         )
         folders_payload.append(
@@ -251,4 +269,4 @@ def build_program_trends(user, start: date, end: date, granularity: str = "day")
         )
 
     folders_payload.sort(key=lambda entry: entry["name"])
-    return folders_payload
+    return folders_payload, trimmed_start, trimmed_end
