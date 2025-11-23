@@ -56,6 +56,7 @@ class TemplateExerciseSerializer(serializers.ModelSerializer):
             "time_override",
             "rest_override",
             "note",
+            "is_active",
         ]
 
     def __init__(self, *args, **kwargs):

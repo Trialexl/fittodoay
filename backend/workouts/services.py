@@ -132,7 +132,9 @@ def generate_daily_plan(user, target_date: date | None = None) -> WorkoutDay:
                             "rest": defaults.get("rest"),
                         }
                     )
-                total_sets += len(sets)
+                exercise_active = te.is_active
+                if exercise_active:
+                    total_sets += len(sets)
                 images_payload = []
                 if te.exercise_id:
                     images_payload = [
@@ -145,22 +147,23 @@ def generate_daily_plan(user, target_date: date | None = None) -> WorkoutDay:
                     if base_exercise is not None:
                         difficulty = getattr(base_exercise, "difficulty", "") or ""
                 exercises_payload.append(
-                    {
-                        "template_exercise_id": te.id,
-                        "source": {
-                            "type": "system" if te.exercise else "custom",
-                            "id": source.id,
-                            "name": source.name,
-                            "description": getattr(source, "description", "") or "",
-                            "target_muscles": getattr(source, "target_muscles", "") or "",
-                            "difficulty": difficulty,
-                            "images": images_payload,
-                        },
-                        "defaults": defaults,
-                        "note": te.note,
-                        "sets": sets,
-                    }
-                )
+                        {
+                            "template_exercise_id": te.id,
+                            "source": {
+                                "type": "system" if te.exercise else "custom",
+                                "id": source.id,
+                                "name": source.name,
+                                "description": getattr(source, "description", "") or "",
+                                "target_muscles": getattr(source, "target_muscles", "") or "",
+                                "difficulty": difficulty,
+                                "images": images_payload,
+                            },
+                            "defaults": defaults,
+                            "note": te.note,
+                            "is_active": exercise_active,
+                            "sets": sets,
+                        }
+                    )
             folder_payload["templates"].append(
                 {
                     "id": template.id,

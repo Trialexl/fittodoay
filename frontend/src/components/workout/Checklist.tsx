@@ -79,6 +79,7 @@ type ExercisePayload = {
   };
   note?: string;
   sets: SetPayload[];
+  is_active?: boolean;
 };
 
 type TemplatePayload = {
@@ -1076,6 +1077,7 @@ export const Checklist = ({
                             const storedExpanded = expandedExercises[exercise.template_exercise_id];
                             const exerciseExpanded =
                               storedExpanded !== undefined ? storedExpanded : !exerciseComplete;
+                        const exerciseActive = exercise.is_active ?? true;
                         const completedSets = exercise.sets.filter((set) =>
                           getLogForSet(exercise.template_exercise_id, set.set_index),
                         ).length;
@@ -1088,7 +1090,9 @@ export const Checklist = ({
                               "rounded-xl border pl-1.5 pr-0.5 py-1.5 shadow-sm ring-1 sm:pl-3 sm:pr-1.5 sm:py-2 transition",
                               exerciseComplete
                                 ? "border-emerald-200 bg-emerald-50 ring-emerald-200"
-                                : "border-slate-200 bg-slate-50/70 ring-slate-200",
+                                : exerciseActive
+                                  ? "border-slate-200 bg-slate-50/70 ring-slate-200"
+                                  : "border-dashed border-slate-300 bg-slate-100/80 ring-slate-100",
                             )}
                           >
                             <div className="flex w-full flex-wrap items-center gap-1">
@@ -1108,6 +1112,11 @@ export const Checklist = ({
                                 >
                                   {exercise.source.name}
                                 </p>
+                                {!exerciseActive && (
+                                  <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                                    не активен
+                                  </span>
+                                )}
                                 {canShowInfo && (
                                   <span
                                     role="button"
@@ -1170,6 +1179,8 @@ export const Checklist = ({
                                 const isComplete = Boolean(log);
                                 const isOfflineLog = Boolean(log?.offlineId);
                                 const isTimedExercise = Boolean(exercise.defaults.has_time);
+                                const actionDisabled =
+                                  !exerciseActive || Boolean(restOverlay) || Boolean(executionOverlay);
                                 const setNumber =
                                   set.set_index && set.set_index > 0
                                     ? set.set_index
@@ -1210,14 +1221,21 @@ export const Checklist = ({
                                           ) : (
                                             <Button
                                               variant="secondary"
-                                              disabled={Boolean(restOverlay) || Boolean(executionOverlay)}
-                                              onClick={() =>
-                                                isTimedExercise
-                                                  ? startTimedExecution(exercise, set, template, folder.id)
-                                                  : openRestOverlay(exercise, set, undefined, template, folder.id)
-                                              }
+                                              disabled={actionDisabled}
+                                              onClick={() => {
+                                                if (!exerciseActive) return;
+                                                if (isTimedExercise) {
+                                                  startTimedExecution(exercise, set, template, folder.id);
+                                                } else {
+                                                  openRestOverlay(exercise, set, undefined, template, folder.id);
+                                                }
+                                              }}
                                             >
-                                              {isTimedExercise ? "Начать" : "Выполнено"}
+                                              {!exerciseActive
+                                                ? "Не активно"
+                                                : isTimedExercise
+                                                  ? "Начать"
+                                                  : "Выполнено"}
                                             </Button>
                                           )}
                                         </div>

@@ -83,6 +83,7 @@ class TemplateExercise(TimestampedModel):
     time_override = models.PositiveIntegerField(null=True, blank=True, help_text="Секунды")
     rest_override = models.PositiveIntegerField(null=True, blank=True, help_text="Секунды")
     note = models.CharField(max_length=255, blank=True)
+    is_active = models.BooleanField(default=True)
 
     class Meta:
         ordering = ["sort_order", "id"]

@@ -43,6 +43,7 @@ type TemplateExerciseSummary = {
   rest_override?: number | null;
   exercise?: ExerciseRef | null;
   custom_exercise?: ExerciseRef | null;
+  is_active?: boolean;
 };
 
 type TemplateSummary = {
@@ -134,6 +135,7 @@ type TemplateExerciseDetail = {
   time_override: number | null;
   rest_override: number | null;
   note?: string;
+  is_active: boolean;
 };
 
 type ProgramBoardProps = {
@@ -541,6 +543,7 @@ const SortableExerciseRow = ({
     id: exercise.id,
     disabled,
   });
+  const isActive = exercise.is_active ?? true;
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -563,8 +566,9 @@ const SortableExerciseRow = ({
         >
           ≡
         </button>
-        <p className="text-sm font-medium text-slate-800">
+        <p className={clsx("text-sm font-medium", isActive ? "text-slate-800" : "text-slate-400") }>
           {exercise.exercise?.name ?? exercise.custom_exercise?.name ?? "Упражнение"}
+          {!isActive && <span className="ml-2 text-[11px] uppercase tracking-wide">не активен</span>}
         </p>
       </div>
       <IconButton label="Редактировать" icon={<EditIcon />} onClick={() => onEdit(exercise.id)} />
@@ -885,6 +889,7 @@ const TemplateExerciseModal = ({
     time_override: "",
     rest_override: "",
     note: "",
+    is_active: true,
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -936,6 +941,7 @@ const TemplateExerciseModal = ({
           time_override: toInput(detail.time_override),
           rest_override: toInput(detail.rest_override),
           note: detail.note ?? "",
+          is_active: detail.is_active,
         });
         setExerciseMeta({
           hasTime: Boolean(detail.exercise?.has_time),
@@ -952,6 +958,7 @@ const TemplateExerciseModal = ({
         time_override: "",
         rest_override: "",
         note: "",
+        is_active: true,
       });
       setExerciseMeta({ hasTime: false, hasWeight: true });
       setSelectedExercise(null);
@@ -1050,6 +1057,7 @@ const TemplateExerciseModal = ({
             time_override: parseOrNull(form.time_override),
             rest_override: parseOrNull(form.rest_override),
             note: form.note || undefined,
+            is_active: form.is_active,
           }),
           token: token ?? undefined,
         });
@@ -1066,6 +1074,7 @@ const TemplateExerciseModal = ({
             time_override: parseOrNull(form.time_override),
             rest_override: parseOrNull(form.rest_override),
             note: form.note || undefined,
+            is_active: form.is_active,
           }),
           token: token ?? undefined,
         });
@@ -1237,6 +1246,15 @@ const TemplateExerciseModal = ({
             onChange={(e) => setForm((prev) => ({ ...prev, rest_override: e.target.value }))}
           />
           </div>
+          <label className="flex items-center gap-2 text-sm text-slate-600">
+            <input
+              type="checkbox"
+              className="h-4 w-4 rounded border-slate-300 text-primary focus:ring-primary"
+              checked={form.is_active}
+              onChange={(event) => setForm((prev) => ({ ...prev, is_active: event.target.checked }))}
+            />
+            <span>Упражнение активно</span>
+          </label>
           <label className="block text-sm text-slate-600">
           <span>Комментарий</span>
           <textarea
