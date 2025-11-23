@@ -2,7 +2,7 @@
 
 import useSWR from "swr";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Checklist, type WorkoutPlan } from "@/components/workout/Checklist";
 import { WorkoutCalendar } from "@/components/workout/WorkoutCalendar";
 import { apiFetch } from "@/lib/api";
@@ -25,11 +25,19 @@ const normalizeIsoDate = (value: string) => {
 
 export default function WorkoutPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { token, user, loading } = useAuth();
   const [plan, setPlan] = useState<WorkoutPlan | null>(null);
   const todayIso = useMemo(() => formatISODate(new Date()), []);
-  const [selectedDate, setSelectedDate] = useState(todayIso);
-  const [calendarCursor, setCalendarCursor] = useState(todayIso);
+  const initialQueryDate = useMemo(() => {
+    const paramDate = searchParams?.get("date");
+    if (!paramDate) return todayIso;
+    const parsed = new Date(paramDate);
+    if (Number.isNaN(parsed.getTime())) return todayIso;
+    return formatISODate(parsed);
+  }, [searchParams, todayIso]);
+  const [selectedDate, setSelectedDate] = useState(initialQueryDate);
+  const [calendarCursor, setCalendarCursor] = useState(initialQueryDate);
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const normalizedSelectedDate = useMemo(() => normalizeIsoDate(selectedDate), [selectedDate]);
 
