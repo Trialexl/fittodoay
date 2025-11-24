@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from django.conf import settings
 from django.db import models
+from pgvector.django import VectorField
 
 User = settings.AUTH_USER_MODEL
 
@@ -38,6 +39,7 @@ class Exercise_DB(TimestampedModel):
     default_sets = models.PositiveIntegerField(default=3)
     default_reps = models.PositiveIntegerField(default=10)
     default_rest = models.PositiveIntegerField(default=60, help_text="Отдых в секундах")
+    embedding = VectorField(dimensions=384, null=True, blank=True)  # вектор для подбора похожих упражнений
     default_time = models.PositiveIntegerField(
         null=True, blank=True, help_text="Время в секундах"
     )

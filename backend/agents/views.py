@@ -5,18 +5,29 @@ import logging
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework import generics, permissions
+from rest_framework.exceptions import NotFound
 
 from accounts.serializers import LLMPreferencesSerializer
 from decimal import Decimal
 
-from agents.serializers import LLMProgramRequestSerializer, LLMProgramResponseSerializer
+from agents.serializers import (
+    LLMProgramMessageCreateSerializer,
+    LLMProgramMessageSerializer,
+    LLMProgramRequestSerializer,
+    LLMProgramResponseSerializer,
+    LLMProgramThreadCreateSerializer,
+    LLMProgramThreadSerializer,
+)
 from agents.services import (
     FALLBACK_MESSAGE,
     LLMInvalidResponse,
     LLMProgramGenerationService,
+    LLMProgramChatService,
     LLMServiceError,
     LLMUnavailableError,
 )
+from agents.models import LLMProgramThread
 
 logger = logging.getLogger(__name__)
 
@@ -72,3 +83,58 @@ class LLMProgramView(APIView):
             else:
                 normalized[key] = value
         return normalized
+
+
+class LLMProgramThreadView(generics.CreateAPIView):
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = LLMProgramThreadCreateSerializer
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        thread = serializer.save()
+        return Response(LLMProgramThreadSerializer(thread).data, status=status.HTTP_201_CREATED)
+
+
+class LLMProgramMessageView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_thread(self, pk) -> LLMProgramThread:
+        try:
+            return LLMProgramThread.objects.get(id=pk, user=self.request.user)
+        except LLMProgramThread.DoesNotExist:
+            raise NotFound("thread_not_found")
+
+    def get(self, request, pk: int, *args, **kwargs):
+        thread = self.get_thread(pk)
+        messages = thread.messages.order_by("created_at", "id")
+        return Response(LLMProgramMessageSerializer(messages, many=True).data)
+
+    def post(self, request, pk: int, *args, **kwargs):
+        thread = self.get_thread(pk)
+        serializer = LLMProgramMessageCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        service = LLMProgramChatService(thread)
+        assistant_message = service.send(serializer.validated_data["message"])
+        return Response(
+            {
+                "assistant": LLMProgramMessageSerializer(assistant_message).data,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class LLMProgramApplyView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk: int, *args, **kwargs):
+        try:
+            thread = LLMProgramThread.objects.get(id=pk, user=request.user)
+        except LLMProgramThread.DoesNotExist:
+            return Response({"detail": "thread_not_found"}, status=status.HTTP_404_NOT_FOUND)
+        service = LLMProgramChatService(thread)
+        try:
+            results = service.apply_latest_actions()
+        except LLMInvalidResponse as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"applied": results}, status=status.HTTP_200_OK)

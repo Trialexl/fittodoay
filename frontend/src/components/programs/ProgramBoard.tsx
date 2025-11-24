@@ -164,6 +164,26 @@ export const ProgramBoard = ({ initialFocus }: ProgramBoardProps = {}) => {
   const [exerciseModal, setExerciseModal] = useState<TemplateExerciseModalState>(null);
   const [initialHandled, setInitialHandled] = useState(false);
   const [reordering, setReordering] = useState<{ templateId: number | null }>({ templateId: null });
+  const [chatState, setChatState] = useState<{ open: boolean; folder?: Folder; threadId?: number }>({
+    open: false,
+  });
+  const [chatInput, setChatInput] = useState("");
+  const [chatError, setChatError] = useState<string | null>(null);
+  const [chatLoading, setChatLoading] = useState(false);
+  const [applying, setApplying] = useState(false);
+
+  const { data: chatMessages, mutate: refreshChat } = useSWR(
+    token && chatState.threadId
+      ? [`/api/llm-agent/threads/${chatState.threadId}/messages/`, token]
+      : null,
+    ([url, auth]) =>
+      apiFetch<{ id: number; role: string; content: string; actions?: any }[]>(url, {
+        token: auth as string,
+      }),
+  );
+
+  const latestActions =
+    chatMessages?.filter((m) => m.role === "assistant").slice(-1)[0]?.actions ?? null;
 
   const reorderExercises = async (templateId: number, exerciseIds: number[]) => {
     if (!token) return;
@@ -216,6 +236,68 @@ export const ProgramBoard = ({ initialFocus }: ProgramBoardProps = {}) => {
     }
   }, [exerciseId, templateId, templateName, folderId, folders, initialHandled, refreshFolders]);
 
+  const openChatForFolder = async (folder: Folder) => {
+    if (!token) return;
+    setChatError(null);
+    setChatLoading(true);
+    try {
+      const thread = await apiFetch<{ id: number; title: string }>(`/api/llm-agent/threads/`, {
+        method: "POST",
+        body: JSON.stringify({ program_id: folder.id, title: `Чат по: ${folder.name}` }),
+        token,
+      });
+      setChatState({ open: true, folder, threadId: thread.id });
+      setChatInput("");
+      refreshChat();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Не удалось открыть чат";
+      setChatError(message);
+      setChatState((prev) => ({ ...prev, open: true, folder }));
+    } finally {
+      setChatLoading(false);
+    }
+  };
+
+  const sendChatMessage = async () => {
+    if (!token || !chatState.threadId || !chatInput.trim()) return;
+    setChatLoading(true);
+    setChatError(null);
+    try {
+      await apiFetch(`/api/llm-agent/threads/${chatState.threadId}/messages/`, {
+        method: "POST",
+        body: JSON.stringify({ message: chatInput.trim() }),
+        token,
+      });
+      setChatInput("");
+      refreshChat();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Не удалось отправить сообщение";
+      setChatError(message);
+    } finally {
+      setChatLoading(false);
+    }
+  };
+
+  const applyChatActions = async () => {
+    if (!token || !chatState.threadId) return;
+    setApplying(true);
+    setChatError(null);
+    try {
+      await apiFetch(`/api/llm-agent/threads/${chatState.threadId}/apply/`, {
+        method: "POST",
+        token,
+      });
+      refreshChat();
+      refreshFolders();
+      setChatState((prev) => ({ ...prev, open: false }));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Не удалось применить изменения";
+      setChatError(message);
+    } finally {
+      setApplying(false);
+    }
+  };
+
   if (isLoading) return <p className="text-sm text-slate-500">Загружаем программы…</p>;
 
   return (
@@ -240,6 +322,7 @@ export const ProgramBoard = ({ initialFocus }: ProgramBoardProps = {}) => {
             }
             templateExpanded={expandedTemplates}
             onToggleTemplate={toggleTemplate}
+            onOpenChat={() => openChatForFolder(folder)}
             onAddExercise={(templateId, templateName, nextSortOrder, refresh) =>
               setExerciseModal({
                 mode: "create",
@@ -277,6 +360,75 @@ export const ProgramBoard = ({ initialFocus }: ProgramBoardProps = {}) => {
         state={exerciseModal}
         onClose={() => setExerciseModal(null)}
       />
+      <Modal
+        open={chatState.open}
+        onClose={() => setChatState({ open: false })}
+        title={chatState.folder ? `Чат по программе: ${chatState.folder.name}` : "Чат ассистента"}
+        className="max-w-3xl"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setChatState({ open: false })} disabled={chatLoading || applying}>
+              Закрыть
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={applyChatActions}
+              disabled={!latestActions || applying}
+              loading={applying}
+            >
+              Применить изменения
+            </Button>
+            <Button onClick={sendChatMessage} loading={chatLoading} disabled={!chatInput.trim()}>
+              Отправить
+            </Button>
+          </>
+        }
+      >
+        <div className="flex flex-col gap-3">
+          <div className="max-h-[360px] overflow-y-auto rounded-xl border border-slate-100 bg-slate-50 p-3">
+            {chatMessages?.length ? (
+              chatMessages.map((msg) => (
+                <div key={msg.id} className="mb-3">
+                  <p className="text-xs uppercase tracking-wide text-slate-400">
+                    {msg.role === "assistant" ? "Ассистент" : "Вы"}
+                  </p>
+                  <p className="whitespace-pre-line text-sm text-slate-800">
+                    {isProbablyJson(msg.content) ? "Ассистент ответил служебным текстом — сформулируйте вопрос проще." : msg.content}
+                  </p>
+                  {msg.actions && Array.isArray(msg.actions) && msg.actions.length > 0 && (
+                    <ul className="mt-1 space-y-1 text-xs text-slate-600">
+                      {msg.actions.map((action: any, index: number) => (
+                        <li key={index} className="rounded bg-white px-2 py-1 shadow-sm">
+                          <span className="font-semibold">{action.type}</span>
+                          {action.exercise_id ? ` • упражнение ${action.exercise_id}` : ""}
+                          {action.day_id ? ` • день ${action.day_id}` : ""}
+                          {action.weight ? ` • вес ${action.weight}` : ""}
+                          {action.reps ? ` • повторы ${action.reps}` : ""}
+                          {action.sets ? ` • подходы ${action.sets}` : ""}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-slate-500">Напишите, что хотите поменять в программе.</p>
+            )}
+          </div>
+          <textarea
+            value={chatInput}
+            onChange={(event) => setChatInput(event.target.value)}
+            className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-800 outline-none ring-primary/40 transition focus:ring"
+            placeholder="Например: хочу заменить жим лежа на отжимания и уменьшить вес в среду"
+          />
+          {chatError && <p className="text-sm text-red-500">{chatError}</p>}
+          {latestActions && (
+            <p className="text-xs text-slate-500">
+              Ассистент предложил набор действий. Нажмите «Применить изменения», когда будете готовы.
+            </p>
+          )}
+        </div>
+      </Modal>
     </div>
   );
 };
@@ -294,6 +446,7 @@ const FolderCallout = ({
   onEditExercise,
   reorderingTemplateId,
   onReorderExercises,
+  onOpenChat,
 }: {
   folder: Folder;
   expanded: boolean;
@@ -317,6 +470,7 @@ const FolderCallout = ({
   ) => void;
   reorderingTemplateId: number | null;
   onReorderExercises: (templateId: number, order: number[]) => void;
+  onOpenChat: () => void;
 }) => {
   const { token } = useAuth();
   const { data, isLoading, mutate } = useSWR(
@@ -345,6 +499,9 @@ const FolderCallout = ({
               ● Не активна
             </span>
           )}
+          <Button variant="secondary" onClick={onOpenChat} className="hidden sm:inline-flex">
+            Обсудить с ассистентом
+          </Button>
           <IconButton
             label="Новый шаблон"
             icon={<PlusIcon />}
@@ -1367,6 +1524,15 @@ const TemplateExerciseModal = ({
         )}
       </Modal>
     </>
+  );
+};
+
+const isProbablyJson = (text?: string | null) => {
+  if (!text) return false;
+  const trimmed = text.trim();
+  return (
+    (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
+    (trimmed.startsWith("[") && trimmed.endsWith("]"))
   );
 };
 
