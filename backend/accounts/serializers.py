@@ -52,6 +52,15 @@ class LLMPreferencesSerializer(serializers.Serializer):
     notes = serializers.CharField(
         required=False, allow_null=True, allow_blank=True, max_length=1000
     )
+    theme = serializers.ChoiceField(
+        choices=[("light", "light"), ("dark", "dark")], required=False, allow_null=True
+    )
+    accent_color = serializers.RegexField(
+        regex=r"^#(?:[0-9a-fA-F]{6})$",
+        required=False,
+        allow_null=True,
+        error_messages={"invalid": "Цвет указывайте в hex-формате #RRGGBB"},
+    )
 
     def to_representation(self, instance):
         base = {field: None for field in self.fields}

@@ -15,8 +15,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="ru" suppressHydrationWarning>
-      <body className="bg-slate-100">
+    <html lang="ru" suppressHydrationWarning data-theme="light">
+      <body className="antialiased">
         <AppProviders>
           <OfflineBanner />
           <AppHeader />

@@ -81,6 +81,7 @@ class LLMPreferencesView(APIView):
     def _with_defaults(self, data: dict | None):
         serializer = self.serializer_class()
         defaults = {field_name: None for field_name in serializer.fields.keys()}
+        defaults.update({"theme": "light", "accent_color": "#a855f7"})
         defaults.update(data or {})
         return defaults
 

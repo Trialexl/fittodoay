@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/state/AuthContext";
+import { useTheme } from "@/state/ThemeContext";
 import { Button } from "@/components/ui/Button";
 import { BrandMark } from "@/components/common/BrandMark";
 import { Modal } from "@/components/ui/Modal";
@@ -16,9 +17,18 @@ const links = [
   { href: "/assistant", label: "Помощник" },
 ];
 
+const accentOptions = [
+  { value: "#a855f7", label: "Фиолетовый" },
+  { value: "#0ea5e9", label: "Голубой" },
+  { value: "#22c55e", label: "Зелёный" },
+  { value: "#f59e0b", label: "Янтарный" },
+  { value: "#ef4444", label: "Красный" },
+];
+
 export const AppHeader = () => {
   const pathname = usePathname();
   const { user, logout } = useAuth();
+  const { theme, setTheme, accentColor, setAccentColor, saving: savingTheme } = useTheme();
   const [menuOpen, setMenuOpen] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [feedbackMessage, setFeedbackMessage] = useState("");
@@ -80,7 +90,7 @@ export const AppHeader = () => {
 
   return (
     <>
-      <header className="fixed inset-x-0 top-0 z-30 border-b border-slate-200 bg-white/90 backdrop-blur">
+      <header className="fixed inset-x-0 top-0 z-30 border-b border-border bg-surface/90 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
           <Link href={user ? "/workout" : "/"} className="text-lg font-semibold text-slate-900">
             <BrandMark />
@@ -88,7 +98,7 @@ export const AppHeader = () => {
           <div className="relative" ref={menuRef}>
             <button
               type="button"
-              className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 shadow-sm transition hover:border-primary hover:text-primary"
+              className="flex items-center gap-2 rounded-full border border-slate-200 bg-surface px-4 py-2 text-sm font-medium text-slate-600 shadow-sm transition hover:border-primary hover:text-primary"
               onClick={() => setMenuOpen((prev) => !prev)}
               aria-haspopup="true"
               aria-expanded={menuOpen}
@@ -112,7 +122,7 @@ export const AppHeader = () => {
               <span className="text-base">{menuOpen ? "▴" : "▾"}</span>
             </button>
             {menuOpen && (
-              <div className="absolute right-0 top-full mt-3 w-64 rounded-2xl border border-slate-200 bg-white/95 p-4 text-sm shadow-xl">
+              <div className="absolute right-0 top-full mt-3 w-[22rem] rounded-2xl border border-border bg-surface/95 p-4 text-sm shadow-xl">
                 <nav className="flex flex-col gap-2 text-slate-700">
                   {links.map((link) => (
                     <Link
@@ -124,6 +134,76 @@ export const AppHeader = () => {
                     </Link>
                   ))}
                 </nav>
+                <div className="mt-4 flex flex-col gap-3 border-t border-slate-100 pt-3 text-slate-600">
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs uppercase tracking-wide text-slate-400">Тема</span>
+                      <div className="flex rounded-full border border-slate-200 bg-slate-50 p-1">
+                        <button
+                          type="button"
+                          onClick={() => setTheme("light")}
+                          className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+                            theme === "light"
+                              ? "bg-primary/10 text-primary"
+                              : "text-slate-600 hover:text-primary"
+                          }`}
+                        >
+                          ☀️ Светлая
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setTheme("dark")}
+                          className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+                            theme === "dark"
+                              ? "bg-primary/10 text-primary"
+                              : "text-slate-600 hover:text-primary"
+                          }`}
+                        >
+                          🌙 Тёмная
+                        </button>
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs uppercase tracking-wide text-slate-400">
+                          Акцентный цвет
+                        </span>
+                        {savingTheme && <span className="text-[11px] text-slate-500">Сохраняем…</span>}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {accentOptions.map((option) => {
+                          const isActive = option.value.toLowerCase() === accentColor.toLowerCase();
+                          return (
+                            <button
+                              key={option.value}
+                              type="button"
+                              aria-label={option.label}
+                              title={option.label}
+                              onClick={() => setAccentColor(option.value)}
+                              className={`flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 shadow-sm transition ${
+                                isActive ? "ring-2 ring-offset-2 ring-primary" : "hover:scale-105"
+                              }`}
+                              style={{ backgroundColor: option.value }}
+                            >
+                              {isActive && <span className="text-xs text-white">✓</span>}
+                            </button>
+                          );
+                        })}
+                        <label className="flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-medium text-slate-600 shadow-sm">
+                          <span className="text-slate-500">#</span>
+                          <input
+                            type="color"
+                            value={accentColor}
+                            onChange={(event) => setAccentColor(event.target.value)}
+                            className="h-7 w-12 cursor-pointer border-none bg-transparent p-0"
+                            aria-label="Своя палитра"
+                          />
+                          <span className="text-[11px] text-slate-500">свой</span>
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                </div>
                 <div className="mt-4 flex flex-col gap-2 border-t border-slate-100 pt-3 text-slate-600">
                   <Button variant="secondary" className="w-full justify-center" onClick={openFeedback}>
                     Чего не хватает?
