@@ -35,7 +35,7 @@ services:
       - backend
 
   db:
-    image: postgres:15
+    image: ankane/pgvector:0.5.1-pg15
     restart: unless-stopped
     environment:
       POSTGRES_DB: fittodoey
