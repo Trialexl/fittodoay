@@ -120,10 +120,10 @@ export const WorkoutCalendar = ({
               className={clsx(
                 "flex h-16 flex-col items-center justify-center rounded-lg border text-center transition",
                 day.isSelected
-                  ? "border-purple-600 bg-purple-600 text-white font-semibold"
+                  ? "border-primary bg-primary text-primary-foreground font-semibold"
                   : day.inMonth
-                    ? "border-slate-200 bg-white"
-                    : "border-slate-100 bg-slate-50 text-slate-400",
+                    ? "border-slate-200 bg-surface"
+                    : "border-slate-100 bg-surface-muted text-slate-400",
                 day.isToday && !day.isSelected ? "border-primary/40 bg-primary/5 text-primary" : null,
               )}
               onClick={() => onSelectDate(day.iso)}
@@ -132,7 +132,11 @@ export const WorkoutCalendar = ({
               <span
                 className={clsx(
                   "text-[10px]",
-                  day.isSelected ? "text-white/80" : day.inMonth ? "text-slate-500" : "text-slate-400",
+                  day.isSelected
+                    ? "text-primary-foreground/80"
+                    : day.inMonth
+                      ? "text-slate-500"
+                      : "text-slate-400",
                 )}
               >
                 {day.load ? Math.round(day.load) : "—"}
