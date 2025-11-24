@@ -169,7 +169,7 @@ const keyForSet = (templateExerciseId: number, setIndex: number) =>
   `${templateExerciseId}-${setIndex}`;
 
 const CompletionIcon = () => (
-  <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-emerald-100 text-[10px] font-black text-emerald-600">
+  <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500/15 text-[10px] font-black text-emerald-500">
     ✓
   </span>
 );
@@ -951,8 +951,8 @@ export const Checklist = ({
               className={clsx(
                 "rounded-2xl border p-2 sm:p-3 transition-colors",
                 folderComplete
-                  ? "border-emerald-400 bg-emerald-200"
-                  : "border-violet-200 bg-violet-50/80",
+                  ? "border-emerald-400/70 bg-emerald-500/10"
+                  : "border-slate-200 bg-surface-muted",
               )}
             >
               <div className="flex items-center gap-2">
@@ -1023,13 +1023,13 @@ export const Checklist = ({
                       );
                       const templateMuscles = getTemplateMuscles(template);
                       return (
-                        <article
+                      <article
                           key={template.id}
                           className={clsx(
                             "rounded-xl border p-3 sm:p-4 transition-colors",
                             templateComplete
-                              ? "border-emerald-300 bg-emerald-100"
-                              : "border-sky-200 bg-sky-50/80",
+                              ? "border-emerald-400/60 bg-emerald-500/10"
+                              : "border-slate-200 bg-surface",
                           )}
                         >
                           <div className="flex flex-wrap items-center gap-1">
@@ -1089,10 +1089,10 @@ export const Checklist = ({
                             className={clsx(
                               "rounded-xl border pl-1.5 pr-0.5 py-1.5 shadow-sm ring-1 sm:pl-3 sm:pr-1.5 sm:py-2 transition",
                               exerciseComplete
-                                ? "border-emerald-200 bg-emerald-50 ring-emerald-200"
+                                ? "border-emerald-400/60 bg-emerald-500/10 ring-emerald-400/50"
                                 : exerciseActive
-                                  ? "border-slate-200 bg-slate-50/70 ring-slate-200"
-                                  : "border-dashed border-slate-300 bg-slate-100/80 ring-slate-100",
+                                  ? "border-slate-200 bg-surface-muted ring-slate-200/70"
+                                  : "border-dashed border-slate-300 bg-surface ring-slate-200/70",
                             )}
                           >
                             <div className="flex w-full flex-wrap items-center gap-1">
@@ -1191,8 +1191,8 @@ export const Checklist = ({
                                     className={clsx(
                                       "flex flex-wrap items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs transition sm:text-sm",
                                       isComplete
-                                        ? "border-emerald-100 bg-emerald-50/40"
-                                        : "border-slate-200 bg-white",
+                                        ? "border-emerald-400/50 bg-emerald-500/10"
+                                        : "border-slate-200 bg-surface",
                                       isActiveSet && "ring-1 ring-primary/60",
                                     )}
                                     >
