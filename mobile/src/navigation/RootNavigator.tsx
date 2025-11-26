@@ -21,13 +21,14 @@ export const RootNavigator = () => {
     );
   }
 
-  const initialRouteName: keyof RootStackParamList = token ? "Main" : "Onboarding";
-
   return (
     <NavigationContainer theme={navigationTheme}>
-      <Stack.Navigator screenOptions={{ headerShown: false }} initialRouteName={initialRouteName}>
-        <Stack.Screen name="Onboarding" component={OnboardingScreen} />
-        <Stack.Screen name="Main" component={MainTabs} />
+      <Stack.Navigator screenOptions={{ headerShown: false }}>
+        {token ? (
+          <Stack.Screen name="Main" component={MainTabs} />
+        ) : (
+          <Stack.Screen name="Onboarding" component={OnboardingScreen} />
+        )}
       </Stack.Navigator>
     </NavigationContainer>
   );

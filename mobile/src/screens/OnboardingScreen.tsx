@@ -1,7 +1,10 @@
+import { useState } from "react";
+
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 
+import { authApi } from "../api/auth";
 import { useAuth } from "../hooks/useAuth";
 import { RootStackParamList } from "../navigation/types";
 import { palette, radius, spacing, textStyles } from "../theme";
@@ -10,11 +13,26 @@ type Props = NativeStackScreenProps<RootStackParamList, "Onboarding">;
 
 export const OnboardingScreen = ({ navigation }: Props) => {
   const { signIn } = useAuth();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleContinue = async () => {
-    await signIn("demo-token");
-    navigation.replace("Main");
+    setError(null);
+    setIsLoading(true);
+    try {
+      const response = await authApi.login({ email, password });
+      await signIn(response.token);
+      navigation.replace("Main");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Не удалось войти");
+    } finally {
+      setIsLoading(false);
+    }
   };
+
+  const isDisabled = isLoading || !email || !password;
 
   return (
     <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
@@ -26,7 +44,16 @@ export const OnboardingScreen = ({ navigation }: Props) => {
         </Text>
         <View style={styles.inputBlock}>
           <Text style={styles.label}>E-mail</Text>
-          <TextInput style={styles.input} placeholder="you@example.com" placeholderTextColor={palette.muted} />
+          <TextInput
+            style={styles.input}
+            placeholder="you@example.com"
+            placeholderTextColor={palette.muted}
+            value={email}
+            onChangeText={setEmail}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
         </View>
         <View style={styles.inputBlock}>
           <Text style={styles.label}>Пароль</Text>
@@ -35,16 +62,19 @@ export const OnboardingScreen = ({ navigation }: Props) => {
             placeholder="••••••••"
             placeholderTextColor={palette.muted}
             secureTextEntry
+            value={password}
+            onChangeText={setPassword}
           />
         </View>
+        {error ? <Text style={styles.error}>{error}</Text> : null}
         <View style={styles.steps}>
           <Text style={styles.step}>• Авторизация и онбординг с предпочтениями</Text>
           <Text style={styles.step}>• Program Board с drag&drop и модалками</Text>
           <Text style={styles.step}>• Чеклист, офлайн-очередь и таймеры</Text>
         </View>
       </View>
-      <TouchableOpacity style={styles.button} onPress={handleContinue} activeOpacity={0.9}>
-        <Text style={styles.buttonText}>Перейти к приложению</Text>
+      <TouchableOpacity style={[styles.button, isDisabled && styles.buttonDisabled]} onPress={handleContinue} activeOpacity={0.9} disabled={isDisabled}>
+        {isLoading ? <ActivityIndicator color={palette.background} /> : <Text style={styles.buttonText}>Войти и продолжить</Text>}
       </TouchableOpacity>
     </SafeAreaView>
   );
@@ -92,12 +122,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
   },
+  error: {
+    ...textStyles.body,
+    color: "#f87171",
+  },
   button: {
     marginTop: "auto",
     backgroundColor: palette.accent,
     paddingVertical: spacing.md,
     borderRadius: radius.md,
     alignItems: "center",
+  },
+  buttonDisabled: {
+    opacity: 0.6,
   },
   buttonText: {
     ...textStyles.heading,
