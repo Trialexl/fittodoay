@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { FlatList, RefreshControl, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 
 import { WorkoutPlan, WorkoutPlanExercise, WorkoutSetLog, workoutApi } from "../api/workout";
 import { palette, radius, spacing, textStyles } from "../theme";
@@ -11,12 +11,13 @@ export const WorkoutScreen = () => {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [savingKey, setSavingKey] = useState<string | null>(null);
+  const [selectedDate, setSelectedDate] = useState("");
 
   const loadPlan = async () => {
     setError(null);
     setIsLoading(true);
     try {
-      const data = await workoutApi.getPlan();
+      const data = await workoutApi.getPlan(selectedDate || undefined);
       setPlan(data);
       setLogs(data.set_logs);
     } catch (e) {
@@ -59,6 +60,18 @@ export const WorkoutScreen = () => {
       <Text style={styles.subtitle}>
         Чеклист сетов с быстрыми отметками. Позже добавим офлайн-очередь, RestTimer и интервалы.
       </Text>
+      <View style={styles.dateRow}>
+        <TextInput
+          style={styles.input}
+          placeholder="YYYY-MM-DD"
+          placeholderTextColor={palette.muted}
+          value={selectedDate}
+          onChangeText={setSelectedDate}
+        />
+        <TouchableOpacity style={styles.reloadButton} onPress={loadPlan} activeOpacity={0.9}>
+          <Text style={styles.reloadText}>Загрузить</Text>
+        </TouchableOpacity>
+      </View>
       {error ? <Text style={styles.error}>{error}</Text> : null}
       <FlatList
         data={plan?.plan_snapshot.folders ?? []}
@@ -148,6 +161,32 @@ const styles = StyleSheet.create({
   error: {
     ...textStyles.body,
     color: "#f87171",
+  },
+  dateRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+  },
+  input: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.surface,
+    color: palette.textPrimary,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  reloadButton: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: palette.accent,
+    borderRadius: radius.md,
+  },
+  reloadText: {
+    ...textStyles.heading,
+    color: palette.background,
+    fontSize: 14,
   },
   listContent: {
     gap: spacing.md,
