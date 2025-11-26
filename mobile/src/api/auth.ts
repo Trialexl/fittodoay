@@ -5,6 +5,11 @@ type LoginPayload = {
   password: string;
 };
 
+type RegisterPayload = {
+  email: string;
+  password: string;
+};
+
 type LoginResponse = {
   token: string;
   user: {
@@ -18,6 +23,13 @@ type LoginResponse = {
 export const authApi = {
   async login(payload: LoginPayload) {
     const response = await apiFetch<LoginResponse>("/auth/login/", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    return response;
+  },
+  async register(payload: RegisterPayload) {
+    const response = await apiFetch<LoginResponse>("/auth/register/", {
       method: "POST",
       body: JSON.stringify(payload),
     });

@@ -15,6 +15,7 @@ export const OnboardingScreen = ({ navigation }: Props) => {
   const { signIn } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [mode, setMode] = useState<"login" | "register">("login");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -22,7 +23,9 @@ export const OnboardingScreen = ({ navigation }: Props) => {
     setError(null);
     setIsLoading(true);
     try {
-      const response = await authApi.login({ email, password });
+      const response = mode === "login"
+        ? await authApi.login({ email, password })
+        : await authApi.register({ email, password });
       await signIn(response.token);
       navigation.replace("Main");
     } catch (e) {
@@ -67,6 +70,23 @@ export const OnboardingScreen = ({ navigation }: Props) => {
           />
         </View>
         {error ? <Text style={styles.error}>{error}</Text> : null}
+        <View style={styles.toggleRow}>
+          <Text style={styles.label}>Режим: </Text>
+          <TouchableOpacity
+            style={[styles.chip, mode === "login" && styles.chipActive]}
+            onPress={() => setMode("login")}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.chipText, mode === "login" && styles.chipTextActive]}>Вход</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.chip, mode === "register" && styles.chipActive]}
+            onPress={() => setMode("register")}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.chipText, mode === "register" && styles.chipTextActive]}>Регистрация</Text>
+          </TouchableOpacity>
+        </View>
         <View style={styles.steps}>
           <Text style={styles.step}>• Авторизация и онбординг с предпочтениями</Text>
           <Text style={styles.step}>• Program Board с drag&drop и модалками</Text>
@@ -74,7 +94,11 @@ export const OnboardingScreen = ({ navigation }: Props) => {
         </View>
       </View>
       <TouchableOpacity style={[styles.button, isDisabled && styles.buttonDisabled]} onPress={handleContinue} activeOpacity={0.9} disabled={isDisabled}>
-        {isLoading ? <ActivityIndicator color={palette.background} /> : <Text style={styles.buttonText}>Войти и продолжить</Text>}
+        {isLoading ? (
+          <ActivityIndicator color={palette.background} />
+        ) : (
+          <Text style={styles.buttonText}>{mode === "login" ? "Войти и продолжить" : "Зарегистрироваться"}</Text>
+        )}
       </TouchableOpacity>
     </SafeAreaView>
   );
@@ -97,6 +121,11 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     ...textStyles.body,
+  },
+  toggleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
   },
   steps: {
     gap: spacing.xs,
@@ -125,6 +154,26 @@ const styles = StyleSheet.create({
   error: {
     ...textStyles.body,
     color: "#f87171",
+  },
+  chip: {
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.surface,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radius.sm,
+  },
+  chipActive: {
+    borderColor: palette.accent,
+    backgroundColor: "#0d2035",
+  },
+  chipText: {
+    ...textStyles.body,
+    fontSize: 14,
+    color: palette.textSecondary,
+  },
+  chipTextActive: {
+    color: palette.accent,
   },
   button: {
     marginTop: "auto",

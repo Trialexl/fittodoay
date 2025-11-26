@@ -13,7 +13,7 @@ export const ProfileScreen = () => (
 );
 
 const ProfileActions = () => {
-  const { token, signOut } = useAuth();
+  const { token, user, signOut } = useAuth();
 
   const handleLogout = async () => {
     await signOut();
@@ -23,6 +23,16 @@ const ProfileActions = () => {
     <View style={styles.card}>
       <Text style={styles.cardTitle}>Сессия</Text>
       <Text style={styles.cardText}>{token ? `Token: ${token}` : "Не авторизован"}</Text>
+      {user ? (
+        <View style={styles.userBlock}>
+          <Text style={styles.userLine}>Email: {user.email}</Text>
+          {user.first_name || user.last_name ? (
+            <Text style={styles.userLine}>
+              Имя: {[user.first_name, user.last_name].filter(Boolean).join(" ")}
+            </Text>
+          ) : null}
+        </View>
+      ) : null}
       {token ? (
         <TouchableOpacity onPress={handleLogout} style={styles.button} activeOpacity={0.9}>
           <Text style={styles.buttonText}>Выйти</Text>
@@ -47,6 +57,13 @@ const styles = StyleSheet.create({
   },
   cardText: {
     ...textStyles.body,
+  },
+  userBlock: {
+    gap: spacing.xs,
+  },
+  userLine: {
+    ...textStyles.body,
+    color: palette.textSecondary,
   },
   button: {
     backgroundColor: palette.accent,
