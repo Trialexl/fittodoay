@@ -2,13 +2,17 @@ import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
+import { useAuth } from "../hooks/useAuth";
 import { RootStackParamList } from "../navigation/types";
 import { palette, radius, spacing, textStyles } from "../theme";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Onboarding">;
 
 export const OnboardingScreen = ({ navigation }: Props) => {
-  const handleContinue = () => {
+  const { signIn } = useAuth();
+
+  const handleContinue = async () => {
+    await signIn("demo-token");
     navigation.replace("Main");
   };
 
