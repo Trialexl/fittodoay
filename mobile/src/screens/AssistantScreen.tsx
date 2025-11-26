@@ -1,16 +1,49 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 import { assistantApi } from "../api/assistant";
+import { preferencesApi } from "../api/preferences";
 import { useAuth } from "../hooks/useAuth";
 import { palette, radius, spacing, textStyles } from "../theme";
+
+type GenerateResultProgram = {
+  name: string;
+  days?: { name: string }[];
+};
+
+type GenerateResult = {
+  programs?: GenerateResultProgram[];
+} & Record<string, unknown>;
 
 export const AssistantScreen = () => {
   const { token } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<unknown>(null);
+  const [result, setResult] = useState<GenerateResult | null>(null);
+  const [preferences, setPreferences] = useState<Record<string, unknown> | null>(null);
+  const [isPrefsLoading, setIsPrefsLoading] = useState(false);
+  const [prefsError, setPrefsError] = useState<string | null>(null);
+
+  const loadPreferences = async () => {
+    if (!token) return;
+    setPrefsError(null);
+    setIsPrefsLoading(true);
+    try {
+      const prefs = await preferencesApi.getPreferences();
+      setPreferences(prefs);
+    } catch (e) {
+      setPrefsError(e instanceof Error ? e.message : "Не удалось загрузить предпочтения");
+      setPreferences(null);
+    } finally {
+      setIsPrefsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadPreferences();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
 
   const handleGenerate = async () => {
     if (!token) {
@@ -21,13 +54,21 @@ export const AssistantScreen = () => {
     setIsLoading(true);
     try {
       const response = await assistantApi.generatePrograms();
-      setResult(response);
+      setResult(response as GenerateResult);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Не удалось запустить ассистента");
     } finally {
       setIsLoading(false);
     }
   };
+
+  const programsSummary = useMemo(() => {
+    if (!result?.programs) return null;
+    return result.programs.map((program) => ({
+      name: program.name,
+      days: program.days?.length ?? 0,
+    }));
+  }, [result]);
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -36,6 +77,12 @@ export const AssistantScreen = () => {
         Ассистент создаёт программы по вашему профилю и каталогу упражнений через /api/llm-agent/programs/.
         Позже здесь появится визард предпочтений и просмотр ответов, аналогичный вебу.
       </Text>
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Предпочтения (read-only)</Text>
+        {isPrefsLoading ? <Text style={styles.meta}>Загрузка...</Text> : null}
+        {prefsError ? <Text style={styles.error}>{prefsError}</Text> : null}
+        {preferences ? <Text style={styles.code}>{JSON.stringify(preferences, null, 2)}</Text> : null}
+      </View>
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Создать программы</Text>
         <Text style={styles.cardText}>
@@ -51,6 +98,19 @@ export const AssistantScreen = () => {
           <Text style={styles.buttonText}>{isLoading ? "Запускаем..." : "Сгенерировать"}</Text>
         </TouchableOpacity>
       </View>
+      {programsSummary ? (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Программы</Text>
+          <View style={styles.list}>
+            {programsSummary.map((program) => (
+              <View key={program.name} style={styles.listRow}>
+                <Text style={styles.cardText}>{program.name}</Text>
+                <Text style={styles.meta}>{program.days} дней</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      ) : null}
       {result ? (
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Ответ</Text>
@@ -93,6 +153,10 @@ const styles = StyleSheet.create({
   cardText: {
     ...textStyles.body,
   },
+  meta: {
+    ...textStyles.caption,
+    color: palette.textSecondary,
+  },
   button: {
     backgroundColor: palette.accent,
     paddingVertical: spacing.md,
@@ -116,5 +180,13 @@ const styles = StyleSheet.create({
     color: palette.textSecondary,
     fontFamily: Platform.select({ ios: "Menlo", android: "monospace", default: "monospace" }),
     fontSize: 13,
+  },
+  list: {
+    gap: spacing.sm,
+  },
+  listRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
 });
