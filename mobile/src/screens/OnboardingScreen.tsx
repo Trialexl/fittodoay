@@ -1,6 +1,6 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 
 import { useAuth } from "../hooks/useAuth";
 import { RootStackParamList } from "../navigation/types";
@@ -24,6 +24,19 @@ export const OnboardingScreen = ({ navigation }: Props) => {
           Соберём ваш профиль и подготовим программу тренировок. UX и брендинг совпадают с вебом,
           но навигация и жесты нативные.
         </Text>
+        <View style={styles.inputBlock}>
+          <Text style={styles.label}>E-mail</Text>
+          <TextInput style={styles.input} placeholder="you@example.com" placeholderTextColor={palette.muted} />
+        </View>
+        <View style={styles.inputBlock}>
+          <Text style={styles.label}>Пароль</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="••••••••"
+            placeholderTextColor={palette.muted}
+            secureTextEntry
+          />
+        </View>
         <View style={styles.steps}>
           <Text style={styles.step}>• Авторизация и онбординг с предпочтениями</Text>
           <Text style={styles.step}>• Program Board с drag&drop и модалками</Text>
@@ -62,6 +75,22 @@ const styles = StyleSheet.create({
   step: {
     ...textStyles.body,
     color: palette.textSecondary,
+  },
+  inputBlock: {
+    gap: spacing.xs,
+  },
+  label: {
+    ...textStyles.caption,
+    color: palette.muted,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.surface,
+    color: palette.textPrimary,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
   },
   button: {
     marginTop: "auto",

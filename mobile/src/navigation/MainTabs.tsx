@@ -1,4 +1,5 @@
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
+import { Text } from "react-native";
 
 import { AssistantScreen } from "../screens/AssistantScreen";
 import { AnalyticsScreen } from "../screens/AnalyticsScreen";
@@ -21,6 +22,10 @@ export const MainTabs = () => (
       tabBarInactiveTintColor: palette.textSecondary,
       tabBarLabelStyle: { fontSize: 12, fontWeight: "600" },
     }}
+    tabBarLabel: ({ color, children }) => (
+      <Text style={{ color, fontSize: 12, fontWeight: "600" }}>{children}</Text>
+    ),
+    tabBarIconStyle: { display: "none" },
   >
     <Tab.Screen name="Programs" component={ProgramsScreen} options={{ title: "Программы" }} />
     <Tab.Screen name="Workout" component={WorkoutScreen} options={{ title: "Тренировка" }} />
