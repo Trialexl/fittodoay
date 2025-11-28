@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import {
   ActivityIndicator,
   FlatList,
+  Pressable,
   StyleSheet,
   Text,
   View,
@@ -16,12 +17,14 @@ import { fetchWorkoutPlan, logWorkoutSet, PlanFolder, PlanTemplate, PlanExercise
 import { fetchRecommendations, applyRecommendation, Recommendation } from '../api/recommendations';
 import { useOfflineQueueSync, enqueueLog } from '../state/offlineQueue';
 import { useOnline } from '../hooks/useOnline';
+import { useState } from 'react';
 
 export function WorkoutScreen() {
   const token = useToken();
   const queryClient = useQueryClient();
   const online = useOnline();
   useOfflineQueueSync();
+  const [setCounters, setSetCounters] = useState<Record<number, number>>({});
 
   const { data, isLoading, isFetching, refetch, error } = useQuery({
     queryKey: ['workoutPlan'],
@@ -94,19 +97,45 @@ export function WorkoutScreen() {
         {exercise.weight ? ` • Вес: ${exercise.weight}кг` : ''}
         {exercise.time_seconds ? ` • Время: ${exercise.time_seconds}s` : ''}
       </Text>
-      <Button
-        title={online ? 'Отметить сет' : 'Отметить (в очередь)'}
-        onPress={() =>
-          mutation.mutate({
-            workout_day: data?.workout_day_id || 0,
-            template_exercise: exercise.template_exercise,
-            set_index: 0,
-            reps: exercise.reps,
-            weight: exercise.weight,
-            time_seconds: exercise.time_seconds,
-          })
-        }
-      />
+      <View style={styles.counterRow}>
+        <Text style={styles.muted}>
+          Выполнено: {setCounters[exercise.template_exercise] || 0}/{exercise.sets}
+        </Text>
+        <Pressable
+          style={[styles.logButton, !online && styles.logButtonOffline]}
+          onPress={() => {
+            const nextIndex = setCounters[exercise.template_exercise] || 0;
+            const payload = {
+              workout_day: data?.workout_day_id || 0,
+              template_exercise: exercise.template_exercise,
+              set_index: nextIndex,
+              reps: exercise.reps,
+              weight: exercise.weight,
+              time_seconds: exercise.time_seconds,
+            };
+            mutation.mutate(payload, {
+              onSuccess: () => {
+                setSetCounters(prev => ({
+                  ...prev,
+                  [exercise.template_exercise]: Math.min(nextIndex + 1, exercise.sets),
+                }));
+              },
+              onError: async () => {
+                if (!online) {
+                  await enqueueLog(payload);
+                  setSetCounters(prev => ({
+                    ...prev,
+                    [exercise.template_exercise]: Math.min(nextIndex + 1, exercise.sets),
+                  }));
+                }
+              },
+            });
+          }}>
+          <Text style={styles.logButtonText}>
+            {online ? 'Отметить сет' : 'Отметить (в очередь)'}
+          </Text>
+        </Pressable>
+      </View>
     </View>
   );
 
@@ -287,5 +316,24 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#1e2740',
     gap: 6,
+  },
+  counterRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  logButton: {
+    backgroundColor: '#f2b200',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  logButtonOffline: {
+    backgroundColor: '#4a4f5a',
+  },
+  logButtonText: {
+    color: '#0b0f1a',
+    fontWeight: '700',
   },
 });
