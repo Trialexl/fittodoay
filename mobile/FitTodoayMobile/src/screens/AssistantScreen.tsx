@@ -19,6 +19,7 @@ import {
   createProgramsWithAssistant,
 } from '../api/assistant';
 import { notifyError } from '../utils/notify';
+import { colors } from '../theme/colors';
 
 export function AssistantScreen() {
   const token = useToken();
@@ -221,40 +222,40 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontWeight: '800',
-    color: '#f5f7fb',
+    color: colors.text,
   },
   subtitle: {
-    color: '#c3cad5',
+    color: colors.muted,
   },
   form: {
     gap: 10,
     marginBottom: 16,
   },
   helper: {
-    color: '#c3cad5',
+    color: colors.muted,
     fontSize: 13,
   },
   errorText: {
-    color: '#ff6b6b',
+    color: colors.danger,
     fontSize: 14,
   },
   resultSection: {
     gap: 8,
   },
   resultTitle: {
-    color: '#f5f7fb',
+    color: colors.text,
     fontSize: 18,
     fontWeight: '700',
   },
   muted: {
-    color: '#c3cad5',
+    color: colors.muted,
   },
   card: {
-    backgroundColor: '#0f1626',
+    backgroundColor: colors.card,
     borderRadius: 12,
     padding: 12,
     borderWidth: 1,
-    borderColor: '#1e2740',
+    borderColor: colors.border,
     gap: 8,
   },
   cardHeader: {
@@ -263,20 +264,20 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   cardTitle: {
-    color: '#f5f7fb',
+    color: colors.text,
     fontSize: 16,
     fontWeight: '700',
   },
   cardSubtitle: {
-    color: '#c3cad5',
+    color: colors.muted,
     fontSize: 14,
   },
   badge: {
-    color: '#ffba08',
+    color: colors.primary,
     fontSize: 12,
   },
   badgeActive: {
-    color: '#70e000',
+    color: colors.success,
     fontSize: 12,
   },
   daysList: {
@@ -287,10 +288,10 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   dayTitle: {
-    color: '#f5f7fb',
+    color: colors.text,
   },
   dayMeta: {
-    color: '#c3cad5',
+    color: colors.muted,
     fontSize: 12,
   },
 });

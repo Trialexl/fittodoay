@@ -6,6 +6,7 @@ import {
   TextInputProps,
   View,
 } from 'react-native';
+import { colors } from '../theme/colors';
 
 interface TextFieldProps extends TextInputProps {
   label: string;
@@ -34,25 +35,25 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   label: {
-    color: '#c3cad5',
+    color: colors.muted,
     fontSize: 14,
     fontWeight: '600',
   },
   input: {
     borderWidth: 1,
-    borderColor: '#1e2740',
-    backgroundColor: '#0f1626',
-    color: '#f5f7fb',
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    color: colors.text,
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 16,
   },
   inputError: {
-    borderColor: '#ff6b6b',
+    borderColor: colors.danger,
   },
   error: {
-    color: '#ff6b6b',
+    color: colors.danger,
     fontSize: 13,
   },
 });

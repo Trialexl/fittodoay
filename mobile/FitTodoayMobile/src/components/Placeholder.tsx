@@ -1,5 +1,6 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import { colors } from '../theme/colors';
 
 interface PlaceholderProps {
   title: string;
@@ -22,10 +23,10 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontWeight: '700',
-    color: '#f5f7fb',
+    color: colors.text,
   },
   description: {
     fontSize: 16,
-    color: '#c3cad5',
+    color: colors.muted,
   },
 });

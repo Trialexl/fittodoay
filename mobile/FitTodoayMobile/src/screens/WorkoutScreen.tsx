@@ -19,6 +19,7 @@ import { useOfflineQueueSync, enqueueLog } from '../state/offlineQueue';
 import { useOnline } from '../hooks/useOnline';
 import { useState } from 'react';
 import { notifyError } from '../utils/notify';
+import { colors } from '../theme/colors';
 
 export function WorkoutScreen() {
   const token = useToken();
@@ -231,10 +232,10 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontWeight: '800',
-    color: '#f5f7fb',
+    color: colors.text,
   },
   subtitle: {
-    color: '#c3cad5',
+    color: colors.muted,
   },
   center: {
     flex: 1,
@@ -242,11 +243,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   folderCard: {
-    backgroundColor: '#0f1626',
+    backgroundColor: colors.card,
     borderRadius: 12,
     padding: 12,
     borderWidth: 1,
-    borderColor: '#1e2740',
+    borderColor: colors.border,
     gap: 10,
   },
   folderHeader: {
@@ -255,22 +256,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   folderTitle: {
-    color: '#f5f7fb',
+    color: colors.text,
     fontWeight: '700',
     fontSize: 18,
   },
   badge: {
-    color: '#ffba08',
+    color: colors.primary,
     fontSize: 12,
   },
   offlineNote: {
-    color: '#ffba08',
+    color: colors.primary,
     fontSize: 13,
   },
   templateCard: {
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#1e2740',
+    borderColor: colors.border,
     padding: 10,
     gap: 10,
   },
@@ -280,12 +281,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   templateTitle: {
-    color: '#f5f7fb',
+    color: colors.text,
     fontWeight: '700',
     fontSize: 16,
   },
   exercise: {
-    backgroundColor: '#131b2b',
+    backgroundColor: colors.surface,
     borderRadius: 8,
     padding: 10,
     gap: 6,
@@ -296,19 +297,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   exerciseTitle: {
-    color: '#f5f7fb',
+    color: colors.text,
     fontWeight: '700',
     fontSize: 15,
   },
   muted: {
-    color: '#c3cad5',
+    color: colors.muted,
     fontSize: 13,
   },
   errorText: {
-    color: '#ff6b6b',
+    color: colors.danger,
   },
   empty: {
-    color: '#c3cad5',
+    color: colors.muted,
     textAlign: 'center',
     marginTop: 12,
   },
@@ -316,9 +317,9 @@ const styles = StyleSheet.create({
     marginTop: 10,
     padding: 10,
     borderRadius: 10,
-    backgroundColor: '#0f1626',
+    backgroundColor: colors.card,
     borderWidth: 1,
-    borderColor: '#1e2740',
+    borderColor: colors.border,
     gap: 6,
   },
   counterRow: {
@@ -328,16 +329,16 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   logButton: {
-    backgroundColor: '#f2b200',
+    backgroundColor: colors.primary,
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 8,
   },
   logButtonOffline: {
-    backgroundColor: '#4a4f5a',
+    backgroundColor: colors.border,
   },
   logButtonText: {
-    color: '#0b0f1a',
+    color: colors.primaryText,
     fontWeight: '700',
   },
 });

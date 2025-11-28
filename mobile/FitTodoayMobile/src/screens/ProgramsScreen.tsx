@@ -5,6 +5,7 @@ import { Screen } from '../components/Screen';
 import { fetchProgramFolders } from '../api/programs';
 import { useToken } from '../hooks/useToken';
 import { notifyError } from '../utils/notify';
+import { colors } from '../theme/colors';
 
 export function ProgramsScreen() {
   const token = useToken();
@@ -72,18 +73,18 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontWeight: '800',
-    color: '#f5f7fb',
+    color: colors.text,
   },
   subtitle: {
-    color: '#c3cad5',
+    color: colors.muted,
     fontSize: 14,
   },
   card: {
     padding: 14,
     borderRadius: 12,
-    backgroundColor: '#0f1626',
+    backgroundColor: colors.card,
     borderWidth: 1,
-    borderColor: '#1e2740',
+    borderColor: colors.border,
     gap: 6,
   },
   cardInactive: {
@@ -95,16 +96,16 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   cardTitle: {
-    color: '#f5f7fb',
+    color: colors.text,
     fontWeight: '700',
     fontSize: 18,
   },
   cardDescription: {
-    color: '#c3cad5',
+    color: colors.muted,
     fontSize: 14,
   },
   badge: {
-    color: '#ffba08',
+    color: colors.primary,
     fontSize: 12,
   },
   center: {
@@ -113,10 +114,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   errorText: {
-    color: '#ff6b6b',
+    color: colors.danger,
   },
   empty: {
-    color: '#c3cad5',
+    color: colors.muted,
     textAlign: 'center',
     marginTop: 12,
   },

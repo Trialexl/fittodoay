@@ -10,6 +10,7 @@ import { AuthStackParamList } from '../../navigation/types';
 import { register, RegisterRequest } from '../../api/auth';
 import { useAuthStore } from '../../state/auth';
 import { notifyError } from '../../utils/notify';
+import { colors } from '../../theme/colors';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Onboarding'>;
 
@@ -125,17 +126,17 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 26,
     fontWeight: '800',
-    color: '#f5f7fb',
+    color: colors.text,
   },
   subtitle: {
     fontSize: 15,
-    color: '#c3cad5',
+    color: colors.muted,
   },
   form: {
     gap: 12,
   },
   errorText: {
-    color: '#ff6b6b',
+    color: colors.danger,
     fontSize: 14,
   },
 });

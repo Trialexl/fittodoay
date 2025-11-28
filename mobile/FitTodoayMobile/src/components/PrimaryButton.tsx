@@ -6,6 +6,7 @@ import {
   StyleSheet,
   Text,
 } from 'react-native';
+import { colors } from '../theme/colors';
 
 interface PrimaryButtonProps {
   title: string;
@@ -30,9 +31,9 @@ export function PrimaryButton({
         pressed && !isDisabled && styles.buttonPressed,
       ]}
       onPress={onPress}
-      disabled={isDisabled}>
+        disabled={isDisabled}>
       {loading ? (
-        <ActivityIndicator color="#0b0f1a" />
+        <ActivityIndicator color={colors.primaryText} />
       ) : (
         <Text style={styles.title}>{title}</Text>
       )}
@@ -44,7 +45,7 @@ const styles = StyleSheet.create({
   button: {
     height: 50,
     borderRadius: 12,
-    backgroundColor: '#f2b200',
+    backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -52,10 +53,10 @@ const styles = StyleSheet.create({
     opacity: 0.9,
   },
   buttonDisabled: {
-    backgroundColor: '#4a4f5a',
+    backgroundColor: colors.border,
   },
   title: {
-    color: '#0b0f1a',
+    color: colors.primaryText,
     fontWeight: '700',
     fontSize: 16,
   },
