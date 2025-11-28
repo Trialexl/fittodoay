@@ -14,10 +14,14 @@ import { Screen } from '../components/Screen';
 import { useToken } from '../hooks/useToken';
 import { fetchWorkoutPlan, logWorkoutSet, PlanFolder, PlanTemplate, PlanExercise } from '../api/workout';
 import { fetchRecommendations, applyRecommendation, Recommendation } from '../api/recommendations';
+import { useOfflineQueueSync, enqueueLog } from '../state/offlineQueue';
+import { useOnline } from '../hooks/useOnline';
 
 export function WorkoutScreen() {
   const token = useToken();
   const queryClient = useQueryClient();
+  const online = useOnline();
+  useOfflineQueueSync();
 
   const { data, isLoading, isFetching, refetch, error } = useQuery({
     queryKey: ['workoutPlan'],
@@ -50,6 +54,11 @@ export function WorkoutScreen() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workoutPlan'] });
+    },
+    onError: async (err, variables) => {
+      if (!online) {
+        await enqueueLog(variables);
+      }
     },
   });
 
@@ -86,7 +95,7 @@ export function WorkoutScreen() {
         {exercise.time_seconds ? ` • Время: ${exercise.time_seconds}s` : ''}
       </Text>
       <Button
-        title="Отметить сет"
+        title={online ? 'Отметить сет' : 'Отметить (в очередь)'}
         onPress={() =>
           mutation.mutate({
             workout_day: data?.workout_day_id || 0,
@@ -128,6 +137,11 @@ export function WorkoutScreen() {
       <View style={styles.header}>
         <Text style={styles.title}>Чеклист</Text>
         <Text style={styles.subtitle}>{dateText || 'Сегодняшний план'}</Text>
+        {!online ? (
+          <Text style={styles.offlineNote}>
+            Офлайн: отметки сохранятся в очереди и отправятся позже.
+          </Text>
+        ) : null}
       </View>
 
       {isLoading ? (
@@ -215,6 +229,10 @@ const styles = StyleSheet.create({
   badge: {
     color: '#ffba08',
     fontSize: 12,
+  },
+  offlineNote: {
+    color: '#ffba08',
+    fontSize: 13,
   },
   templateCard: {
     borderRadius: 10,
