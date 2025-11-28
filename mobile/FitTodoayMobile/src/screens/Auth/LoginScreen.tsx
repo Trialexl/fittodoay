@@ -9,6 +9,7 @@ import { login, LoginRequest } from '../../api/auth';
 import { Screen } from '../../components/Screen';
 import { TextField } from '../../components/TextField';
 import { PrimaryButton } from '../../components/PrimaryButton';
+import { notifyError } from '../../utils/notify';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Login'>;
 
@@ -26,6 +27,9 @@ export function LoginScreen({ navigation }: Props) {
     mutationFn: (data: LoginRequest) => login(data),
     onSuccess: ({ token, user }) => {
       setSession(token, user);
+    },
+    onError: (err: any) => {
+      notifyError(err?.message || 'Не удалось войти');
     },
   });
 

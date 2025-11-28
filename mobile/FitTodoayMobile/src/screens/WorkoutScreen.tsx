@@ -18,6 +18,7 @@ import { fetchRecommendations, applyRecommendation, Recommendation } from '../ap
 import { useOfflineQueueSync, enqueueLog } from '../state/offlineQueue';
 import { useOnline } from '../hooks/useOnline';
 import { useState } from 'react';
+import { notifyError } from '../utils/notify';
 
 export function WorkoutScreen() {
   const token = useToken();
@@ -75,6 +76,9 @@ export function WorkoutScreen() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workoutPlan'] });
       queryClient.invalidateQueries({ queryKey: ['recommendations'] });
+    },
+    onError: (err: any) => {
+      notifyError(err?.message || 'Не удалось применить рекомендацию');
     },
   });
 

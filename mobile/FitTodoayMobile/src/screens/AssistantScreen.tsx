@@ -18,6 +18,7 @@ import {
   AssistantRequest,
   createProgramsWithAssistant,
 } from '../api/assistant';
+import { notifyError } from '../utils/notify';
 
 export function AssistantScreen() {
   const token = useToken();
@@ -41,6 +42,9 @@ export function AssistantScreen() {
         throw new Error('Нет токена для запроса ассистента');
       }
       return createProgramsWithAssistant(token, payload);
+    },
+    onError: (err: any) => {
+      notifyError(err?.message || 'Не удалось создать программы');
     },
   });
 

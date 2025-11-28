@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Screen } from '../components/Screen';
 import { fetchProgramFolders } from '../api/programs';
 import { useToken } from '../hooks/useToken';
+import { notifyError } from '../utils/notify';
 
 export function ProgramsScreen() {
   const token = useToken();
@@ -17,6 +18,9 @@ export function ProgramsScreen() {
       return fetchProgramFolders(token);
     },
     enabled: Boolean(token),
+    onError: (err: any) => {
+      notifyError(err?.message || 'Не удалось загрузить программы');
+    },
   });
 
   const renderItem = ({ item }: any) => (

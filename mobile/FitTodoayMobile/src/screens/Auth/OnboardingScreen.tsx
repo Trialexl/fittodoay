@@ -9,6 +9,7 @@ import { PrimaryButton } from '../../components/PrimaryButton';
 import { AuthStackParamList } from '../../navigation/types';
 import { register, RegisterRequest } from '../../api/auth';
 import { useAuthStore } from '../../state/auth';
+import { notifyError } from '../../utils/notify';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Onboarding'>;
 
@@ -26,6 +27,9 @@ export function OnboardingScreen({ navigation }: Props) {
     mutationFn: (data: RegisterRequest) => register(data),
     onSuccess: ({ token, user }) => {
       setSession(token, user);
+    },
+    onError: (err: any) => {
+      notifyError(err?.message || 'Не удалось создать аккаунт');
     },
   });
 
