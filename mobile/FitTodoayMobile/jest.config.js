@@ -6,6 +6,6 @@ module.exports = {
     '^src/(.*)$': '<rootDir>/src/$1',
   },
   transformIgnorePatterns: [
-    'node_modules/(?!(@react-native|react-native|@react-navigation|@react-native-async-storage)/)',
+    'node_modules/(?!(@react-native|react-native|@react-navigation|@react-native-async-storage|react-native-safe-area-context)/)',
   ],
 };
