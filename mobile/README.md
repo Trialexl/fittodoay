@@ -1,35 +1,33 @@
-# fitTODOay Mobile (Android setup)
+# fitTODOay Mobile (Flutter 3.x)
 
-- Подготовьте Android окружение:
-  1. Установите Android Studio (SDK 34+), включите Android SDK Platform-Tools и эмулятор (AVD Manager). На реальном устройстве включите Developer mode и USB debugging.
-  2. Установите Expo CLI: `npm install -g expo` (опционально, локально хватает `npx expo`).
-  3. В терминале проверьте переменные окружения: `ANDROID_HOME` и `PATH` должны содержать `platform-tools` (для подключённых устройств).
-  4. Запустите эмулятор через Android Studio (AVD Manager → Run) либо подключите устройство по USB/Wi-Fi.
-  5. **macOS:** установите `watchman` через Homebrew (`brew install watchman`), а также обновите `~/.zprofile` или `~/.zshrc`, чтобы добавить:
-     ```bash
-     export ANDROID_HOME=$HOME/Library/Android/sdk
-     export PATH=$PATH:$ANDROID_HOME/emulator:$ANDROID_HOME/platform-tools
-     ```
-     После этого перезапустите терминал или выполните `source ~/.zprofile`.
+Эта ветка переводит мобильное приложение с Expo на Flutter. Основные шаги запуска:
 
-1. Установите зависимости:
+1. Установите Flutter SDK 3.x и Android Studio (SDK 34+) / Xcode для iOS. Проверьте `flutter doctor` до зелёного статуса.
+2. В папке `mobile` выполните инициализацию платформ (если не созданы):
    ```bash
-   cd mobile
-   npm install
+   flutter create . --org com.fittodoay --project-name fittodoay_mobile --platforms android,ios
    ```
-2. Запустите Metro/Expo dev server:
+   Это добавит android/ios/web папки и базовые настройки.
+3. Установите зависимости:
    ```bash
-   npm run start
+   flutter pub get
    ```
-3. Для android-эмулятора или подключённого устройства:
+4. Запуск:
    ```bash
-   npm run android
+   flutter run -d emulator-5554   # ваш девайс/эмулятор
    ```
-   Требуется установленный Android Studio (SDK 34+) и запущенный эмулятор либо включённый режим разработчика на устройстве.
-4. Собрать release-билд можно через EAS:
-   ```bash
-   npx eas-cli build -p android --profile preview
-   ```
-   Перед запуском выполните `npx eas-cli login` и настройте `eas.json`.
+   Горячая перезагрузка доступна через `r` в консоли или в IDE.
 
-Конфигурация приложения задаётся в `mobile/app.json` (пакет `com.fittodoay.app`). Переменная `apiBaseUrl` пока указывает на `http://localhost:8000` — обновите её при подключении к реальному backend окружению.
+## Цели (по PRD)
+- Повторить сценарии веба: онбординг/логин, Program Board, Workout чеклист с офлайн-логированием и таймером, аналитика, LLM-ассистент.
+- Общий код и типы — вынести в shared-модуль (packages/shared) по мере миграции.
+
+## Структура
+- `lib/main.dart` — каркас приложения, табы и базовые экраны.
+- `lib/screens/` — заглушки вкладок (Programs/Workout/Analytics/Assistant/Profile).
+- `lib/theme.dart` — базовые цвета/отступы в духе фронтенда.
+
+## TODO
+- Подключить API клиента к backend (`/api/...`), авторизацию и хранилище токена.
+- Перенести Program Board, ассистент и workout-логирование в Flutter.
+- Добавить графики (charts), офлайн-очередь и таймеры.

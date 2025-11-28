@@ -1,13 +1,22 @@
-# Expo / React Native
-node_modules/
-.expo/
-.expo-shared/
-dist/
-web-build/
+# Flutter/Dart/Pub
+.dart_tool/
+.packages
+.flutter-plugins
+.flutter-plugins-dependencies
+.metadata
+.idea/
+.vscode/
+build/
+pubspec.lock
 
-# Metro / bundler cache
-.bundle/
+# Platform build outputs
+android/
+ios/
+web/
+macos/
+linux/
+windows/
 
-# OS files
-.DS_Store
-Thumbs.db
+# Other
+*.iml
+*.log
