@@ -63,6 +63,6 @@ final appRouter = GoRouter(
     ),
   ],
   errorBuilder: (context, state) => Scaffold(
-    body: Center(child: Text('Route not found: ${state.location}')),
+    body: Center(child: Text('Route not found: ${state.uri.toString()}')),
   ),
 );
