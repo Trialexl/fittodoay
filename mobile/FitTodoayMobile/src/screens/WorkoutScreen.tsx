@@ -20,6 +20,7 @@ import { useOnline } from '../hooks/useOnline';
 import { useState } from 'react';
 import { notifyError } from '../utils/notify';
 import { colors } from '../theme/colors';
+import { Stepper } from '../components/Stepper';
 
 export function WorkoutScreen() {
   const token = useToken();
@@ -27,6 +28,9 @@ export function WorkoutScreen() {
   const online = useOnline();
   useOfflineQueueSync();
   const [setCounters, setSetCounters] = useState<Record<number, number>>({});
+  const [inputs, setInputs] = useState<
+    Record<number, { reps?: number; weight?: number; time_seconds?: number }>
+  >({});
 
   const { data, isLoading, isFetching, refetch, error } = useQuery({
     queryKey: ['workoutPlan'],
@@ -102,6 +106,65 @@ export function WorkoutScreen() {
         {exercise.weight ? ` • Вес: ${exercise.weight}кг` : ''}
         {exercise.time_seconds ? ` • Время: ${exercise.time_seconds}s` : ''}
       </Text>
+      <View style={{ gap: 8, marginTop: 6 }}>
+        {exercise.reps !== undefined ? (
+          <Stepper
+            label="Повторы"
+            value={inputs[exercise.template_exercise]?.reps ?? exercise.reps ?? 0}
+            onChange={v =>
+              setInputs(prev => ({
+                ...prev,
+                [exercise.template_exercise]: {
+                  ...prev[exercise.template_exercise],
+                  reps: v,
+                  weight: prev[exercise.template_exercise]?.weight ?? exercise.weight,
+                  time_seconds: prev[exercise.template_exercise]?.time_seconds ?? exercise.time_seconds,
+                },
+              }))
+            }
+            step={1}
+            min={0}
+          />
+        ) : null}
+        {exercise.weight !== undefined ? (
+          <Stepper
+            label="Вес"
+            value={inputs[exercise.template_exercise]?.weight ?? exercise.weight ?? 0}
+            onChange={v =>
+              setInputs(prev => ({
+                ...prev,
+                [exercise.template_exercise]: {
+                  ...prev[exercise.template_exercise],
+                  weight: v,
+                  reps: prev[exercise.template_exercise]?.reps ?? exercise.reps,
+                  time_seconds: prev[exercise.template_exercise]?.time_seconds ?? exercise.time_seconds,
+                },
+              }))
+            }
+            step={2}
+            min={0}
+          />
+        ) : null}
+        {exercise.time_seconds !== undefined ? (
+          <Stepper
+            label="Время (сек)"
+            value={inputs[exercise.template_exercise]?.time_seconds ?? exercise.time_seconds ?? 0}
+            onChange={v =>
+              setInputs(prev => ({
+                ...prev,
+                [exercise.template_exercise]: {
+                  ...prev[exercise.template_exercise],
+                  time_seconds: v,
+                  reps: prev[exercise.template_exercise]?.reps ?? exercise.reps,
+                  weight: prev[exercise.template_exercise]?.weight ?? exercise.weight,
+                },
+              }))
+            }
+            step={5}
+            min={0}
+          />
+        ) : null}
+      </View>
       <View style={styles.counterRow}>
         <Text style={styles.muted}>
           Выполнено: {setCounters[exercise.template_exercise] || 0}/{exercise.sets}
@@ -114,9 +177,15 @@ export function WorkoutScreen() {
               workout_day: data?.workout_day_id || 0,
               template_exercise: exercise.template_exercise,
               set_index: nextIndex,
-              reps: exercise.reps,
-              weight: exercise.weight,
-              time_seconds: exercise.time_seconds,
+              reps:
+                inputs[exercise.template_exercise]?.reps ??
+                exercise.reps,
+              weight:
+                inputs[exercise.template_exercise]?.weight ??
+                exercise.weight,
+              time_seconds:
+                inputs[exercise.template_exercise]?.time_seconds ??
+                exercise.time_seconds,
             };
             mutation.mutate(payload, {
               onSuccess: () => {
