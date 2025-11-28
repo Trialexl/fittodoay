@@ -13,6 +13,7 @@ import { format } from 'date-fns';
 import { Screen } from '../components/Screen';
 import { useToken } from '../hooks/useToken';
 import { fetchWorkoutPlan, logWorkoutSet, PlanFolder, PlanTemplate, PlanExercise } from '../api/workout';
+import { fetchRecommendations, applyRecommendation, Recommendation } from '../api/recommendations';
 
 export function WorkoutScreen() {
   const token = useToken();
@@ -29,6 +30,17 @@ export function WorkoutScreen() {
     enabled: Boolean(token),
   });
 
+  const recsQuery = useQuery({
+    queryKey: ['recommendations'],
+    queryFn: () => {
+      if (!token) {
+        throw new Error('Нет токена');
+      }
+      return fetchRecommendations(token);
+    },
+    enabled: Boolean(token),
+  });
+
   const mutation = useMutation({
     mutationFn: (payload: Parameters<typeof logWorkoutSet>[1]) => {
       if (!token) {
@@ -38,6 +50,19 @@ export function WorkoutScreen() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workoutPlan'] });
+    },
+  });
+
+  const applyRecMutation = useMutation({
+    mutationFn: (rec: Recommendation) => {
+      if (!token) {
+        throw new Error('Нет токена');
+      }
+      return applyRecommendation(token, rec);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workoutPlan'] });
+      queryClient.invalidateQueries({ queryKey: ['recommendations'] });
     },
   });
 
@@ -64,7 +89,7 @@ export function WorkoutScreen() {
         title="Отметить сет"
         onPress={() =>
           mutation.mutate({
-            workout_day: data?.folders?.[0]?.id || 0,
+            workout_day: data?.workout_day_id || 0,
             template_exercise: exercise.template_exercise,
             set_index: 0,
             reps: exercise.reps,
@@ -121,6 +146,30 @@ export function WorkoutScreen() {
           }
           ItemSeparatorComponent={() => <View style={{ height: 14 }} />}
           ListEmptyComponent={<Text style={styles.empty}>Нет активных тренировок</Text>}
+          ListFooterComponent={
+            <View style={{ marginTop: 16 }}>
+              <Text style={styles.title}>Рекомендации</Text>
+              {recsQuery.isLoading ? (
+                <ActivityIndicator color="#f2b200" />
+              ) : recsQuery.error ? (
+                <Text style={styles.errorText}>Не удалось загрузить рекомендации</Text>
+              ) : recsQuery.data && recsQuery.data.length > 0 ? (
+                recsQuery.data.map(rec => (
+                  <View key={rec.id} style={styles.recCard}>
+                    <Text style={styles.exerciseTitle}>{rec.exercise_name || 'Упражнение'}</Text>
+                    {rec.note ? <Text style={styles.muted}>{rec.note}</Text> : null}
+                    <Button
+                      title="Применить"
+                      onPress={() => applyRecMutation.mutate(rec)}
+                      disabled={applyRecMutation.isLoading}
+                    />
+                  </View>
+                ))
+              ) : (
+                <Text style={styles.muted}>Рекомендаций пока нет</Text>
+              )}
+            </View>
+          }
         />
       )}
     </Screen>
@@ -211,5 +260,14 @@ const styles = StyleSheet.create({
     color: '#c3cad5',
     textAlign: 'center',
     marginTop: 12,
+  },
+  recCard: {
+    marginTop: 10,
+    padding: 10,
+    borderRadius: 10,
+    backgroundColor: '#0f1626',
+    borderWidth: 1,
+    borderColor: '#1e2740',
+    gap: 6,
   },
 });

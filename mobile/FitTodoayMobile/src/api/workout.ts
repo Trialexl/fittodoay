@@ -31,6 +31,7 @@ export interface PlanFolder {
 export interface WorkoutPlanResponse {
   date: string;
   folders: PlanFolder[];
+  workout_day_id?: number;
 }
 
 export interface LogSetPayload {
