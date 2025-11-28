@@ -1,4 +1,5 @@
 import { config } from '../config/env';
+import { useAuthStore } from '../state/auth';
 
 type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
 
@@ -41,6 +42,9 @@ export async function apiFetch<TResponse, TBody = unknown>({
   const data = text ? JSON.parse(text) : undefined;
 
   if (!response.ok) {
+    if (response.status === 401) {
+      useAuthStore.getState().clearSession();
+    }
     const message =
       (data && (data.detail || data.error)) ||
       `Request failed with status ${response.status}`;
