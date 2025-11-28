@@ -3,14 +3,20 @@ import 'package:go_router/go_router.dart';
 
 import 'screens/analytics_screen.dart';
 import 'screens/assistant_screen.dart';
+import 'screens/auth_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/programs_screen.dart';
 import 'screens/workout_screen.dart';
 import 'widgets/shell_scaffold.dart';
 
 final appRouter = GoRouter(
-  initialLocation: '/programs',
+  initialLocation: '/auth',
   routes: [
+    GoRoute(
+      path: '/auth',
+      name: 'auth',
+      builder: (context, state) => const AuthScreen(),
+    ),
     StatefulShellRoute.indexedStack(
       builder: (context, state, navigationShell) => ShellScaffold(navigationShell: navigationShell),
       branches: [
