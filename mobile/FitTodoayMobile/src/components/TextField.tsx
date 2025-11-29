@@ -38,6 +38,7 @@ const styles = StyleSheet.create({
     color: colors.muted,
     fontSize: 14,
     fontWeight: '600',
+    fontFamily: 'Inter-SemiBold',
   },
   input: {
     borderWidth: 1,
@@ -48,6 +49,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 16,
+    fontFamily: 'Inter-Regular',
   },
   inputError: {
     borderColor: colors.danger,
@@ -55,5 +57,6 @@ const styles = StyleSheet.create({
   error: {
     color: colors.danger,
     fontSize: 13,
+    fontFamily: 'Inter-Regular',
   },
 });

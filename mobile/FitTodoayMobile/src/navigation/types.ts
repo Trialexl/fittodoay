@@ -1,7 +1,6 @@
 export type AuthStackParamList = {
-  Welcome: undefined;
-  Login: undefined;
-  Onboarding: undefined;
+  Landing: undefined;
+  AuthScreen: undefined;
 };
 
 export type MainTabParamList = {

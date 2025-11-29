@@ -59,5 +59,6 @@ const styles = StyleSheet.create({
     color: colors.primaryText,
     fontWeight: '700',
     fontSize: 16,
+    fontFamily: 'Inter-Bold',
   },
 });
