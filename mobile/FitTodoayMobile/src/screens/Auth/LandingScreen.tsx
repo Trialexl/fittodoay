@@ -92,7 +92,7 @@ const styles = StyleSheet.create({
   },
   script: {
     fontSize: 64,
-    fontWeight: '800',
+    fontWeight: '400',
     color: '#b46bff',
     letterSpacing: 1,
     fontFamily: 'Christopher',
