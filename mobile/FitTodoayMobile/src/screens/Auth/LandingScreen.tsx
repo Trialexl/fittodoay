@@ -1,16 +1,33 @@
-import React, { useEffect, useRef } from 'react';
-import { Animated, ScrollView, StatusBar, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { Animated, ScrollView, StatusBar, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useForm, Controller } from 'react-hook-form';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Screen } from '../../components/Screen';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { colors } from '../../theme/colors';
 import { AuthStackParamList } from '../../navigation/types';
+import { login, register, LoginRequest, RegisterRequest } from '../../api/auth';
+import { useAuthStore } from '../../state/auth';
+import { notifyError } from '../../utils/notify';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Landing'>;
 
 export function LandingScreen({ navigation }: Props) {
   const heroOpacity = useRef(new Animated.Value(0)).current;
   const cardOpacity = useRef(new Animated.Value(0)).current;
+  const setSession = useAuthStore(state => state.setSession);
+  const [statusText, setStatusText] = useState('Введите email и пароль');
+  const [errorText, setErrorText] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const {
+    control,
+    handleSubmit,
+    formState: { errors },
+    getValues,
+  } = useForm<LoginRequest & RegisterRequest>({
+    defaultValues: { email: '', password: '' },
+  });
 
   useEffect(() => {
     // В тестах отключаем анимацию
@@ -34,6 +51,42 @@ export function LandingScreen({ navigation }: Props) {
     ]).start();
   }, [heroOpacity, cardOpacity]);
 
+  const onSubmit = async () => {
+    const { email, password, name } = getValues();
+    if (!email || !password) return;
+    setSubmitting(true);
+    setErrorText(null);
+    setStatusText('Входим...');
+    try {
+      const loginRes = await login({ email, password });
+      setSession(loginRes.token, loginRes.user);
+      return;
+    } catch (err: any) {
+      if (err?.status === 400 || err?.status === 404) {
+        try {
+          setStatusText('Создаём аккаунт...');
+          const registerRes = await register({ email, password, name });
+          setSession(registerRes.token, registerRes.user);
+          return;
+        } catch (regErr: any) {
+          const msg = regErr?.message || 'Не удалось создать аккаунт';
+          setErrorText(msg);
+          setStatusText('Введите email и пароль');
+          notifyError(msg);
+        } finally {
+          setSubmitting(false);
+        }
+        return;
+      }
+      const msg = err?.message || 'Не удалось войти';
+      setErrorText(msg);
+      setStatusText('Введите email и пароль');
+      notifyError(msg);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   return (
     <Screen>
       <StatusBar barStyle="light-content" />
@@ -52,18 +105,53 @@ export function LandingScreen({ navigation }: Props) {
             <Text style={styles.brandMid}>TOD◉AY</Text>
             <View style={styles.inputs}>
               <Text style={styles.label}>Email</Text>
-              <View style={styles.inputMock}>
-                <Text style={styles.inputText}>you@example.com</Text>
-              </View>
+              <Controller
+                control={control}
+                name="email"
+                rules={{ required: 'Введите e-mail' }}
+                render={({ field: { onChange, onBlur, value } }) => (
+                  <TextInput
+                    style={styles.input}
+                    placeholder="you@example.com"
+                    placeholderTextColor="#7b8199"
+                    autoCapitalize="none"
+                    keyboardType="email-address"
+                    onBlur={onBlur}
+                    onChangeText={onChange}
+                    value={value}
+                  />
+                )}
+              />
+              {errors.email?.message ? (
+                <Text style={styles.errorText}>{errors.email.message}</Text>
+              ) : null}
               <Text style={styles.label}>Пароль</Text>
-              <View style={styles.inputMock}>
-                <Text style={styles.inputText}>••••••••</Text>
-              </View>
+              <Controller
+                control={control}
+                name="password"
+                rules={{ required: 'Введите пароль' }}
+                render={({ field: { onChange, onBlur, value } }) => (
+                  <TextInput
+                    style={styles.input}
+                    placeholder="••••••••"
+                    placeholderTextColor="#7b8199"
+                    secureTextEntry
+                    onBlur={onBlur}
+                    onChangeText={onChange}
+                    value={value}
+                  />
+                )}
+              />
+              {errors.password?.message ? (
+                <Text style={styles.errorText}>{errors.password.message}</Text>
+              ) : null}
               <PrimaryButton
                 title="Начать тренировку"
-                onPress={() => navigation.navigate('AuthScreen')}
+                onPress={handleSubmit(onSubmit)}
+                loading={submitting}
               />
-              <Text style={styles.helper}>Введите email и пароль</Text>
+              <Text style={styles.helper}>{statusText}</Text>
+              {errorText ? <Text style={styles.errorText}>{errorText}</Text> : null}
             </View>
           </Animated.View>
         </ScrollView>
@@ -149,14 +237,11 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontFamily: 'Inter-SemiBold',
   },
-  inputMock: {
+  input: {
     height: 48,
     borderRadius: 10,
     backgroundColor: '#2b3043',
-    justifyContent: 'center',
     paddingHorizontal: 12,
-  },
-  inputText: {
     color: '#d8dbea',
     fontFamily: 'Inter-Regular',
   },
@@ -164,6 +249,11 @@ const styles = StyleSheet.create({
     color: '#7680a0',
     textAlign: 'center',
     marginTop: 4,
+    fontFamily: 'Inter-Regular',
+  },
+  errorText: {
+    color: '#ef4444',
+    fontSize: 13,
     fontFamily: 'Inter-Regular',
   },
 });
