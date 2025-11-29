@@ -22,6 +22,10 @@ export interface ProgramTrendsResponse {
   points: ProgramTrendPoint[];
 }
 
+export interface DailyLoadRangeResponse {
+  items: { date: string; load: number }[];
+}
+
 export async function fetchDailyLoad(token: string) {
   return apiFetch<DailyLoadItem[]>({
     path: '/api/analytics/days/',
@@ -39,6 +43,13 @@ export async function fetchTopExercises(token: string) {
 export async function fetchProgramTrends(token: string, range: string) {
   return apiFetch<ProgramTrendsResponse>({
     path: `/api/analytics/program-trends/?range=${range}&granularity=day`,
+    token,
+  });
+}
+
+export async function fetchDailyLoadsRange(token: string, start: string, end: string) {
+  return apiFetch<DailyLoadRangeResponse>({
+    path: `/api/analytics/days/?start=${start}&end=${end}`,
     token,
   });
 }
