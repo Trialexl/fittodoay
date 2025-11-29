@@ -39,7 +39,15 @@ export async function apiFetch<TResponse, TBody = unknown>({
   });
 
   const text = await response.text();
-  const data = text ? JSON.parse(text) : undefined;
+  let data: unknown;
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      // Если пришёл HTML/текст вместо JSON, подставляем текст как detail
+      data = { detail: text };
+    }
+  }
 
   if (!response.ok) {
     if (response.status === 401) {
