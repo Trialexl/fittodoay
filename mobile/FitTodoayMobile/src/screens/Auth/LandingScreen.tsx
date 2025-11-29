@@ -1,5 +1,5 @@
-import React from 'react';
-import { ScrollView, StatusBar, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { Animated, ScrollView, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Screen } from '../../components/Screen';
 import { PrimaryButton } from '../../components/PrimaryButton';
@@ -9,20 +9,45 @@ import { AuthStackParamList } from '../../navigation/types';
 type Props = NativeStackScreenProps<AuthStackParamList, 'Landing'>;
 
 export function LandingScreen({ navigation }: Props) {
+  const heroOpacity = useRef(new Animated.Value(0)).current;
+  const cardOpacity = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    // В тестах отключаем анимацию
+    if (typeof jest !== 'undefined') {
+      heroOpacity.setValue(1);
+      cardOpacity.setValue(1);
+      return;
+    }
+    Animated.sequence([
+      Animated.timing(heroOpacity, {
+        toValue: 1,
+        duration: 600,
+        useNativeDriver: true,
+      }),
+      Animated.timing(cardOpacity, {
+        toValue: 1,
+        duration: 500,
+        delay: 100,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [heroOpacity, cardOpacity]);
+
   return (
     <Screen>
       <StatusBar barStyle="light-content" />
       <View style={styles.full}>
         <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
-          <View style={styles.hero}>
+          <Animated.View style={[styles.hero, { opacity: heroOpacity }]}>
             <Text style={styles.script}>Привет</Text>
             <Text style={styles.subtitle}>
               Всё, что нужно для тренировки: чеклист дня, таймер отдыха и чистый интерфейс.
               Всё, что тебе так не хватало.
             </Text>
-          </View>
+          </Animated.View>
 
-          <View style={styles.card}>
+          <Animated.View style={[styles.card, { opacity: cardOpacity }]}>
             <Text style={styles.brandTop}>F I T</Text>
             <Text style={styles.brandMid}>TOD◉AY</Text>
             <View style={styles.inputs}>
@@ -40,7 +65,7 @@ export function LandingScreen({ navigation }: Props) {
               />
               <Text style={styles.helper}>Введите email и пароль</Text>
             </View>
-          </View>
+          </Animated.View>
         </ScrollView>
       </View>
     </Screen>
@@ -56,19 +81,21 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingBottom: 32,
     gap: 24,
-    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
   },
   hero: {
     alignItems: 'center',
     gap: 20,
-    marginTop: 40,
+    marginTop: 60,
+    paddingHorizontal: 12,
   },
   script: {
     fontSize: 64,
     fontWeight: '800',
     color: '#b46bff',
     letterSpacing: 1,
-    fontFamily: 'Inter-Bold',
+    fontFamily: 'Christopher',
   },
   title: {
     fontSize: 28,
@@ -94,6 +121,8 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.5,
     shadowRadius: 14,
     elevation: 6,
+    width: '100%',
+    maxWidth: 420,
   },
   brandTop: {
     textAlign: 'center',
