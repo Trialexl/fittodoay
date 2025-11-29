@@ -1,6 +1,5 @@
 export type AuthStackParamList = {
   Landing: undefined;
-  AuthScreen: undefined;
 };
 
 export type MainTabParamList = {
