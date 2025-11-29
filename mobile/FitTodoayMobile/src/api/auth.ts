@@ -10,6 +10,7 @@ export interface RegisterRequest {
   email: string;
   password: string;
   name?: string;
+  profile?: Record<string, unknown>;
 }
 
 export interface AuthResponse {

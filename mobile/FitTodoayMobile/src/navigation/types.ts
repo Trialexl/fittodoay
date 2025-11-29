@@ -1,10 +1,15 @@
 export type AuthStackParamList = {
   Landing: undefined;
+  Onboarding: {
+    email?: string;
+    password?: string;
+    name?: string;
+  };
 };
 
 export type MainTabParamList = {
   Programs: undefined;
-  Workout: undefined;
+  Workout: { date?: string } | undefined;
   Analytics: undefined;
   Assistant: undefined;
   Profile: undefined;

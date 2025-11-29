@@ -94,3 +94,28 @@ export async function logWorkoutSet(token: string, payload: LogSetPayload) {
     body: payload,
   });
 }
+
+export async function updateWorkoutLog(
+  token: string,
+  id: number,
+  payload: Partial<{
+    reps: number | null;
+    weight: number | null;
+    time_seconds: number | null;
+  }>,
+) {
+  return apiFetch<unknown>({
+    method: 'PATCH',
+    path: `/api/workouts/logs/${id}/`,
+    token,
+    body: payload,
+  });
+}
+
+export async function deleteWorkoutLog(token: string, id: number) {
+  return apiFetch<unknown>({
+    method: 'DELETE',
+    path: `/api/workouts/logs/${id}/`,
+    token,
+  });
+}

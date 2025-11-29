@@ -7,6 +7,7 @@ import { enableScreens } from 'react-native-screens';
 import { AppNavigator } from './navigation/AppNavigator';
 import { queryClient } from './api/queryClient';
 import { useOfflineQueueSync } from './state/offlineQueue';
+import { OfflineBanner } from './components/OfflineBanner';
 
 enableScreens();
 
@@ -31,6 +32,7 @@ function App() {
       <SafeAreaProvider>
         <QueryClientProvider client={queryClient}>
           <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
+          <OfflineBanner />
           <AppNavigator />
         </QueryClientProvider>
       </SafeAreaProvider>

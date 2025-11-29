@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   Pressable,
   StyleSheet,
   Text,
@@ -8,22 +9,36 @@ import {
   Modal,
   TouchableOpacity,
   ScrollView,
+  TextInput,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { Screen } from '../components/Screen';
 import { useToken } from '../hooks/useToken';
-import { fetchWorkoutPlan, logWorkoutSet, PlanFolder, PlanTemplate, PlanExercise, WorkoutLog } from '../api/workout';
+import {
+  fetchWorkoutPlan,
+  logWorkoutSet,
+  PlanFolder,
+  PlanTemplate,
+  PlanExercise,
+  WorkoutLog,
+  updateWorkoutLog,
+  deleteWorkoutLog,
+} from '../api/workout';
 import { fetchDailyLoadsRange } from '../api/analytics';
 import { fetchRecommendations, applyRecommendation, Recommendation } from '../api/recommendations';
-import { useOfflineQueueSync, enqueueLog } from '../state/offlineQueue';
+import { useOfflineQueueSync, enqueueLog, getOfflineQueueCount } from '../state/offlineQueue';
 import { useOnline } from '../hooks/useOnline';
 import { notifyError } from '../utils/notify';
 import { colors } from '../theme/colors';
 import { RestTimerOverlay } from '../components/RestTimerOverlay';
+import { ExecutionOverlay } from '../components/ExecutionOverlay';
+import { AdjustNumber } from '../components/AdjustNumber';
 import { BrandMark } from '../components/BrandMark';
 import Svg, { Path, Circle } from 'react-native-svg';
+import { config } from '../config/env';
 
 const CheckIcon = () => (
   <Svg width={18} height={18} viewBox="0 0 20 20">
@@ -65,6 +80,16 @@ const EditIcon = () => (
 );
 
 const WEEKDAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+const STATIC_BASE_URL = config.apiUrl?.replace(/\/$/, '') || '';
+const EXPANSION_STORAGE_KEY = 'fitTODOay/workoutExpanded';
+const buildExerciseImageUrl = (path?: string) => {
+  if (!path) return '';
+  const encoded = path
+    .split('/')
+    .map(segment => encodeURIComponent(segment))
+    .join('/');
+  return `${STATIC_BASE_URL}/static/${encoded}`;
+};
 
 const formatISODate = (value: Date) => {
   const year = value.getFullYear();
@@ -104,20 +129,76 @@ export function WorkoutScreen() {
   const token = useToken();
   const queryClient = useQueryClient();
   const navigation = useNavigation();
+  const route = useRoute<any>();
   const online = useOnline();
-  useOfflineQueueSync();
-  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [selectedDate, setSelectedDate] = useState<string | null>(route?.params?.date || null);
   const [cursorDate, setCursorDate] = useState<string | null>(null);
-  const [restTimer, setRestTimer] = useState<{ visible: boolean; duration: number }>({
-    visible: false,
-    duration: 0,
-  });
+  const [restOverlay, setRestOverlay] = useState<{
+    visible: boolean;
+    rest: number;
+    hasTime: boolean;
+    hasWeight: boolean;
+    initialReps: number | null;
+    initialWeight: number | null;
+    initialTime: number | null;
+    payloadBase: { workout_day: number; template_exercise: number; set_index: number };
+  }>({ visible: false, rest: 0, hasTime: false, hasWeight: true, initialReps: null, initialWeight: null, initialTime: null, payloadBase: { workout_day: 0, template_exercise: 0, set_index: 0 } });
+  const [restValues, setRestValues] = useState({ reps: '', weight: '', time: '' });
+  const [execOverlay, setExecOverlay] = useState<{
+    visible: boolean;
+    exerciseName: string;
+    duration: number;
+    rest: number;
+    payloadBase: { workout_day: number; template_exercise: number; set_index: number };
+  }>({ visible: false, exerciseName: '', duration: 0, rest: 0, payloadBase: { workout_day: 0, template_exercise: 0, set_index: 0 } });
   const [isCalendarOpen, setCalendarOpen] = useState(false);
+  const [expansionHydrated, setExpansionHydrated] = useState(false);
   const [expandedFolders, setExpandedFolders] = useState<Record<number, boolean>>({});
   const [expandedTemplates, setExpandedTemplates] = useState<Record<number, boolean>>({});
   const [expandedExercises, setExpandedExercises] = useState<Record<number, boolean>>({});
   const [folderTabs, setFolderTabs] = useState<Record<number, 'checklist' | 'recs'>>({});
+  const [queueCount, setQueueCount] = useState(0);
+  const [queueSyncing, setQueueSyncing] = useState(false);
+  const [queueError, setQueueError] = useState<string | null>(null);
+  const [editModal, setEditModal] = useState<{
+    visible: boolean;
+    log?: WorkoutLog;
+    exerciseName?: string;
+    hasTime?: boolean;
+    hasWeight?: boolean;
+    values?: { reps: string; weight: string; time: string };
+  }>({ visible: false });
+  const [infoModal, setInfoModal] = useState<{
+    visible: boolean;
+    name?: string;
+    description?: string;
+    muscles?: string;
+    difficulty?: string;
+    images?: { order: number; path: string }[];
+  }>({ visible: false });
+  const [recInputs, setRecInputs] = useState<Record<number, { reps: string; weight: string }>>({});
   const todayIso = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const [setInputs, setSetInputs] = useState<Record<string, { reps: string; weight: string; time: string }>>({});
+
+  const queueSyncHandlers = useMemo(
+    () => ({
+      onSyncStart: () => {
+        setQueueSyncing(true);
+        setQueueError(null);
+      },
+      onSync: (info: { sent: number; remaining: number }) => {
+        setQueueSyncing(false);
+        setQueueCount(info.remaining);
+      },
+      onError: (err: Error) => {
+        setQueueSyncing(false);
+        setQueueError(err?.message || 'Не удалось синхронизировать очередь');
+      },
+    }),
+    [],
+  );
+
+  useOfflineQueueSync(queueSyncHandlers);
 
   const monthBounds = useMemo(() => {
     const baseIso = cursorDate || selectedDate || todayIso;
@@ -149,6 +230,32 @@ export function WorkoutScreen() {
     enabled: Boolean(token),
   });
 
+  useEffect(() => {
+    getOfflineQueueCount().then(count => setQueueCount(count)).catch(() => null);
+  }, [data?.logs]);
+
+  useEffect(() => {
+    if (!online) return;
+    getOfflineQueueCount().then(count => setQueueCount(count)).catch(() => null);
+  }, [online]);
+
+  useEffect(() => {
+    AsyncStorage.getItem(EXPANSION_STORAGE_KEY)
+      .then(raw => {
+        if (!raw) return;
+        try {
+          const parsed = JSON.parse(raw) || {};
+          if (parsed.folders) setExpandedFolders(parsed.folders);
+          if (parsed.templates) setExpandedTemplates(parsed.templates);
+          if (parsed.exercises) setExpandedExercises(parsed.exercises);
+        } catch {
+          // ignore broken cache
+        }
+      })
+      .catch(() => null)
+      .finally(() => setExpansionHydrated(true));
+  }, []);
+
   const mutation = useMutation({
     mutationFn: (payload: Parameters<typeof logWorkoutSet>[1]) => {
       if (!token) {
@@ -158,10 +265,12 @@ export function WorkoutScreen() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workoutPlan'] });
+      getOfflineQueueCount().then(count => setQueueCount(count)).catch(() => null);
     },
     onError: async (err, variables) => {
       if (!online) {
         await enqueueLog(variables);
+        setQueueCount(prev => prev + 1);
       }
     },
   });
@@ -198,11 +307,87 @@ export function WorkoutScreen() {
     setCalendarOpen(false);
   };
 
+  const parseNumber = (value?: string) => {
+    if (!value) return null;
+    const num = Number(value.replace(',', '.'));
+    return Number.isNaN(num) ? null : num;
+  };
+
+  const closeRestOverlay = () => {
+    setRestOverlay(prev => ({ ...prev, visible: false }));
+    setRestValues({ reps: '', weight: '', time: '' });
+  };
+
+  const closeEditModal = () => setEditModal({ visible: false });
+
+  const handleEditSave = async () => {
+    if (!editModal.log || !token) return;
+    const payload: { reps?: number | null; weight?: number | null; time_seconds?: number | null } = {};
+    if (editModal.hasTime) {
+      payload.time_seconds = parseNumber(editModal.values?.time);
+      payload.reps = null;
+      payload.weight = null;
+    } else {
+      payload.reps = parseNumber(editModal.values?.reps);
+      if (editModal.hasWeight) {
+        payload.weight = parseNumber(editModal.values?.weight);
+      }
+      payload.time_seconds = null;
+    }
+    try {
+      await updateWorkoutLog(token, editModal.log.id!, payload);
+      closeEditModal();
+      queryClient.invalidateQueries({ queryKey: ['workoutPlan'] });
+    } catch (e: any) {
+      notifyError(e?.message || 'Не удалось сохранить');
+    }
+  };
+
+  const handleEditDelete = async () => {
+    if (!editModal.log?.id || !token) return;
+    try {
+      await deleteWorkoutLog(token, editModal.log.id);
+      closeEditModal();
+      queryClient.invalidateQueries({ queryKey: ['workoutPlan'] });
+    } catch (e: any) {
+      notifyError(e?.message || 'Не удалось удалить');
+    }
+  };
+
+  const handleRestFinish = () => {
+    const base = restOverlay.payloadBase;
+    const payload: Parameters<typeof logWorkoutSet>[1] = {
+      workout_day: base.workout_day,
+      template_exercise: base.template_exercise,
+      set_index: base.set_index,
+    };
+    if (restOverlay.hasTime) {
+      payload.time_seconds = parseNumber(restValues.time) ?? restOverlay.initialTime ?? undefined;
+    } else {
+      payload.reps = parseNumber(restValues.reps) ?? restOverlay.initialReps ?? undefined;
+      if (restOverlay.hasWeight) {
+        payload.weight = parseNumber(restValues.weight) ?? restOverlay.initialWeight ?? undefined;
+      }
+    }
+    submitLog(payload, restOverlay.rest);
+    closeRestOverlay();
+  };
+
+  const handleRestSkip = () => {
+    closeRestOverlay();
+  };
+
   useEffect(() => {
     if (!cursorDate && resolvedDate) {
       setCursorDate(resolvedDate);
     }
   }, [cursorDate, resolvedDate]);
+  useEffect(() => {
+    if (route?.params?.date) {
+      setSelectedDate(route.params.date);
+      setCursorDate(route.params.date);
+    }
+  }, [route?.params?.date]);
 
   const { data: loadsData } = useQuery({
     queryKey: ['dailyLoads', monthBounds.start, monthBounds.end],
@@ -233,7 +418,7 @@ export function WorkoutScreen() {
     return map;
   }, [data?.logs]);
 
-  const normalizeSets = (exercise: PlanExercise) => {
+  const normalizeSets = React.useCallback((exercise: PlanExercise) => {
     const setsArray = Array.isArray(exercise.sets) ? exercise.sets : [];
     let setsCount = setsArray.length || (typeof exercise.sets === 'number' ? exercise.sets : 0);
     // если план пустой, но есть логи по этому упражнению — строим количество сетов из логов
@@ -266,7 +451,7 @@ export function WorkoutScreen() {
       sets: normalized,
       defaults: { repsDefault, weightDefault, timeDefault, restDefault },
     };
-  };
+  }, [logsBySet]);
 
   const collectMuscles = useMemo(() => {
     const groups = new Map<string, number>();
@@ -284,6 +469,63 @@ export function WorkoutScreen() {
     );
     return Array.from(groups.entries()).sort((a, b) => b[1] - a[1]);
   }, [data?.folders]);
+
+  const openRest = (exercise: PlanExercise, setIndex: number, planned: { reps?: number | null; weight?: number | null; time?: number | null; rest?: number | null }) => {
+    setRestValues({
+      reps: planned.reps != null ? String(planned.reps) : '',
+      weight: planned.weight != null ? String(planned.weight) : '',
+      time: planned.time != null ? String(planned.time) : '',
+    });
+    setRestOverlay({
+      visible: true,
+      rest: planned.rest || 0,
+      hasTime: exercise.has_time,
+      hasWeight: exercise.has_weight,
+      initialReps: planned.reps ?? null,
+      initialWeight: planned.weight ?? null,
+      initialTime: planned.time ?? null,
+      payloadBase: {
+        workout_day: data?.workout_day_id || 0,
+        template_exercise: exercise.template_exercise,
+        set_index: setIndex,
+      },
+    });
+  };
+
+  const handleExecutionFinish = (actualTime: number) => {
+    setExecOverlay(prev => ({ ...prev, visible: false }));
+    openRest(
+      { has_time: true, has_weight: false, template_exercise: execOverlay.payloadBase.template_exercise } as any,
+      execOverlay.payloadBase.set_index,
+      {
+        time: actualTime,
+        rest: execOverlay.rest,
+      },
+    );
+  };
+
+  const submitLog = async (payload: Parameters<typeof logWorkoutSet>[1], restSeconds?: number) => {
+    mutation.mutate(payload, {
+      onSuccess: () => {
+        setRestOverlay(prev => ({ ...prev, visible: false }));
+        setExecOverlay(prev => ({ ...prev, visible: false }));
+        if (restSeconds) {
+          setRestOverlay(prev => ({ ...prev, visible: true, rest: restSeconds }));
+        }
+      },
+      onError: async () => {
+        if (!online) {
+          await enqueueLog(payload);
+          setQueueCount(prev => prev + 1);
+          if (restSeconds) {
+            setRestOverlay(prev => ({ ...prev, visible: true, rest: restSeconds }));
+          }
+        } else {
+          notifyError('Не удалось сохранить подход');
+        }
+      },
+    });
+  };
 
   const renderExercise = (exercise: PlanExercise) => {
     const { sets: normalizedSets, defaults } = normalizeSets(exercise);
@@ -315,7 +557,23 @@ export function WorkoutScreen() {
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               {doneCount === normalizedSets.length ? <CheckIcon /> : null}
               <Text style={styles.exerciseTitle}>{exerciseName}</Text>
-              <InfoIcon />
+              <Pressable
+                onPress={() => {
+                  const source: any = (exercise as any).source || {};
+                  setInfoModal({
+                    visible: true,
+                    name: exerciseName,
+                    description:
+                      typeof source.description === 'string'
+                        ? source.description
+                        : source.description?.text,
+                    muscles: source.target_muscles,
+                    difficulty: source.difficulty,
+                    images: source.images || [],
+                  });
+                }}>
+                <InfoIcon />
+              </Pressable>
               <EditIcon />
             </View>
             <Text style={styles.exerciseProgress}>
@@ -341,9 +599,6 @@ export function WorkoutScreen() {
               const plannedTime = set.default_time ?? timeDefault;
               const plannedRest = set.rest ?? restDefault;
               const planTextParts = [];
-              if (plannedReps) planTextParts.push(`План: ${plannedReps} повт.`);
-              if (plannedWeight) planTextParts.push(`${plannedWeight} кг`);
-              if (plannedTime) planTextParts.push(`${plannedTime}s`);
               const log = logsBySet.get(key);
               const factParts: string[] = [];
               if (log?.reps != null) factParts.push(`Факт: ${log.reps} повт.`);
@@ -355,10 +610,76 @@ export function WorkoutScreen() {
                     <Text style={[styles.setTitle, isDone && styles.setTitleDone]}>Сет {setIndex + 1}</Text>
                     {plannedRest ? <Text style={styles.muted}>Отдых: {plannedRest}s</Text> : null}
                   </View>
-                  {planTextParts.length > 0 ? (
-                    <Text style={[styles.muted, isDone && styles.mutedDone]}>{planTextParts.join(' • ')}</Text>
-                  ) : null}
+                  <View style={styles.planRow}>
+                    {!exercise.has_time ? (
+                      <>
+                        <AdjustNumber
+                          label="План повт."
+                          value={String(plannedReps || '')}
+                          onChange={() => {}}
+                          disabled
+                        />
+                        {exercise.has_weight ? (
+                          <AdjustNumber
+                            label="План вес"
+                            value={String(plannedWeight || '')}
+                            onChange={() => {}}
+                            disabled
+                          />
+                        ) : null}
+                      </>
+                    ) : (
+                      <AdjustNumber label="План время" value={String(plannedTime || '')} onChange={() => {}} disabled />
+                    )}
+                  </View>
                   {factParts.length > 0 ? <Text style={styles.factText}>{factParts.join(' • ')}</Text> : null}
+                  {isDone ? (
+                    <Pressable
+                      onPress={() =>
+                        setEditModal({
+                          visible: true,
+                          log,
+                          exerciseName,
+                          hasTime: exercise.has_time,
+                          hasWeight: exercise.has_weight,
+                          values: {
+                            reps: log?.reps != null ? String(log.reps) : '',
+                            weight: log?.weight != null ? String(log.weight) : '',
+                            time: log?.time_seconds != null ? String(log.time_seconds) : '',
+                          },
+                        })
+                      }
+                      style={styles.editLink}>
+                      <Text style={styles.editLinkText}>Редактировать</Text>
+                    </Pressable>
+                  ) : (
+                    <View style={styles.factInputs}>
+                      {!exercise.has_time ? (
+                        <>
+                          <AdjustNumber
+                            label="Факт повт."
+                            value={restValues.reps}
+                            onChange={text => setRestValues(prev => ({ ...prev, reps: text }))}
+                          />
+                          {exercise.has_weight ? (
+                            <AdjustNumber
+                              label="Факт вес"
+                              value={restValues.weight}
+                              onChange={text => setRestValues(prev => ({ ...prev, weight: text }))}
+                              inputMode="decimal"
+                              step={2}
+                            />
+                          ) : null}
+                        </>
+                      ) : (
+                        <AdjustNumber
+                          label="Факт время"
+                          value={restValues.time}
+                          onChange={text => setRestValues(prev => ({ ...prev, time: text }))}
+                        />
+                      )}
+                    </View>
+                  )}
                   <Pressable
                     disabled={isDone}
                     style={[
@@ -366,29 +687,31 @@ export function WorkoutScreen() {
                       isDone ? styles.doneButtonCompleted : styles.doneButtonPending,
                     ]}
                     onPress={() => {
-                      const payload = {
+                      const basePayload = {
                         workout_day: data?.workout_day_id || 0,
                         template_exercise: exercise.template_exercise,
                         set_index: setIndex,
-                        reps: plannedReps ?? undefined,
-                        weight: plannedWeight ?? undefined,
-                        time_seconds: plannedTime ?? undefined,
                       };
-                      mutation.mutate(payload, {
-                        onSuccess: () => {
-                          if (plannedRest) {
-                            setRestTimer({ visible: true, duration: plannedRest });
-                          }
-                        },
-                        onError: async () => {
-                          if (!online) {
-                            await enqueueLog(payload);
-                            if (plannedRest) {
-                              setRestTimer({ visible: true, duration: plannedRest });
-                            }
-                          }
-                        },
-                      });
+                      if (exercise.has_time) {
+                        const duration = plannedTime || 0;
+                        setExecOverlay({
+                          visible: true,
+                          exerciseName,
+                          duration: duration || 0,
+                          rest: plannedRest || 0,
+                          payloadBase: basePayload,
+                        });
+                      } else {
+                        openRest(exercise, setIndex, {
+                          reps: plannedReps,
+                          weight: plannedWeight,
+                          rest: plannedRest,
+                        });
+                        setRestOverlay(prev => ({
+                          ...prev,
+                          payloadBase: basePayload,
+                        }));
+                      }
                     }}>
                     <Text style={isDone ? styles.doneButtonTextCompleted : styles.doneButtonText}>
                       ✓ Выполнено
@@ -476,6 +799,63 @@ export function WorkoutScreen() {
     return result;
   }, [data?.folders, logsBySet]);
 
+  useEffect(() => {
+    if (!data?.folders || !expansionHydrated) return;
+    let changed = false;
+    const nextFolders = { ...expandedFolders };
+    const nextTemplates = { ...expandedTemplates };
+    const nextExercises = { ...expandedExercises };
+
+    data.folders.forEach(folder => {
+      const folderStats = statsByFolder[folder.id] || { done: 0, total: 0 };
+      if (nextFolders[folder.id] === undefined) {
+        nextFolders[folder.id] = !(folderStats.total > 0 && folderStats.done >= folderStats.total);
+        changed = true;
+      }
+      folder.templates.forEach(template => {
+        let templateTotal = 0;
+        let templateDoneCount = 0;
+        template.exercises.forEach(ex => {
+          const { sets } = normalizeSets(ex);
+          const completedSets = sets.reduce((acc, set, idx) => {
+            const key = `${ex.template_exercise}-${set.set_index ?? idx}`;
+            return acc + (logsBySet.has(key) ? 1 : 0);
+          }, 0);
+          templateTotal += sets.length;
+          templateDoneCount += completedSets;
+          if (nextExercises[ex.template_exercise] === undefined) {
+            const isExerciseDone = sets.length > 0 && completedSets >= sets.length;
+            nextExercises[ex.template_exercise] = !isExerciseDone;
+            changed = true;
+          }
+        });
+        const templateDone = templateTotal > 0 && templateDoneCount >= templateTotal;
+        if (nextTemplates[template.id] === undefined) {
+          nextTemplates[template.id] = !templateDone;
+          changed = true;
+        }
+      });
+    });
+
+    if (changed) {
+      setExpandedFolders(nextFolders);
+      setExpandedTemplates(nextTemplates);
+      setExpandedExercises(nextExercises);
+    }
+  }, [data?.folders, expansionHydrated, expandedExercises, expandedFolders, expandedTemplates, logsBySet, normalizeSets, statsByFolder]);
+
+  useEffect(() => {
+    if (!expansionHydrated) return;
+    AsyncStorage.setItem(
+      EXPANSION_STORAGE_KEY,
+      JSON.stringify({
+        folders: expandedFolders,
+        templates: expandedTemplates,
+        exercises: expandedExercises,
+      }),
+    ).catch(() => null);
+  }, [expandedExercises, expandedFolders, expandedTemplates, expansionHydrated]);
+
   const renderFolder = ({ item }: { item: PlanFolder }) => {
     const stats = statsByFolder[item.id] || { done: 0, total: 0 };
     const expanded = expandedFolders[item.id] ?? true;
@@ -536,21 +916,50 @@ export function WorkoutScreen() {
                 {recsQuery.isLoading ? (
                   <ActivityIndicator color={colors.primary} />
                 ) : recsQuery.data && recsQuery.data.length > 0 ? (
-                  recsQuery.data.map(rec => (
-                    <View key={rec.id} style={styles.recCard}>
-                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <Text style={styles.exerciseTitle}>{rec.exercise_name || 'Упражнение'}</Text>
-                        <InfoIcon />
+                  recsQuery.data.map(rec => {
+                    const values = recInputs[rec.id] || { reps: '', weight: '' };
+                    return (
+                      <View key={rec.id} style={styles.recCard}>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <Text style={styles.exerciseTitle}>{rec.exercise_name || 'Упражнение'}</Text>
+                          <InfoIcon />
+                        </View>
+                        {rec.note ? <Text style={styles.muted}>{rec.note}</Text> : null}
+                        <View style={styles.planRow}>
+                          <AdjustNumber
+                            label="Повторы"
+                            value={values.reps}
+                            onChange={text =>
+                              setRecInputs(prev => ({ ...prev, [rec.id]: { ...(prev[rec.id] || {}), reps: text } }))
+                            }
+                          />
+                          <AdjustNumber
+                            label="Вес"
+                            value={values.weight}
+                            onChange={text =>
+                              setRecInputs(prev => ({ ...prev, [rec.id]: { ...(prev[rec.id] || {}), weight: text } }))
+                            }
+                            inputMode="decimal"
+                            step={2}
+                          />
+                        </View>
+                        <Pressable
+                          style={styles.recApply}
+                          onPress={() =>
+                            applyRecMutation.mutate({
+                              ...rec,
+                              change: {
+                                reps: parseNumber(values.reps),
+                                weight: parseNumber(values.weight),
+                              },
+                            })
+                          }
+                          disabled={applyRecMutation.isLoading}>
+                          <Text style={styles.recApplyText}>Применить</Text>
+                        </Pressable>
                       </View>
-                      {rec.note ? <Text style={styles.muted}>{rec.note}</Text> : null}
-                      <Pressable
-                        style={styles.recApply}
-                        onPress={() => applyRecMutation.mutate(rec)}
-                        disabled={applyRecMutation.isLoading}>
-                        <Text style={styles.recApplyText}>Применить</Text>
-                      </Pressable>
-                    </View>
-                  ))
+                    );
+                  })
                 ) : (
                   <Text style={styles.muted}>Рекомендаций нет</Text>
                 )}
@@ -582,6 +991,17 @@ export function WorkoutScreen() {
               <Text style={styles.offlineNote}>
                 Офлайн: отметки сохранятся в очереди и отправятся позже.
               </Text>
+            ) : null}
+            {queueCount > 0 || queueSyncing || queueError ? (
+              <View style={styles.queueBanner}>
+                <Text style={styles.queueText}>
+                  {queueSyncing
+                    ? 'Синхронизируем очередь...'
+                    : queueError
+                      ? `Очередь: ${queueError}`
+                      : `В очереди ${queueCount} подход(ов) — отправим при появлении интернета.`}
+                </Text>
+              </View>
             ) : null}
           </View>
           <Pressable style={styles.summaryCard} onPress={() => setCalendarOpen(true)}>
@@ -635,11 +1055,110 @@ export function WorkoutScreen() {
         <View style={{ height: 24 }} />
       </ScrollView>
       <RestTimerOverlay
-        visible={restTimer.visible}
-        duration={restTimer.duration || 60}
-        onSkip={() => setRestTimer({ visible: false, duration: 0 })}
-        onFinish={() => setRestTimer({ visible: false, duration: 0 })}
+        visible={restOverlay.visible}
+        duration={restOverlay.rest || 60}
+        hasTime={restOverlay.hasTime}
+        hasWeight={restOverlay.hasWeight}
+        initialReps={restOverlay.initialReps}
+        initialWeight={restOverlay.initialWeight}
+        initialTime={restOverlay.initialTime}
+        values={restValues}
+        onChange={(field, value) => setRestValues(prev => ({ ...prev, [field]: value }))}
+        onSkip={handleRestSkip}
+        onFinish={handleRestFinish}
       />
+      <ExecutionOverlay
+        visible={execOverlay.visible}
+        exerciseName={execOverlay.exerciseName}
+        duration={execOverlay.duration}
+        onCancel={() => setExecOverlay(prev => ({ ...prev, visible: false }))}
+        onFinishEarly={handleExecutionFinish}
+      />
+      <Modal transparent visible={editModal.visible} animationType="fade" onRequestClose={closeEditModal}>
+        <View style={styles.dateModalBackdrop}>
+          <View style={[styles.dateModalCard, { maxWidth: 420 }]}>
+            <Text style={styles.title}>Редактирование подхода</Text>
+            <Text style={styles.muted}>{editModal.exerciseName}</Text>
+            {!editModal.hasTime ? (
+              <>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Повторы"
+                  placeholderTextColor={colors.muted}
+                  keyboardType="number-pad"
+                  value={editModal.values?.reps || ''}
+                  onChangeText={value => setEditModal(prev => ({ ...prev, values: { ...(prev.values || {}), reps: value } }))}
+                />
+                {editModal.hasWeight ? (
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Вес (кг)"
+                    placeholderTextColor={colors.muted}
+                    keyboardType="numeric"
+                    value={editModal.values?.weight || ''}
+                    onChangeText={value => setEditModal(prev => ({ ...prev, values: { ...(prev.values || {}), weight: value } }))}
+                  />
+                ) : null}
+              </>
+            ) : (
+              <TextInput
+                style={styles.input}
+                placeholder="Время (сек)"
+                placeholderTextColor={colors.muted}
+                keyboardType="number-pad"
+                value={editModal.values?.time || ''}
+                onChangeText={value => setEditModal(prev => ({ ...prev, values: { ...(prev.values || {}), time: value } }))}
+              />
+            )}
+            <View style={styles.row}>
+              <Pressable style={styles.secondary} onPress={closeEditModal}>
+                <Text style={styles.secondaryText}>Отмена</Text>
+              </Pressable>
+              <Pressable style={styles.secondary} onPress={handleEditDelete}>
+                <Text style={styles.secondaryText}>Удалить</Text>
+              </Pressable>
+              <Pressable style={styles.primary} onPress={handleEditSave}>
+                <Text style={styles.primaryText}>Сохранить</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+      <Modal transparent visible={infoModal.visible} animationType="fade" onRequestClose={() => setInfoModal({ visible: false })}>
+        <View style={styles.dateModalBackdrop}>
+          <View style={[styles.dateModalCard, { maxWidth: 520 }]}>
+            <Text style={styles.title}>{infoModal.name}</Text>
+            {infoModal.muscles ? <Text style={styles.muted}>Мышцы: {infoModal.muscles}</Text> : null}
+            {infoModal.difficulty ? <Text style={styles.muted}>Сложность: {infoModal.difficulty}</Text> : null}
+            {infoModal.description ? <Text style={styles.muted}>{infoModal.description}</Text> : null}
+            {infoModal.images && infoModal.images.length > 0 ? (
+              <ScrollView horizontal pagingEnabled showsHorizontalScrollIndicator={false} style={{ marginTop: 8 }}>
+                {infoModal.images.map(img => (
+                  <Image
+                    key={img.order}
+                    source={{ uri: buildExerciseImageUrl(img.path) }}
+                    style={styles.infoImage}
+                    resizeMode="contain"
+                  />
+                ))}
+              </ScrollView>
+            ) : null}
+            <View style={styles.row}>
+              <Pressable
+                style={styles.primary}
+                onPress={() => {
+                  setInfoModal({ visible: false });
+                  navigation.navigate('Programs' as never);
+                }}>
+                <Text style={styles.primaryText}>К ProgramBoard</Text>
+              </Pressable>
+              <Pressable style={styles.secondary} onPress={() => setInfoModal({ visible: false })}>
+                <Text style={styles.secondaryText}>Закрыть</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
       {isCalendarOpen ? (
         <Modal transparent animationType="fade" onRequestClose={() => setCalendarOpen(false)}>
           <View style={styles.dateModalBackdrop}>
@@ -856,6 +1375,18 @@ const styles = StyleSheet.create({
   offlineNote: {
     color: colors.primary,
     fontSize: 13,
+  },
+  queueBanner: {
+    marginTop: 4,
+    padding: 8,
+    borderRadius: 10,
+    backgroundColor: '#0f1f15',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  queueText: {
+    color: colors.muted,
+    fontSize: 12,
   },
   templateCard: {
     borderRadius: 10,
@@ -1129,6 +1660,16 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
+  planRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 4,
+  },
+  factInputs: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 8,
+  },
   dateModalBackdrop: {
     flex: 1,
     backgroundColor: '#000000aa',
@@ -1230,5 +1771,47 @@ const styles = StyleSheet.create({
   },
   dayLoadSelected: {
     color: colors.primary,
+  },
+  infoImage: {
+    width: 280,
+    height: 220,
+    marginRight: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    color: colors.text,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginTop: 8,
+  },
+  secondary: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+  },
+  secondaryText: {
+    color: colors.muted,
+    fontFamily: 'Inter-SemiBold',
+  },
+  primary: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+  },
+  primaryText: {
+    color: colors.primaryText,
+    fontFamily: 'Inter-Bold',
   },
 });

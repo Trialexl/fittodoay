@@ -1,11 +1,13 @@
 import React, { PropsWithChildren } from 'react';
 import { SafeAreaView, StatusBar, StyleSheet, View } from 'react-native';
 import { colors } from '../theme/colors';
+import { AppHeader } from './AppHeader';
 
 export function Screen({ children }: PropsWithChildren) {
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="light-content" />
+      <AppHeader />
       <View style={styles.container}>{children}</View>
     </SafeAreaView>
   );

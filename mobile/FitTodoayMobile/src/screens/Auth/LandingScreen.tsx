@@ -10,6 +10,7 @@ import { AuthStackParamList } from '../../navigation/types';
 import { login, register, LoginRequest, RegisterRequest } from '../../api/auth';
 import { useAuthStore } from '../../state/auth';
 import { notifyError } from '../../utils/notify';
+import { buildDefaultProfile } from '../../utils/profileDefaults';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Landing'>;
 
@@ -66,7 +67,12 @@ export function LandingScreen({ navigation }: Props) {
       if (err?.status === 400 || err?.status === 404) {
         try {
           setStatusText('Создаём аккаунт...');
-          const registerRes = await register({ email, password, name });
+          const registerRes = await register({
+            email,
+            password,
+            name,
+            profile: buildDefaultProfile(),
+          });
           setSession(registerRes.token, registerRes.user);
           return;
         } catch (regErr: any) {
@@ -141,7 +147,7 @@ export function LandingScreen({ navigation }: Props) {
                     value={value}
                   />
                 )}
-              />
+          />
               {errors.password?.message ? (
                 <Text style={styles.errorText}>{errors.password.message}</Text>
               ) : null}
@@ -149,6 +155,17 @@ export function LandingScreen({ navigation }: Props) {
                 title="Начать тренировку"
                 onPress={handleSubmit(onSubmit)}
                 loading={submitting}
+              />
+              <PrimaryButton
+                title="Заполнить профиль"
+                variant="ghost"
+                onPress={() =>
+                  navigation.navigate('Onboarding', {
+                    email: getValues('email'),
+                    password: getValues('password'),
+                    name: getValues('name' as keyof (LoginRequest & RegisterRequest)) as string | undefined,
+                  })
+                }
               />
               <Text style={styles.helper}>{statusText}</Text>
               {errorText ? <Text style={styles.errorText}>{errorText}</Text> : null}

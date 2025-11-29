@@ -11,9 +11,10 @@ import { colors } from '../theme/colors';
 interface TextFieldProps extends TextInputProps {
   label: string;
   error?: string;
+  accessibilityLabel?: string;
 }
 
-export function TextField({ label, error, style, ...props }: TextFieldProps) {
+export function TextField({ label, error, style, accessibilityLabel, ...props }: TextFieldProps) {
   const hasError = Boolean(error);
 
   return (
@@ -22,6 +23,8 @@ export function TextField({ label, error, style, ...props }: TextFieldProps) {
       <TextInput
         style={[styles.input, hasError && styles.inputError, style]}
         placeholderTextColor="#7c8494"
+        accessibilityLabel={accessibilityLabel || label}
+        accessibilityHint={props.placeholder}
         {...props}
       />
       {hasError ? <Text style={styles.error}>{error}</Text> : null}

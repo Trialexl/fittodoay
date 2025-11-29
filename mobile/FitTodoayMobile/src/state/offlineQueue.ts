@@ -26,6 +26,11 @@ export async function enqueueLog(payload: LogSetPayload) {
   await writeQueue(queue);
 }
 
+export async function getOfflineQueueCount() {
+  const queue = await readQueue();
+  return queue.length;
+}
+
 async function dequeueAndSend(token: string) {
   const queue = await readQueue();
   const remaining: LogSetPayload[] = [];
@@ -39,15 +44,28 @@ async function dequeueAndSend(token: string) {
   await writeQueue(remaining);
 }
 
-export function useOfflineQueueSync() {
+type SyncHandlers = {
+  onSyncStart?: () => void;
+  onSync?: (info: { sent: number; remaining: number }) => void;
+  onError?: (error: Error) => void;
+};
+
+export function useOfflineQueueSync(options?: SyncHandlers) {
   const token = useToken();
 
   useEffect(() => {
-    const sub = NetInfo.addEventListener(state => {
-      if (state.isConnected && token) {
-        dequeueAndSend(token);
+    const sub = NetInfo.addEventListener(async state => {
+      if (!state.isConnected || !token) return;
+      try {
+        options?.onSyncStart?.();
+        const before = await readQueue();
+        await dequeueAndSend(token);
+        const after = await readQueue();
+        options?.onSync?.({ sent: before.length - after.length, remaining: after.length });
+      } catch (e: any) {
+        options?.onError?.(e as Error);
       }
     });
     return () => sub();
-  }, [token]);
+  }, [token, options]);
 }

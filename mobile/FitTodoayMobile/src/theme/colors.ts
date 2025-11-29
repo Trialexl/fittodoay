@@ -10,4 +10,5 @@ export const colors = {
   primaryText: '#0f172a',
   danger: '#ef4444',
   success: '#16a34a',
+  amber: '#fbbf24',
 };
