@@ -1,7 +1,7 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useThemeStore } from '../state/theme';
-import { colors } from '../theme/colors';
+import { useThemedColors } from '../theme/colors';
 
 const ACCENT_OPTIONS = [
   { value: '#b46bff', label: 'Фиолетовый' },
@@ -12,6 +12,8 @@ const ACCENT_OPTIONS = [
 ];
 
 export function ThemeSelector() {
+  const colors = useThemedColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const theme = useThemeStore(state => state.theme);
   const accent = useThemeStore(state => state.accentColor);
   const setTheme = useThemeStore(state => state.setTheme);
@@ -57,53 +59,54 @@ export function ThemeSelector() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    gap: 8,
-  },
-  label: {
-    color: colors.muted,
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  row: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  chip: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-  },
-  chipActive: {
-    borderColor: colors.primary,
-    backgroundColor: colors.surfaceMuted,
-  },
-  chipText: {
-    color: colors.text,
-    fontWeight: '700',
-  },
-  chipTextActive: {
-    color: colors.primary,
-  },
-  accents: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  accentDot: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    borderWidth: 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  accentCheck: {
-    color: '#fff',
-    fontWeight: '800',
-  },
-});
+const createStyles = (colors: ReturnType<typeof useThemedColors>) =>
+  StyleSheet.create({
+    container: {
+      gap: 8,
+    },
+    label: {
+      color: colors.muted,
+      fontSize: 14,
+      fontWeight: '700',
+    },
+    row: {
+      flexDirection: 'row',
+      gap: 8,
+    },
+    chip: {
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+    },
+    chipActive: {
+      borderColor: colors.primary,
+      backgroundColor: colors.surfaceMuted,
+    },
+    chipText: {
+      color: colors.text,
+      fontWeight: '700',
+    },
+    chipTextActive: {
+      color: colors.primary,
+    },
+    accents: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+    },
+    accentDot: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      borderWidth: 2,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    accentCheck: {
+      color: '#fff',
+      fontWeight: '800',
+    },
+  });

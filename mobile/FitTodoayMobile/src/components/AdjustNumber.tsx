@@ -1,6 +1,6 @@
-import React, { useRef } from 'react';
+import React, { useMemo, useRef } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { colors } from '../theme/colors';
+import { useThemedColors } from '../theme/colors';
 
 type Props = {
   label?: string;
@@ -24,6 +24,8 @@ export function AdjustNumber({
   inputMode = 'numeric',
   disabled,
 }: Props) {
+  const colors = useThemedColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const holdRef = useRef<NodeJS.Timeout | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -90,51 +92,52 @@ export function AdjustNumber({
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    gap: 6,
-  },
-  label: {
-    color: colors.muted,
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  btn: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.surface,
-  },
-  btnDisabled: {
-    opacity: 0.5,
-  },
-  btnText: {
-    color: colors.text,
-    fontSize: 20,
-    fontWeight: '800',
-  },
-  input: {
-    flex: 1,
-    height: 44,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-    color: colors.text,
-    paddingHorizontal: 10,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  inputDisabled: {
-    opacity: 0.5,
-  },
-});
+const createStyles = (colors: ReturnType<typeof useThemedColors>) =>
+  StyleSheet.create({
+    container: {
+      gap: 6,
+    },
+    label: {
+      color: colors.muted,
+      fontSize: 12,
+      fontWeight: '700',
+    },
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    btn: {
+      width: 44,
+      height: 44,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: colors.border,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.surface,
+    },
+    btnDisabled: {
+      opacity: 0.5,
+    },
+    btnText: {
+      color: colors.text,
+      fontSize: 20,
+      fontWeight: '800',
+    },
+    input: {
+      flex: 1,
+      height: 44,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+      color: colors.text,
+      paddingHorizontal: 10,
+      fontWeight: '700',
+      textAlign: 'center',
+    },
+    inputDisabled: {
+      opacity: 0.5,
+    },
+  });

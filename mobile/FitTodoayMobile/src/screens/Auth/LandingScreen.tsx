@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, ScrollView, StatusBar, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useForm, Controller } from 'react-hook-form';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -10,10 +10,13 @@ import { login, register, LoginRequest, RegisterRequest } from '../../api/auth';
 import { useAuthStore } from '../../state/auth';
 import { notifyError } from '../../utils/notify';
 import { buildDefaultProfile } from '../../utils/profileDefaults';
+import { useThemedColors } from '../../theme/colors';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Landing'>;
 
 export function LandingScreen({ navigation }: Props) {
+  const colors = useThemedColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const heroOpacity = useRef(new Animated.Value(0)).current;
   const cardOpacity = useRef(new Animated.Value(0)).current;
   const setSession = useAuthStore(state => state.setSession);
@@ -176,100 +179,103 @@ export function LandingScreen({ navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
-  full: {
-    flex: 1,
-    backgroundColor: '#0c0f1a',
-  },
-  container: {
-    flex: 1,
-    paddingBottom: 32,
-    gap: 24,
-    alignItems: 'center',
-    paddingHorizontal: 16,
-  },
-  hero: {
-    alignItems: 'center',
-    gap: 20,
-    marginTop: 60,
-    paddingHorizontal: 12,
-  },
-  script: {
-    fontSize: 64,
-    fontWeight: '400',
-    color: '#b46bff',
-    letterSpacing: 1,
-    fontFamily: 'Christopher',
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: '#eef1ff',
-    fontFamily: 'Inter-Bold',
-  },
-  subtitle: {
-    fontSize: 16,
-    color: '#9aa3c7',
-    textAlign: 'center',
-    paddingHorizontal: 12,
-    fontFamily: 'Inter-Regular',
-  },
-  card: {
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: '#1d2238',
-    backgroundColor: '#0e1222',
-    padding: 20,
-    gap: 6,
-    shadowColor: '#000',
-    shadowOpacity: 0.5,
-    shadowRadius: 14,
-    elevation: 6,
-    width: '100%',
-    maxWidth: 420,
-  },
-  brandTop: {
-    textAlign: 'center',
-    color: '#9aa3c7',
-    letterSpacing: 6,
-    fontSize: 12,
-    marginTop: 6,
-    fontFamily: 'Inter-Regular',
-  },
-  brandMid: {
-    textAlign: 'center',
-    color: '#b46bff',
-    fontSize: 14,
-    letterSpacing: 3,
-    marginBottom: 12,
-    fontFamily: 'Inter-SemiBold',
-  },
-  inputs: {
-    gap: 10,
-  },
-  label: {
-    color: '#cfd4e8',
-    fontSize: 15,
-    fontWeight: '600',
-    fontFamily: 'Inter-SemiBold',
-  },
-  input: {
-    height: 48,
-    borderRadius: 10,
-    backgroundColor: '#2b3043',
-    paddingHorizontal: 12,
-    color: '#d8dbea',
-    fontFamily: 'Inter-Regular',
-  },
-  helper: {
-    color: '#7680a0',
-    textAlign: 'center',
-    marginTop: 4,
-    fontFamily: 'Inter-Regular',
-  },
-  errorText: {
-    color: '#ef4444',
-    fontSize: 13,
-    fontFamily: 'Inter-Regular',
-  },
-});
+const createStyles = (colors: ReturnType<typeof useThemedColors>) =>
+  StyleSheet.create({
+    full: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    container: {
+      flex: 1,
+      paddingBottom: 32,
+      gap: 24,
+      alignItems: 'center',
+      paddingHorizontal: 16,
+    },
+    hero: {
+      alignItems: 'center',
+      gap: 20,
+      marginTop: 60,
+      paddingHorizontal: 12,
+    },
+    script: {
+      fontSize: 64,
+      fontWeight: '400',
+      color: colors.primary,
+      letterSpacing: 1,
+      fontFamily: 'Christopher',
+    },
+    title: {
+      fontSize: 28,
+      fontWeight: '800',
+      color: colors.text,
+      fontFamily: 'Inter-Bold',
+    },
+    subtitle: {
+      fontSize: 16,
+      color: colors.muted,
+      textAlign: 'center',
+      paddingHorizontal: 12,
+      fontFamily: 'Inter-Regular',
+    },
+    card: {
+      borderRadius: 24,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+      padding: 20,
+      gap: 6,
+      shadowColor: '#000',
+      shadowOpacity: 0.5,
+      shadowRadius: 14,
+      elevation: 6,
+      width: '100%',
+      maxWidth: 420,
+    },
+    brandTop: {
+      textAlign: 'center',
+      color: colors.muted,
+      letterSpacing: 6,
+      fontSize: 12,
+      marginTop: 6,
+      fontFamily: 'Inter-Regular',
+    },
+    brandMid: {
+      textAlign: 'center',
+      color: colors.primary,
+      fontSize: 14,
+      letterSpacing: 3,
+      marginBottom: 12,
+      fontFamily: 'Inter-SemiBold',
+    },
+    inputs: {
+      gap: 10,
+    },
+    label: {
+      color: colors.text,
+      fontSize: 15,
+      fontWeight: '600',
+      fontFamily: 'Inter-SemiBold',
+    },
+    input: {
+      height: 48,
+      borderRadius: 10,
+      backgroundColor: colors.surfaceMuted,
+      paddingHorizontal: 12,
+      color: colors.text,
+      fontFamily: 'Inter-Regular',
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    helper: {
+      color: colors.muted,
+      textAlign: 'center',
+      marginTop: 4,
+      fontFamily: 'Inter-Regular',
+    },
+    errorText: {
+      color: colors.danger,
+      fontSize: 13,
+      fontFamily: 'Inter-Regular',
+    },
+  });

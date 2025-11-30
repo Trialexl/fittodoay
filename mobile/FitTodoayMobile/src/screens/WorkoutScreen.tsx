@@ -32,7 +32,7 @@ import { fetchRecommendations, applyRecommendation, Recommendation } from '../ap
 import { useOfflineQueueSync, enqueueLog, getOfflineQueueCount } from '../state/offlineQueue';
 import { useOnline } from '../hooks/useOnline';
 import { notifyError } from '../utils/notify';
-import { colors } from '../theme/colors';
+import { useThemedColors } from '../theme/colors';
 import { RestTimerOverlay } from '../components/RestTimerOverlay';
 import { ExecutionOverlay } from '../components/ExecutionOverlay';
 import { AdjustNumber } from '../components/AdjustNumber';
@@ -40,12 +40,20 @@ import { BrandMark } from '../components/BrandMark';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { config } from '../config/env';
 
-const CheckIcon = () => (
+const getTemplateExerciseId = (
+  exercise: PlanExercise | { template_exercise?: number; template_exercise_id?: number; id?: number },
+) =>
+  exercise.template_exercise ??
+  (exercise as any).template_exercise_id ??
+  (exercise as any).id ??
+  0;
+
+const CheckIcon = ({ color }: { color: string }) => (
   <Svg width={18} height={18} viewBox="0 0 20 20">
     <Circle cx={10} cy={10} r={9} fill="#0f1f15" stroke="#1f3b2b" strokeWidth={1.2} />
     <Path
       d="M6 10.5 9 13.5 14.5 8"
-      stroke={colors.success}
+      stroke={color}
       strokeWidth={2}
       strokeLinecap="round"
       strokeLinejoin="round"
@@ -53,12 +61,12 @@ const CheckIcon = () => (
   </Svg>
 );
 
-const InfoIcon = () => (
+const InfoIcon = ({ border, stroke }: { border: string; stroke: string }) => (
   <Svg width={18} height={18} viewBox="0 0 20 20">
-    <Circle cx={10} cy={10} r={9} stroke={colors.border} strokeWidth={1.2} fill="none" />
+    <Circle cx={10} cy={10} r={9} stroke={border} strokeWidth={1.2} fill="none" />
     <Path
       d="M10 6.5v1M9.5 9h1v5h-1Z"
-      stroke={colors.muted}
+      stroke={stroke}
       strokeWidth={1.6}
       strokeLinecap="round"
       strokeLinejoin="round"
@@ -66,11 +74,11 @@ const InfoIcon = () => (
   </Svg>
 );
 
-const EditIcon = () => (
+const EditIcon = ({ color }: { color: string }) => (
   <Svg width={18} height={18} viewBox="0 0 20 20">
     <Path
       d="M4 12.5 12.5 4a2 2 0 1 1 3 3L7 15.5 3 17l1-4.5Z"
-      stroke={colors.muted}
+      stroke={color}
       strokeWidth={1.6}
       strokeLinecap="round"
       strokeLinejoin="round"
@@ -125,6 +133,8 @@ const buildCalendarGrid = (iso: string, loads: Record<string, number>) => {
 };
 
 export function WorkoutScreen() {
+  const colors = useThemedColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const token = useToken();
   const queryClient = useQueryClient();
   const navigation = useNavigation();
@@ -201,8 +211,8 @@ export function WorkoutScreen() {
   const monthBounds = useMemo(() => {
     const baseIso = cursorDate || selectedDate || todayIso;
     const base = new Date(baseIso);
-    const start = new Date(base.getFullYear(), base.getMonth(), 1).toISOString().slice(0, 10);
-    const end = new Date(base.getFullYear(), base.getMonth() + 1, 0).toISOString().slice(0, 10);
+    const start = formatISODate(new Date(base.getFullYear(), base.getMonth(), 1));
+    const end = formatISODate(new Date(base.getFullYear(), base.getMonth() + 1, 0));
     return { start, end };
   }, [cursorDate, selectedDate, todayIso]);
 
@@ -289,7 +299,7 @@ export function WorkoutScreen() {
     },
   });
 
-  const resolvedDate = useMemo(() => selectedDate || data?.date || todayIso, [selectedDate, data?.date, todayIso]);
+  const resolvedDate = useMemo(() => data?.date || selectedDate || todayIso, [data?.date, selectedDate, todayIso]);
   const dateText = useMemo(() => {
     if (!resolvedDate) return 'Сегодня';
     const planDate = new Date(resolvedDate);
@@ -320,17 +330,17 @@ export function WorkoutScreen() {
 
   const handleEditSave = async () => {
     if (!editModal.log || !token) return;
-    const payload: { reps?: number | null; weight?: number | null; time_seconds?: number | null } = {};
+    const payload: { actual_reps?: number | null; actual_weight?: number | null; actual_time?: number | null } = {};
     if (editModal.hasTime) {
-      payload.time_seconds = parseNumber(editModal.values?.time);
-      payload.reps = null;
-      payload.weight = null;
+      payload.actual_time = parseNumber(editModal.values?.time);
+      payload.actual_reps = null;
+      payload.actual_weight = null;
     } else {
-      payload.reps = parseNumber(editModal.values?.reps);
+      payload.actual_reps = parseNumber(editModal.values?.reps);
       if (editModal.hasWeight) {
-        payload.weight = parseNumber(editModal.values?.weight);
+        payload.actual_weight = parseNumber(editModal.values?.weight);
       }
-      payload.time_seconds = null;
+      payload.actual_time = null;
     }
     try {
       await updateWorkoutLog(token, editModal.log.id!, payload);
@@ -360,12 +370,15 @@ export function WorkoutScreen() {
       set_index: base.set_index,
     };
     if (restOverlay.hasTime) {
-      payload.time_seconds = parseNumber(restValues.time) ?? restOverlay.initialTime ?? undefined;
+      payload.actual_time = parseNumber(restValues.time) ?? restOverlay.initialTime ?? undefined;
+      payload.actual_reps = null;
+      payload.actual_weight = null;
     } else {
-      payload.reps = parseNumber(restValues.reps) ?? restOverlay.initialReps ?? undefined;
+      payload.actual_reps = parseNumber(restValues.reps) ?? restOverlay.initialReps ?? undefined;
       if (restOverlay.hasWeight) {
-        payload.weight = parseNumber(restValues.weight) ?? restOverlay.initialWeight ?? undefined;
+          payload.actual_weight = parseNumber(restValues.weight) ?? restOverlay.initialWeight ?? undefined;
       }
+      payload.actual_time = null;
     }
     submitLog(payload, restOverlay.rest);
     closeRestOverlay();
@@ -410,20 +423,37 @@ export function WorkoutScreen() {
   const dailyLoad = loadMap[resolvedDate] ?? completedSets ?? 0;
   const logsBySet = useMemo(() => {
     const map = new Map<string, WorkoutLog>();
-    data?.logs?.forEach(log => {
-      map.set(`${log.template_exercise}-${log.set_index}`, log);
+    const counters: Record<number, number> = {};
+    data?.logs?.forEach((log) => {
+      const numericIndex = Number(log.set_index);
+      const hasIndex = Number.isFinite(numericIndex);
+      const fallbackIndex = counters[log.template_exercise] ?? 0;
+      const normalizedIndex = hasIndex ? numericIndex : fallbackIndex;
+      counters[log.template_exercise] = normalizedIndex + 1;
+
+      const key = `${log.template_exercise}-${normalizedIndex}`;
+      map.set(key, { ...log, set_index: normalizedIndex });
+
+      // Если сервер присылает set_index с 1, а план использует 0 — добавим сдвиг для совпадения.
+      if (normalizedIndex > 0) {
+        const zeroBasedKey = `${log.template_exercise}-${normalizedIndex - 1}`;
+        if (!map.has(zeroBasedKey)) {
+          map.set(zeroBasedKey, { ...log, set_index: normalizedIndex - 1 });
+        }
+      }
     });
     return map;
   }, [data?.logs]);
 
   const normalizeSets = React.useCallback((exercise: PlanExercise) => {
     const setsArray = Array.isArray(exercise.sets) ? exercise.sets : [];
+    const templateExerciseId = getTemplateExerciseId(exercise);
     let setsCount = setsArray.length || (typeof exercise.sets === 'number' ? exercise.sets : 0);
     // если план пустой, но есть логи по этому упражнению — строим количество сетов из логов
     let maxLogIndex = -1;
     logsBySet.forEach((_, key) => {
       const [exIdStr, idxStr] = key.split('-');
-      if (Number(exIdStr) === exercise.template_exercise) {
+      if (Number(exIdStr) === templateExerciseId) {
         maxLogIndex = Math.max(maxLogIndex, Number(idxStr));
       }
     });
@@ -448,6 +478,7 @@ export function WorkoutScreen() {
     return {
       sets: normalized,
       defaults: { repsDefault, weightDefault, timeDefault, restDefault },
+      templateExerciseId,
     };
   }, [logsBySet]);
 
@@ -469,6 +500,7 @@ export function WorkoutScreen() {
   }, [data?.folders]);
 
   const openRest = (exercise: PlanExercise, setIndex: number, planned: { reps?: number | null; weight?: number | null; time?: number | null; rest?: number | null }) => {
+    const templateExerciseId = getTemplateExerciseId(exercise);
     setRestValues({
       reps: planned.reps != null ? String(planned.reps) : '',
       weight: planned.weight != null ? String(planned.weight) : '',
@@ -484,7 +516,7 @@ export function WorkoutScreen() {
       initialTime: planned.time ?? null,
       payloadBase: {
         workout_day: data?.workout_day_id || 0,
-        template_exercise: exercise.template_exercise,
+        template_exercise: templateExerciseId,
         set_index: setIndex,
       },
     });
@@ -526,16 +558,17 @@ export function WorkoutScreen() {
   };
 
   const renderExercise = (exercise: PlanExercise) => {
-    const { sets: normalizedSets, defaults } = normalizeSets(exercise);
+    const { sets: normalizedSets, defaults, templateExerciseId } = normalizeSets(exercise);
     const { repsDefault, weightDefault, timeDefault, restDefault } = defaults;
     const doneCount = normalizedSets.reduce((acc, set, idx) => {
-      const key = `${exercise.template_exercise}-${set.set_index ?? idx}`;
-      return acc + (logsBySet.has(key) ? 1 : 0);
+      const key = `${templateExerciseId}-${set.set_index ?? idx}`;
+      const altKey = `${templateExerciseId}-${(set.set_index ?? idx) + 1}`;
+      return acc + (logsBySet.has(key) || logsBySet.has(altKey) ? 1 : 0);
     }, 0);
     const exerciseComplete = normalizedSets.length > 0 && doneCount >= normalizedSets.length;
     const exerciseName = exercise.name || (exercise as any)?.source?.name || 'Упражнение';
 
-    const expanded = expandedExercises[exercise.template_exercise] ?? true;
+    const expanded = expandedExercises[templateExerciseId] ?? true;
     return (
       <View
         style={[
@@ -548,12 +581,12 @@ export function WorkoutScreen() {
           onPress={() =>
             setExpandedExercises(prev => ({
               ...prev,
-              [exercise.template_exercise]: !expanded,
+              [templateExerciseId]: !expanded,
             }))
           }>
           <View style={{ flex: 1, gap: 4 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              {doneCount === normalizedSets.length ? <CheckIcon /> : null}
+              {doneCount === normalizedSets.length ? <CheckIcon color={colors.success} /> : null}
               <Text style={styles.exerciseTitle}>{exerciseName}</Text>
               <Pressable
                 onPress={() => {
@@ -570,7 +603,7 @@ export function WorkoutScreen() {
                     images: source.images || [],
                   });
                 }}>
-                <InfoIcon />
+                <InfoIcon border={colors.border} stroke={colors.muted} />
               </Pressable>
               <EditIcon />
             </View>
@@ -589,18 +622,22 @@ export function WorkoutScreen() {
         {expanded ? (
           <View style={{ gap: 10 }}>
             {normalizedSets.map((set, idx) => {
-              const key = `${exercise.template_exercise}-${set.set_index ?? idx}`;
-              const isDone = logsBySet.has(key);
+              const key = `${templateExerciseId}-${set.set_index ?? idx}`;
+              const altKey = `${templateExerciseId}-${(set.set_index ?? idx) + 1}`;
+              const isDone = logsBySet.has(key) || logsBySet.has(altKey);
               const setIndex = set.set_index ?? idx;
               const plannedReps = set.default_reps ?? repsDefault;
               const plannedWeight = set.default_weight ?? weightDefault;
               const plannedTime = set.default_time ?? timeDefault;
               const plannedRest = set.rest ?? restDefault;
-              const log = logsBySet.get(key);
+              const log = logsBySet.get(key) || logsBySet.get(altKey);
               const factParts: string[] = [];
-              if (log?.reps != null) factParts.push(`Факт: ${log.reps} повт.`);
-              if (log?.weight != null) factParts.push(`${log.weight} кг`);
-              if (log?.time_seconds != null) factParts.push(`${log.time_seconds}s`);
+              const repVal = (log as any)?.actual_reps ?? log?.reps;
+              const weightVal = (log as any)?.actual_weight ?? log?.weight;
+              const timeVal = (log as any)?.actual_time ?? log?.time_seconds;
+              if (repVal != null) factParts.push(`Факт: ${repVal} повт.`);
+              if (weightVal != null) factParts.push(`${weightVal} кг`);
+              if (timeVal != null) factParts.push(`${timeVal}s`);
               return (
                 <View key={key} style={[styles.setCard, isDone && styles.setCardDone]}>
                   <View style={styles.setRow}>
@@ -684,9 +721,10 @@ export function WorkoutScreen() {
                       isDone ? styles.doneButtonCompleted : styles.doneButtonPending,
                     ]}
                     onPress={() => {
+                      const templateExerciseId = getTemplateExerciseId(exercise);
                       const basePayload = {
                         workout_day: data?.workout_day_id || 0,
-                        template_exercise: exercise.template_exercise,
+                        template_exercise: templateExerciseId,
                         set_index: setIndex,
                       };
                       if (exercise.has_time) {
@@ -729,8 +767,10 @@ export function WorkoutScreen() {
         const { sets } = normalizeSets(ex);
         acc.total += sets.length;
         acc.done += sets.reduce((done, set, idx) => {
-          const key = `${ex.template_exercise}-${set.set_index ?? idx}`;
-          return done + (logsBySet.has(key) ? 1 : 0);
+          const templateExerciseId = getTemplateExerciseId(ex);
+          const key = `${templateExerciseId}-${set.set_index ?? idx}`;
+          const altKey = `${templateExerciseId}-${(set.set_index ?? idx) + 1}`;
+          return done + (logsBySet.has(key) || logsBySet.has(altKey) ? 1 : 0);
         }, 0);
         return acc;
       },
@@ -756,7 +796,7 @@ export function WorkoutScreen() {
           }>
           <View style={{ gap: 4 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              {templateDone ? <CheckIcon /> : null}
+              {templateDone ? <CheckIcon color={colors.success} /> : null}
               <Text style={styles.templateTitle}>{template.name}</Text>
             </View>
             <Text style={styles.exerciseProgress}>Выполнено: {stats.done}/{stats.total}</Text>
@@ -768,7 +808,7 @@ export function WorkoutScreen() {
         {expanded ? (
           <View style={{ gap: 12 }}>
             {template.exercises.map((ex, index) => (
-              <View key={`${template.id}-${ex.template_exercise ?? ex.id ?? index}`}>{renderExercise(ex)}</View>
+              <View key={`${template.id}-${getTemplateExerciseId(ex) || index}`}>{renderExercise(ex)}</View>
             ))}
           </View>
         ) : null}
@@ -784,10 +824,12 @@ export function WorkoutScreen() {
       folder.templates.forEach(t => {
         t.exercises.forEach(ex => {
           const { sets } = normalizeSets(ex);
+          const templateExerciseId = getTemplateExerciseId(ex);
           total += sets.length;
           done += sets.reduce((acc, set, idx) => {
-            const key = `${ex.template_exercise}-${set.set_index ?? idx}`;
-            return acc + (logsBySet.has(key) ? 1 : 0);
+            const key = `${templateExerciseId}-${set.set_index ?? idx}`;
+            const altKey = `${templateExerciseId}-${(set.set_index ?? idx) + 1}`;
+            return acc + (logsBySet.has(key) || logsBySet.has(altKey) ? 1 : 0);
           }, 0);
         });
       });
@@ -814,15 +856,17 @@ export function WorkoutScreen() {
         let templateDoneCount = 0;
         template.exercises.forEach(ex => {
           const { sets } = normalizeSets(ex);
+          const templateExerciseId = getTemplateExerciseId(ex);
           const completedSets = sets.reduce((acc, set, idx) => {
-            const key = `${ex.template_exercise}-${set.set_index ?? idx}`;
-            return acc + (logsBySet.has(key) ? 1 : 0);
+            const key = `${templateExerciseId}-${set.set_index ?? idx}`;
+            const altKey = `${templateExerciseId}-${(set.set_index ?? idx) + 1}`;
+            return acc + (logsBySet.has(key) || logsBySet.has(altKey) ? 1 : 0);
           }, 0);
           templateTotal += sets.length;
           templateDoneCount += completedSets;
-          if (nextExercises[ex.template_exercise] === undefined) {
+          if (nextExercises[templateExerciseId] === undefined) {
             const isExerciseDone = sets.length > 0 && completedSets >= sets.length;
-            nextExercises[ex.template_exercise] = !isExerciseDone;
+            nextExercises[templateExerciseId] = !isExerciseDone;
             changed = true;
           }
         });
@@ -872,12 +916,13 @@ export function WorkoutScreen() {
               [item.id]: !expanded,
             }))
           }>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            {stats.total > 0 && stats.done >= stats.total ? <CheckIcon /> : null}
-            <Text style={styles.folderTitle}>{item.name}</Text>
-          </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              {stats.total > 0 && stats.done >= stats.total ? <CheckIcon color={colors.success} /> : null}
+              <Text style={styles.folderTitle}>{item.name}</Text>
+            </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <Text style={styles.progressPill}>{stats.done}/{stats.total}</Text>
+            {/* Не показываем негативный статус для активной программы в чеклисте */}
             {!item.is_active ? <Text style={styles.badge}>Не активна</Text> : null}
             <Text style={styles.chevron}>{expanded ? '▾' : '▸'}</Text>
           </View>
@@ -919,7 +964,7 @@ export function WorkoutScreen() {
                       <View key={rec.id} style={styles.recCard}>
                         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                           <Text style={styles.exerciseTitle}>{rec.exercise_name || 'Упражнение'}</Text>
-                          <InfoIcon />
+                          <InfoIcon border={colors.border} stroke={colors.muted} />
                         </View>
                         {rec.note ? <Text style={styles.muted}>{rec.note}</Text> : null}
                         <View style={styles.planRow}>
@@ -971,19 +1016,10 @@ export function WorkoutScreen() {
   return (
     <Screen>
       <ScrollView>
-      <View style={styles.topbar}>
-        <BrandMark size="sm" />
-      </View>
-
-        <View style={styles.headerRow}>
+        <TouchableOpacity activeOpacity={0.8} style={styles.headerRow} onPress={() => setCalendarOpen(true)}>
           <View style={styles.header}>
             <Text style={styles.label}>Дневной чеклист</Text>
             <Text style={styles.title}>{dateText || 'Сегодня'}</Text>
-            <View style={styles.actionsRow}>
-              <Pressable style={styles.iconButton} onPress={() => setCalendarOpen(true)}>
-                <Text style={styles.iconButtonText}>📅</Text>
-              </Pressable>
-            </View>
             {!online ? (
               <Text style={styles.offlineNote}>
                 Офлайн: отметки сохранятся в очереди и отправятся позже.
@@ -1001,18 +1037,21 @@ export function WorkoutScreen() {
               </View>
             ) : null}
           </View>
-          <Pressable style={styles.summaryCard} onPress={() => setCalendarOpen(true)}>
-            <Text style={styles.summaryDate}>{resolvedDate || '—'}</Text>
+          <View style={styles.summaryCard}>
             <Text style={styles.summaryValue}>{Math.round(dailyLoad)}</Text>
             <Text style={styles.summaryLabel}>нагрузка за день</Text>
-          </Pressable>
-        </View>
+          </View>
+        </TouchableOpacity>
 
         {collectMuscles.length > 0 ? (
-          <View style={styles.tagCard}>
-            <Text style={styles.tagLabel}>День ({resolvedDate})</Text>
+          <TouchableOpacity
+            activeOpacity={0.8}
+            style={styles.tagCard}
+            onPress={() => setCalendarOpen(true)}
+          >
+            <Text style={styles.tagLabel}>Работаем над</Text>
             <View style={styles.tagsRow}>
-              {collectMuscles.slice(0, 8).map(([muscle, count]) => (
+              {collectMuscles.slice(0, 6).map(([muscle, count]) => (
                 <View key={muscle} style={styles.tagPill}>
                   <Text style={styles.tagText}>
                     {muscle}
@@ -1021,7 +1060,7 @@ export function WorkoutScreen() {
                 </View>
               ))}
             </View>
-          </View>
+          </TouchableOpacity>
         ) : null}
 
         {isLoading ? (
@@ -1166,9 +1205,7 @@ export function WorkoutScreen() {
                   onPress={() => {
                     const base = cursorDate || resolvedDate || todayIso;
                     const current = new Date(base);
-                    const prev = new Date(current.getFullYear(), current.getMonth() - 1, 1)
-                      .toISOString()
-                      .slice(0, 10);
+                    const prev = formatISODate(new Date(current.getFullYear(), current.getMonth() - 1, 1));
                     setCursorDate(prev);
                   }}>
                   <Text style={styles.navText}>←</Text>
@@ -1184,9 +1221,7 @@ export function WorkoutScreen() {
                   onPress={() => {
                     const base = cursorDate || resolvedDate || todayIso;
                     const current = new Date(base);
-                    const next = new Date(current.getFullYear(), current.getMonth() + 1, 1)
-                      .toISOString()
-                      .slice(0, 10);
+                    const next = formatISODate(new Date(current.getFullYear(), current.getMonth() + 1, 1));
                     setCursorDate(next);
                   }}>
                   <Text style={styles.navText}>→</Text>
@@ -1245,7 +1280,8 @@ export function WorkoutScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ReturnType<typeof useThemedColors>) =>
+  StyleSheet.create({
   topbar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1276,41 +1312,6 @@ const styles = StyleSheet.create({
     gap: 12,
     marginBottom: 14,
     flexWrap: 'wrap',
-  },
-  actionsRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 8,
-  },
-  actionsButton: {
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    backgroundColor: colors.surface,
-  },
-  actionsButtonText: {
-    color: colors.muted,
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  iconButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.surface,
-    shadowColor: '#000',
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
-  },
-  iconButtonText: {
-    color: colors.muted,
-    fontSize: 18,
   },
   progressPill: {
     color: colors.text,
@@ -1458,28 +1459,28 @@ const styles = StyleSheet.create({
   },
   summaryCard: {
     backgroundColor: colors.card,
-    borderRadius: 18,
-    paddingVertical: 16,
-    paddingHorizontal: 18,
+    borderRadius: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
     borderWidth: 1,
     borderColor: colors.border,
-    minWidth: 160,
-    gap: 6,
+    minWidth: 120,
+    gap: 4,
     shadowColor: '#000',
-    shadowOpacity: 0.12,
-    shadowRadius: 10,
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
     flexShrink: 0,
     alignSelf: 'flex-start',
   },
   summaryDate: {
     color: colors.muted,
-    fontSize: 11,
-    letterSpacing: 1,
+    fontSize: 10,
+    letterSpacing: 0.8,
     textTransform: 'uppercase',
   },
   summaryValue: {
     color: colors.text,
-    fontSize: 32,
+    fontSize: 24,
     fontWeight: '800',
   },
   summaryLabel: {
@@ -1487,40 +1488,41 @@ const styles = StyleSheet.create({
     fontSize: 10,
   },
   tagCard: {
-    borderRadius: 18,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.card,
-    padding: 14,
-    marginBottom: 12,
-    gap: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    marginBottom: 10,
+    gap: 6,
     shadowColor: '#000',
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
   },
   tagLabel: {
     color: colors.muted,
-    fontSize: 11,
-    letterSpacing: 1,
+    fontSize: 10,
+    letterSpacing: 0.8,
     textTransform: 'uppercase',
     paddingHorizontal: 2,
   },
   tagsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: 6,
   },
   tagPill: {
     borderRadius: 999,
     borderWidth: 1,
     borderColor: colors.primary + '55',
-    backgroundColor: colors.primary + '12',
-    paddingVertical: 7,
-    paddingHorizontal: 12,
+    backgroundColor: colors.primary + '10',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
   },
   tagText: {
     color: colors.primary,
-    fontSize: 13,
+    fontSize: 11,
     fontWeight: '700',
   },
   emptyCard: {
@@ -1729,17 +1731,18 @@ const styles = StyleSheet.create({
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 6,
+    justifyContent: 'space-between',
+    rowGap: 8,
   },
   dayCell: {
-    width: '14.2%',
-    aspectRatio: 1,
+    width: `${100 / 7}%`,
+    aspectRatio: 0.75,
     borderRadius: 10,
     borderWidth: 1,
     borderColor: colors.border,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 4,
+    paddingVertical: 6,
     backgroundColor: colors.surface,
   },
   dayMuted: {
@@ -1764,7 +1767,8 @@ const styles = StyleSheet.create({
   },
   dayLoad: {
     color: colors.muted,
-    fontSize: 12,
+    fontSize: 11,
+    lineHeight: 14,
   },
   dayLoadSelected: {
     color: colors.primary,

@@ -20,7 +20,7 @@ import {
   createProgramsWithAssistant,
 } from '../api/assistant';
 import { notifyError } from '../utils/notify';
-import { colors } from '../theme/colors';
+import { useThemedColors } from '../theme/colors';
 import { fetchPreferences, savePreferences } from '../api/profile';
 import { MainTabParamList } from '../navigation/types';
 
@@ -59,6 +59,8 @@ const normalizeNumber = (value: string) => {
 };
 
 export function AssistantScreen() {
+  const colors = useThemedColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const token = useToken();
   const navigation = useNavigation<any>();
   const [step, setStep] = useState(0);
@@ -453,7 +455,7 @@ export function AssistantScreen() {
         <View style={styles.resultSection}>
           <Text style={styles.resultTitle}>Сгенерированные программы</Text>
           {assistantMutation.isLoading ? (
-            <ActivityIndicator color="#f2b200" />
+            <ActivityIndicator color={colors.primary} />
           ) : programs.length === 0 ? (
             <Text style={styles.muted}>Программы появятся после генерации.</Text>
           ) : (
@@ -512,101 +514,102 @@ function ProgramCard({ program }: { program: AssistantProgram }) {
   );
 }
 
-const styles = StyleSheet.create({
-  header: {
-    gap: 6,
-    marginBottom: 12,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: colors.text,
-  },
-  subtitle: {
-    color: colors.muted,
-  },
-  form: {
-    gap: 10,
-    marginBottom: 16,
-  },
-  helper: {
-    color: colors.muted,
-    fontSize: 13,
-  },
-  errorText: {
-    color: colors.danger,
-    fontSize: 14,
-  },
-  fallbackBox: {
-    gap: 6,
-    padding: 10,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-  },
-  debugText: {
-    color: colors.muted,
-    fontSize: 12,
-  },
-  actionsRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 8,
-  },
-  resultSection: {
-    gap: 8,
-  },
-  resultTitle: {
-    color: colors.text,
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  muted: {
-    color: colors.muted,
-  },
-  card: {
-    backgroundColor: colors.card,
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    gap: 8,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  cardTitle: {
-    color: colors.text,
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  cardSubtitle: {
-    color: colors.muted,
-    fontSize: 14,
-  },
-  badge: {
-    color: colors.primary,
-    fontSize: 12,
-  },
-  badgeActive: {
-    color: colors.success,
-    fontSize: 12,
-  },
-  daysList: {
-    gap: 6,
-  },
-  dayItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  dayTitle: {
-    color: colors.text,
-  },
-  dayMeta: {
-    color: colors.muted,
-    fontSize: 12,
-  },
-});
+const createStyles = (colors: ReturnType<typeof useThemedColors>) =>
+  StyleSheet.create({
+    header: {
+      gap: 6,
+      marginBottom: 12,
+    },
+    title: {
+      fontSize: 24,
+      fontWeight: '800',
+      color: colors.text,
+    },
+    subtitle: {
+      color: colors.muted,
+    },
+    form: {
+      gap: 10,
+      marginBottom: 16,
+    },
+    helper: {
+      color: colors.muted,
+      fontSize: 13,
+    },
+    errorText: {
+      color: colors.danger,
+      fontSize: 14,
+    },
+    fallbackBox: {
+      gap: 6,
+      padding: 10,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+    },
+    debugText: {
+      color: colors.muted,
+      fontSize: 12,
+    },
+    actionsRow: {
+      flexDirection: 'row',
+      gap: 8,
+      marginTop: 8,
+    },
+    resultSection: {
+      gap: 8,
+    },
+    resultTitle: {
+      color: colors.text,
+      fontSize: 18,
+      fontWeight: '700',
+    },
+    muted: {
+      color: colors.muted,
+    },
+    card: {
+      backgroundColor: colors.card,
+      borderRadius: 12,
+      padding: 12,
+      borderWidth: 1,
+      borderColor: colors.border,
+      gap: 8,
+    },
+    cardHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    cardTitle: {
+      color: colors.text,
+      fontSize: 16,
+      fontWeight: '700',
+    },
+    cardSubtitle: {
+      color: colors.muted,
+      fontSize: 14,
+    },
+    badge: {
+      color: colors.primary,
+      fontSize: 12,
+    },
+    badgeActive: {
+      color: colors.success,
+      fontSize: 12,
+    },
+    daysList: {
+      gap: 6,
+    },
+    dayItem: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+    },
+    dayTitle: {
+      color: colors.text,
+    },
+    dayMeta: {
+      color: colors.muted,
+      fontSize: 12,
+    },
+  });

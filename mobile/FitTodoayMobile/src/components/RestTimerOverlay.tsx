@@ -1,6 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
-import { colors } from '../theme/colors';
+import { useThemedColors } from '../theme/colors';
 import { AdjustNumber } from './AdjustNumber';
 
 type RestTimerOverlayProps = {
@@ -24,6 +24,8 @@ export function RestTimerOverlay({
   onSkip,
   onFinish,
 }: RestTimerOverlayProps) {
+  const colors = useThemedColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [remaining, setRemaining] = useState(duration);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -99,76 +101,77 @@ export function RestTimerOverlay({
   );
 }
 
-const styles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: '#000000aa',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 16,
-  },
-  card: {
-    width: '100%',
-    maxWidth: 320,
-    backgroundColor: colors.surface,
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: 'center',
-    gap: 12,
-  },
-  title: {
-    color: colors.text,
-    fontSize: 18,
-    fontWeight: '800',
-    fontFamily: 'Inter-Bold',
-  },
-  timer: {
-    color: colors.primary,
-    fontSize: 42,
-    fontWeight: '800',
-    fontFamily: 'Inter-Bold',
-  },
-  progressTrack: {
-    width: '100%',
-    height: 8,
-    borderRadius: 6,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    overflow: 'hidden',
-  },
-  progressFill: {
-    height: '100%',
-    backgroundColor: colors.primary,
-  },
-  row: {
-    flexDirection: 'row',
-    gap: 10,
-    width: '100%',
-  },
-  secondary: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: 'center',
-  },
-  secondaryText: {
-    color: colors.muted,
-    fontFamily: 'Inter-SemiBold',
-  },
-  primary: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 12,
-    backgroundColor: colors.primary,
-    alignItems: 'center',
-  },
-  primaryText: {
-    color: colors.primaryText,
-    fontFamily: 'Inter-Bold',
-  },
-});
+const createStyles = (colors: ReturnType<typeof useThemedColors>) =>
+  StyleSheet.create({
+    backdrop: {
+      flex: 1,
+      backgroundColor: '#000000aa',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: 16,
+    },
+    card: {
+      width: '100%',
+      maxWidth: 320,
+      backgroundColor: colors.surface,
+      borderRadius: 16,
+      padding: 16,
+      borderWidth: 1,
+      borderColor: colors.border,
+      alignItems: 'center',
+      gap: 12,
+    },
+    title: {
+      color: colors.text,
+      fontSize: 18,
+      fontWeight: '800',
+      fontFamily: 'Inter-Bold',
+    },
+    timer: {
+      color: colors.primary,
+      fontSize: 42,
+      fontWeight: '800',
+      fontFamily: 'Inter-Bold',
+    },
+    progressTrack: {
+      width: '100%',
+      height: 8,
+      borderRadius: 6,
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.border,
+      overflow: 'hidden',
+    },
+    progressFill: {
+      height: '100%',
+      backgroundColor: colors.primary,
+    },
+    row: {
+      flexDirection: 'row',
+      gap: 10,
+      width: '100%',
+    },
+    secondary: {
+      flex: 1,
+      paddingVertical: 12,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: colors.border,
+      alignItems: 'center',
+    },
+    secondaryText: {
+      color: colors.muted,
+      fontFamily: 'Inter-SemiBold',
+    },
+    primary: {
+      flex: 1,
+      paddingVertical: 12,
+      borderRadius: 12,
+      backgroundColor: colors.primary,
+      alignItems: 'center',
+    },
+    primaryText: {
+      color: colors.primaryText,
+      fontFamily: 'Inter-Bold',
+    },
+  });

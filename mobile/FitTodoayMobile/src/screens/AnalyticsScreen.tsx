@@ -13,7 +13,7 @@ import { useNavigation } from '@react-navigation/native';
 import { useQuery } from '@tanstack/react-query';
 import { Screen } from '../components/Screen';
 import { useToken } from '../hooks/useToken';
-import { colors } from '../theme/colors';
+import { useThemedColors } from '../theme/colors';
 import {
   fetchDailyLoad,
   fetchProgramTrends,
@@ -32,6 +32,8 @@ const ranges = [
 ];
 
 export function AnalyticsScreen() {
+  const colors = useThemedColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const token = useToken();
   const navigation = useNavigation<any>();
   const [range, setRange] = useState(ranges[0].value);
@@ -594,7 +596,8 @@ function TrendCharts({ data, chartType, activeSeries, onSelectSeries, view, acti
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ReturnType<typeof useThemedColors>) =>
+  StyleSheet.create({
   header: {
     gap: 6,
     marginBottom: 12,
@@ -756,4 +759,4 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 13,
   },
-});
+  });

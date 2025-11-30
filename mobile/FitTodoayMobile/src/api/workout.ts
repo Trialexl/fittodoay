@@ -42,6 +42,9 @@ export interface WorkoutLog {
   weight?: number | null;
   time_seconds?: number | null;
   offlineId?: string;
+  actual_reps?: number | null;
+  actual_weight?: number | null;
+  actual_time?: number | null;
 }
 
 export interface WorkoutPlanResponse {
@@ -51,14 +54,14 @@ export interface WorkoutPlanResponse {
   logs?: WorkoutLog[];
 }
 
-export interface LogSetPayload {
+export type LogSetPayload = {
   workout_day: number;
   template_exercise: number;
   set_index: number;
-  reps?: number;
-  weight?: number;
-  time_seconds?: number;
-}
+  actual_reps?: number | null;
+  actual_weight?: number | null;
+  actual_time?: number | null;
+};
 
 type RawPlanResponse = {
   id?: number;
@@ -82,7 +85,18 @@ export async function fetchWorkoutPlan(token: string, date?: string) {
   const resolvedDate = raw.date || raw.plan_snapshot?.date || date || '';
   const folders = raw.plan_snapshot?.folders || raw.folders || [];
   const workout_day_id = raw.workout_day_id || raw.id || raw.plan_snapshot?.id;
-  const logs = raw.set_logs || [];
+  const logs =
+    (raw.set_logs || []).map((log, index) => {
+      const numericIndex = Number((log as any).set_index);
+      const normalizedIndex = Number.isFinite(numericIndex) ? numericIndex : index;
+      return {
+        ...log,
+        set_index: normalizedIndex,
+        reps: (log as any).actual_reps ?? (log as any).reps ?? null,
+        weight: (log as any).actual_weight ?? (log as any).weight ?? null,
+        time_seconds: (log as any).actual_time ?? (log as any).time_seconds ?? null,
+      };
+    }) || [];
   return { date: resolvedDate, folders, workout_day_id, logs };
 }
 
@@ -99,9 +113,9 @@ export async function updateWorkoutLog(
   token: string,
   id: number,
   payload: Partial<{
-    reps: number | null;
-    weight: number | null;
-    time_seconds: number | null;
+    actual_reps: number | null;
+    actual_weight: number | null;
+    actual_time: number | null;
   }>,
 ) {
   return apiFetch<unknown>({

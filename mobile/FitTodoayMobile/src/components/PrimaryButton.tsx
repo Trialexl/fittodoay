@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   ActivityIndicator,
   GestureResponderEvent,
@@ -6,7 +6,7 @@ import {
   StyleSheet,
   Text,
 } from 'react-native';
-import { colors } from '../theme/colors';
+import { useThemedColors } from '../theme/colors';
 
 interface PrimaryButtonProps {
   title: string;
@@ -25,6 +25,8 @@ export function PrimaryButton({
   variant = 'primary',
   accessibilityLabel,
 }: PrimaryButtonProps) {
+  const colors = useThemedColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const isDisabled = disabled || loading;
 
   return (
@@ -49,34 +51,35 @@ export function PrimaryButton({
   );
 }
 
-const styles = StyleSheet.create({
-  button: {
-    height: 50,
-    borderRadius: 12,
-    backgroundColor: colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  buttonGhost: {
-    backgroundColor: 'transparent',
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  buttonPressed: {
-    opacity: 0.9,
-  },
-  buttonDisabled: {
-    backgroundColor: colors.border,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  title: {
-    color: colors.primaryText,
-    fontWeight: '700',
-    fontSize: 16,
-    fontFamily: 'Inter-Bold',
-  },
-  titleGhost: {
-    color: colors.text,
-  },
-});
+const createStyles = (colors: ReturnType<typeof useThemedColors>) =>
+  StyleSheet.create({
+    button: {
+      height: 50,
+      borderRadius: 12,
+      backgroundColor: colors.primary,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    buttonGhost: {
+      backgroundColor: 'transparent',
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    buttonPressed: {
+      opacity: 0.9,
+    },
+    buttonDisabled: {
+      backgroundColor: colors.border,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    title: {
+      color: colors.primaryText,
+      fontWeight: '700',
+      fontSize: 16,
+      fontFamily: 'Inter-Bold',
+    },
+    titleGhost: {
+      color: colors.text,
+    },
+  });

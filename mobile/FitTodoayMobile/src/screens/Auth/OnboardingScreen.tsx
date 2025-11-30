@@ -11,6 +11,7 @@ import { register } from '../../api/auth';
 import { useAuthStore } from '../../state/auth';
 import { notifyError } from '../../utils/notify';
 import { buildDefaultProfile } from '../../utils/profileDefaults';
+import { useThemedColors } from '../../theme/colors';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Onboarding'>;
 
@@ -47,6 +48,8 @@ const steps = [
 ];
 
 export function OnboardingScreen({ route }: Props) {
+  const themeColors = useThemedColors();
+  const styles = useMemo(() => createStyles(themeColors), [themeColors]);
   const { email = '', password = '', name = '' } = route.params || {};
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -237,45 +240,46 @@ export function OnboardingScreen({ route }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    padding: 16,
-    gap: 16,
-  },
-  header: {
-    gap: 8,
-  },
-  badge: {
-    color: colors.muted,
-    fontSize: 12,
-    letterSpacing: 1,
-    textTransform: 'uppercase',
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: colors.text,
-    fontFamily: 'Inter-Bold',
-  },
-  subtitle: {
-    color: colors.muted,
-    fontSize: 14,
-  },
-  card: {
-    backgroundColor: colors.card,
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: colors.border,
-    gap: 12,
-  },
-  footer: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  error: {
-    color: colors.danger,
-    fontSize: 14,
-    marginTop: 4,
-  },
-});
+const createStyles = (colors: ReturnType<typeof useThemedColors>) =>
+  StyleSheet.create({
+    container: {
+      padding: 16,
+      gap: 16,
+    },
+    header: {
+      gap: 8,
+    },
+    badge: {
+      color: colors.muted,
+      fontSize: 12,
+      letterSpacing: 1,
+      textTransform: 'uppercase',
+    },
+    title: {
+      fontSize: 22,
+      fontWeight: '800',
+      color: colors.text,
+      fontFamily: 'Inter-Bold',
+    },
+    subtitle: {
+      color: colors.muted,
+      fontSize: 14,
+    },
+    card: {
+      backgroundColor: colors.card,
+      borderRadius: 16,
+      padding: 16,
+      borderWidth: 1,
+      borderColor: colors.border,
+      gap: 12,
+    },
+    footer: {
+      flexDirection: 'row',
+      gap: 12,
+    },
+    error: {
+      color: colors.danger,
+      fontSize: 14,
+      marginTop: 4,
+    },
+  });

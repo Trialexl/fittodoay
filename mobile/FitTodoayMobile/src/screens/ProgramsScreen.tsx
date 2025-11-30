@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -43,7 +43,7 @@ import {
 } from '../api/assistant';
 import { useToken } from '../hooks/useToken';
 import { notifyError, notifySuccess } from '../utils/notify';
-import { colors } from '../theme/colors';
+import { useThemedColors } from '../theme/colors';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { config } from '../config/env';
 
@@ -76,6 +76,8 @@ try {
 }
 
 export function ProgramsScreen() {
+  const colors = useThemedColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const token = useToken();
   const queryClient = useQueryClient();
   const [expanded, setExpanded] = useState<Record<number, boolean>>({});
@@ -1034,7 +1036,8 @@ export function ProgramsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ReturnType<typeof useThemedColors>) =>
+  StyleSheet.create({
   header: {
     gap: 8,
     marginBottom: 12,
@@ -1232,4 +1235,4 @@ const styles = StyleSheet.create({
   chipTextActive: {
     color: colors.primary,
   },
-});
+  });

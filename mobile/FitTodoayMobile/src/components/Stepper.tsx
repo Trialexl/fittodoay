@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { colors } from '../theme/colors';
+import { useThemedColors } from '../theme/colors';
 
 interface StepperProps {
   label: string;
@@ -11,6 +11,8 @@ interface StepperProps {
 }
 
 export function Stepper({ label, value, onChange, step = 1, min = 0 }: StepperProps) {
+  const colors = useThemedColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const dec = () => onChange(Math.max(min, value - step));
   const inc = () => onChange(value + step);
 
@@ -30,42 +32,43 @@ export function Stepper({ label, value, onChange, step = 1, min = 0 }: StepperPr
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  label: {
-    color: colors.muted,
-    fontSize: 14,
-  },
-  controls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  button: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  buttonText: {
-    color: colors.text,
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  value: {
-    minWidth: 40,
-    textAlign: 'center',
-    color: colors.text,
-    fontSize: 16,
-    fontWeight: '700',
-  },
-});
+const createStyles = (colors: ReturnType<typeof useThemedColors>) =>
+  StyleSheet.create({
+    container: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 12,
+    },
+    label: {
+      color: colors.muted,
+      fontSize: 14,
+    },
+    controls: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+    },
+    button: {
+      width: 36,
+      height: 36,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    buttonText: {
+      color: colors.text,
+      fontSize: 18,
+      fontWeight: '700',
+    },
+    value: {
+      minWidth: 40,
+      textAlign: 'center',
+      color: colors.text,
+      fontSize: 16,
+      fontWeight: '700',
+    },
+  });

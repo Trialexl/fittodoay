@@ -1,8 +1,8 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { Button, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Screen } from '../components/Screen';
 import { ThemeSelector } from '../components/ThemeSelector';
-import { colors } from '../theme/colors';
+import { useThemedColors } from '../theme/colors';
 import { useAuthStore } from '../state/auth';
 import { useToken } from '../hooks/useToken';
 import { fetchPreferences, savePreferences } from '../api/profile';
@@ -11,6 +11,8 @@ import { TextField } from '../components/TextField';
 import { useForm, Controller } from 'react-hook-form';
 
 export function ProfileScreen() {
+  const colors = useThemedColors();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const token = useToken();
   const clearSession = useAuthStore(state => state.clearSession);
   const {
@@ -204,19 +206,20 @@ export function ProfileScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  card: {
-    marginTop: 16,
-    padding: 16,
-    borderRadius: 16,
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-    gap: 12,
-  },
-  title: {
-    color: colors.text,
-    fontSize: 16,
-    fontWeight: '800',
-  },
-});
+const createStyles = (colors: ReturnType<typeof useThemedColors>) =>
+  StyleSheet.create({
+    card: {
+      marginTop: 16,
+      padding: 16,
+      borderRadius: 16,
+      backgroundColor: colors.card,
+      borderWidth: 1,
+      borderColor: colors.border,
+      gap: 12,
+    },
+    title: {
+      color: colors.text,
+      fontSize: 16,
+      fontWeight: '800',
+    },
+  });
