@@ -65,7 +65,7 @@ export function OnboardingScreen({ route }: Props) {
     setState(prev => ({ ...prev, [field]: value }));
   };
 
-  const updateProfileField = (field: keyof ProfileFields, value: string | number) => {
+  const updateProfileField = (field: keyof ProfileFields, value: string | number) =>
     setState(prev => ({
       ...prev,
       profile: {
@@ -73,7 +73,6 @@ export function OnboardingScreen({ route }: Props) {
         [field]: value,
       },
     }));
-  };
 
   const validateStep = () => {
     if (currentStep.fields.includes('email' as any) || currentStep.fields.includes('password' as any)) {

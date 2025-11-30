@@ -19,7 +19,6 @@ import {
   fetchProgramTrends,
   fetchTopExercises,
   DailyLoadItem,
-  TopExerciseItem,
   ProgramTrendsResponse,
 } from '../api/analytics';
 import { notifyError } from '../utils/notify';
@@ -39,8 +38,9 @@ export function AnalyticsScreen() {
   const [trendView, setTrendView] = useState<'programs' | 'exercises'>('programs');
   const [granularity, setGranularity] = useState<'day' | 'week'>('day');
   const [topSort, setTopSort] = useState<'volume' | 'sets'>('volume');
-  const [chartType, setChartType] = useState<'line' | 'area' | 'stacked' | 'columns' | 'pie' | 'radar' | 'scatter'>('line');
+  const [chartType, setChartType] = useState<'line' | 'area' | 'stacked' | 'columns' | 'heatmap' | 'pie' | 'radar' | 'scatter'>('line');
   const [activeSeries, setActiveSeries] = useState<string | number | null>(null);
+  const [activeFolderId, setActiveFolderId] = useState<number | null>(null);
 
   const dailyQuery = useQuery({
     queryKey: ['dailyLoad'],
@@ -73,6 +73,18 @@ export function AnalyticsScreen() {
   });
 
   const refreshing = dailyQuery.isFetching || topQuery.isFetching || trendQuery.isFetching;
+
+  const folders = (trendQuery.data?.folders || []) as ProgramTrendsResponse['folders'];
+
+  React.useEffect(() => {
+    if (!folders.length) {
+      setActiveFolderId(null);
+      return;
+    }
+    if (activeFolderId === null || !folders.some(f => f.id === activeFolderId)) {
+      setActiveFolderId(folders[0].id);
+    }
+  }, [folders, activeFolderId]);
 
   return (
     <Screen>
@@ -143,19 +155,19 @@ export function AnalyticsScreen() {
             </View>
           ) : (
             <View style={{ gap: 8 }}>
-              {(topQuery.data || [])
+              {((topQuery.data as any)?.items || topQuery.data || [])
                 .slice()
-                .sort((a, b) => (topSort === 'volume' ? b.volume - a.volume : b.sets - a.sets))
-                .map(ex => (
-                  <View key={ex.exercise} style={styles.card}>
-                    <Text style={styles.cardTitle}>{ex.exercise}</Text>
+                .sort((a: any, b: any) => (topSort === 'volume' ? b.volume - a.volume : b.sets - a.sets))
+                .map((ex: any) => (
+                  <View key={ex.exercise || ex.id} style={styles.card}>
+                    <Text style={styles.cardTitle}>{ex.exercise || ex.name}</Text>
                     <Text style={styles.muted}>Объем: {ex.volume} • Сеты: {ex.sets}</Text>
                     <Pressable style={styles.link} onPress={() => navigation.navigate('Programs' as keyof MainTabParamList)}>
                       <Text style={styles.linkText}>Открыть в ProgramBoard</Text>
                     </Pressable>
                   </View>
                 ))}
-              {!topQuery.data?.length ? <Text style={styles.muted}>Нет данных</Text> : null}
+              {!((topQuery.data as any)?.items || topQuery.data || []).length ? <Text style={styles.muted}>Нет данных</Text> : null}
             </View>
           )}
         </View>
@@ -206,29 +218,7 @@ export function AnalyticsScreen() {
             ))}
           </View>
           <View style={styles.rangeSwitch}>
-            {['programs', 'exercises'].map(v => (
-              <Pressable
-                key={v}
-                style={[styles.rangeButton, trendView === v && styles.rangeButtonActive]}
-                onPress={() => setTrendView(v as 'programs' | 'exercises')}>
-                <Text style={[styles.rangeText, trendView === v && styles.rangeTextActive]}>
-                  {v === 'programs' ? 'Программы' : 'Упражнения'}
-                </Text>
-              </Pressable>
-            ))}
-            {['day', 'week'].map(v => (
-              <Pressable
-                key={v}
-                style={[styles.rangeButton, granularity === v && styles.rangeButtonActive]}
-                onPress={() => setGranularity(v as 'day' | 'week')}>
-                <Text style={[styles.rangeText, granularity === v && styles.rangeTextActive]}>
-                  {v === 'day' ? 'Дни' : 'Недели'}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-          <View style={styles.rangeSwitch}>
-            {['line', 'area', 'stacked', 'columns', 'pie', 'radar', 'scatter'].map(type => (
+            {['line', 'area', 'stacked', 'columns', 'heatmap', 'pie', 'radar', 'scatter'].map(type => (
               <Pressable
                 key={type}
                 style={[styles.rangeButton, chartType === type && styles.rangeButtonActive]}
@@ -237,6 +227,20 @@ export function AnalyticsScreen() {
               </Pressable>
             ))}
           </View>
+          {trendView === 'exercises' && folders.length > 0 ? (
+            <View style={styles.rangeSwitch}>
+              {folders.map(folder => (
+                <Pressable
+                  key={folder.id}
+                  style={[styles.rangeButton, activeFolderId === folder.id && styles.rangeButtonActive]}
+                  onPress={() => setActiveFolderId(folder.id)}>
+                  <Text style={[styles.rangeText, activeFolderId === folder.id && styles.rangeTextActive]}>
+                    {folder.name}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
           {trendQuery.isLoading ? (
             <ActivityIndicator color={colors.primary} />
           ) : trendQuery.data ? (
@@ -245,6 +249,9 @@ export function AnalyticsScreen() {
               chartType={chartType}
               activeSeries={activeSeries}
               onSelectSeries={setActiveSeries}
+              view={trendView}
+              activeFolderId={activeFolderId}
+              granularity={granularity}
             />
           ) : (
             <Text style={styles.muted}>Нет данных</Text>
@@ -281,110 +288,309 @@ function SkeletonBox({ width = 160 }: { width?: number }) {
 
 type TrendChartsProps = {
   data: ProgramTrendsResponse;
-  chartType: 'line' | 'area' | 'stacked' | 'columns' | 'pie' | 'radar' | 'scatter';
+  chartType: 'line' | 'area' | 'stacked' | 'columns' | 'heatmap' | 'pie' | 'radar' | 'scatter';
   activeSeries: string | number | null;
   onSelectSeries: (key: string | number | null) => void;
+  view: 'programs' | 'exercises';
+  activeFolderId: number | null;
+  granularity: 'day' | 'week';
 };
 
-function TrendCharts({ data, chartType, activeSeries, onSelectSeries }: TrendChartsProps) {
-  const series = useMemo(() => {
-    if (!data?.points?.length) return [];
-    // mobile backend: points already aggregated; use label/volume as simple series
-    return [
-      {
-        key: 'volume',
-        label: 'Объем',
-        color: colors.primary,
-        points: data.points.map(p => ({ x: p.label, y: p.volume })),
-      },
-    ];
-  }, [data]);
+type ChartSeries = {
+  key: string | number;
+  label: string;
+  color: string;
+  points: { iso: string; value: number | null }[];
+};
 
-  if (!series.length) {
+const chartColors = ['#7c3aed', '#f97316', '#0ea5e9', '#22c55e', '#f973ab', '#94a3b8', '#facc15', '#14b8a6'];
+
+const parseISODate = (iso: string) => {
+  const [year, month, day] = iso.split('-').map(Number);
+  return new Date(year, (month || 1) - 1, day || 1);
+};
+
+const formatLabelDate = (iso: string, granularity: 'day' | 'week') => {
+  const base = parseISODate(iso);
+  if (granularity === 'week') {
+    const end = new Date(base);
+    end.setDate(end.getDate() + 6);
+    return `${String(base.getDate()).padStart(2, '0')}.${String(base.getMonth() + 1).padStart(2, '0')}–${String(end.getDate()).padStart(2, '0')}.${String(end.getMonth() + 1).padStart(2, '0')}`;
+  }
+  return `${String(base.getDate()).padStart(2, '0')}.${String(base.getMonth() + 1).padStart(2, '0')}`;
+};
+
+const interpolateValues = (values: Array<number | null>) => {
+  if (!values.length) return [];
+  const result = [...values];
+  let firstIdx = result.findIndex(v => v !== null && v !== undefined);
+  if (firstIdx === -1) return result.map(() => 0);
+  const firstVal = result[firstIdx] as number;
+  for (let i = 0; i < firstIdx; i += 1) result[i] = firstVal;
+  let lastKnownIdx = firstIdx;
+  for (let i = firstIdx + 1; i < result.length; i += 1) {
+    if (result[i] === null || result[i] === undefined) {
+      let nextIdx = i + 1;
+      while (nextIdx < result.length && (result[nextIdx] === null || result[nextIdx] === undefined)) nextIdx += 1;
+      if (nextIdx < result.length) {
+        const prevVal = result[lastKnownIdx] as number;
+        const nextVal = result[nextIdx] as number;
+        const gap = nextIdx - lastKnownIdx;
+        const step = (nextVal - prevVal) / gap;
+        for (let fill = 1; fill < gap; fill += 1) {
+          result[lastKnownIdx + fill] = prevVal + step * fill;
+        }
+        i = nextIdx - 1;
+        lastKnownIdx = nextIdx;
+      } else {
+        const prevVal = result[lastKnownIdx] as number;
+        for (let fill = lastKnownIdx + 1; fill < result.length; fill += 1) result[fill] = prevVal;
+        break;
+      }
+    } else {
+      lastKnownIdx = i;
+    }
+  }
+  return result as number[];
+};
+
+function TrendCharts({ data, chartType, activeSeries, onSelectSeries, view, activeFolderId, granularity }: TrendChartsProps) {
+  const [tooltip, setTooltip] = useState<{ series: string; label: string; value: number } | null>(null);
+  const series: ChartSeries[] = useMemo(() => {
+    const folders = data?.folders || [];
+    if (!folders.length) return [];
+    if (view === 'programs') {
+      return folders.map((folder, index) => ({
+        key: folder.id,
+        label: folder.name,
+        color: chartColors[index % chartColors.length],
+        points: (folder.series || []).map(pt => ({ iso: pt.date, value: pt.load })),
+      }));
+    }
+    const folder = activeFolderId ? folders.find(f => f.id === activeFolderId) : folders[0];
+    if (!folder) return [];
+    return (folder.exercises || []).map((exercise, index) => ({
+      key: exercise.template_exercise_id,
+      label: exercise.exercise_name || exercise.template_name || `Упражнение ${index + 1}`,
+      color: chartColors[index % chartColors.length],
+      points: (exercise.series || []).map(pt => ({ iso: pt.date, value: pt.load })),
+    }));
+  }, [activeFolderId, data?.folders, view]);
+
+  const isoList = useMemo(() => {
+    const set = new Set<string>();
+    series.forEach(s => s.points.forEach(p => set.add(p.iso)));
+    return Array.from(set).sort((a, b) => parseISODate(a).getTime() - parseISODate(b).getTime());
+  }, [series]);
+
+  const normalizedSeries = useMemo(() => {
+    return series.map(s => {
+      const timeline = isoList.map(iso => s.points.find(p => p.iso === iso)?.value ?? null);
+      const interpolated = interpolateValues(timeline);
+      return {
+        ...s,
+        points: isoList.map((iso, idx) => ({ iso, value: interpolated[idx] ?? 0 })),
+      };
+    });
+  }, [isoList, series]);
+
+  if (!normalizedSeries.length) {
     return <Text style={styles.muted}>Нет данных</Text>;
   }
 
-  const renderPoint = (pt: { x: string | number; y: number }, idx: number, color: string) => (
-    <View key={`${pt.x}-${idx}`} style={{ alignItems: 'center', gap: 4 }}>
-      <View
-        style={{
-          width: 10,
-          height: 10,
-          borderRadius: 5,
-          backgroundColor: color,
-          opacity: activeSeries && activeSeries !== 'volume' ? 0.4 : 1,
-        }}
-      />
-      <Text style={styles.mutedSmall}>{pt.y}</Text>
-      <Text style={styles.barLabel}>{pt.x}</Text>
-    </View>
-  );
+  const focused = activeSeries ? normalizedSeries.filter(s => s.key === activeSeries) : normalizedSeries;
+  const maxValue = focused.reduce((acc, s) => {
+    const localMax = s.points.reduce((mx, pt) => Math.max(mx, pt.value || 0), 0);
+    return Math.max(acc, localMax);
+  }, 0);
+
+  const handleSelect = (key: string | number | null) => {
+    if (activeSeries === key) {
+      onSelectSeries(null);
+    } else {
+      onSelectSeries(key);
+    }
+  };
 
   if (chartType === 'pie') {
-    const total = series[0].points.reduce((acc, p) => acc + p.y, 0) || 1;
+    const totals = focused.map(s => ({
+      key: s.key,
+      label: s.label,
+      color: s.color,
+      total: s.points.reduce((acc, pt) => acc + (pt.value || 0), 0),
+    }));
+    const grandTotal = totals.reduce((acc, s) => acc + s.total, 0) || 1;
     return (
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 10 }}>
-        <View style={{ width: 140, height: 140, borderRadius: 70, overflow: 'hidden', backgroundColor: colors.surface }}>
-          {series[0].points.reduce<{ start: number; slices: { key: string; start: number; end: number; color: string }[] }>(
-            (acc, pt, idx) => {
-              const slice = pt.y / total;
-              const nextStart = acc.start + slice;
-              acc.slices.push({ key: `${pt.x}-${idx}`, start: acc.start, end: nextStart, color: colors.primary });
-              acc.start = nextStart;
-              return acc;
-            },
-            { start: 0, slices: [] },
-          ).slices.map(slice => (
-            <View key={slice.key} style={{ position: 'absolute', inset: 0, transform: [{ rotate: `${slice.start * 360}deg` }] }}>
-              <View
-                style={{
-                  position: 'absolute',
-                  width: 140,
-                  height: 140,
-                  borderRadius: 70,
-                  borderWidth: 70,
-                  borderColor: colors.primary,
-                  borderRightColor: 'transparent',
-                  borderBottomColor: 'transparent',
-                  transform: [{ rotate: `${(slice.end - slice.start) * 360}deg` }],
-                }}
-              />
-            </View>
-          ))}
-        </View>
-        <View style={{ gap: 6 }}>
-          {series[0].points.map((pt, idx) => (
-            <Text key={`${pt.x}-${idx}`} style={styles.muted}>
-              {pt.x}: {pt.y}
-            </Text>
-          ))}
-        </View>
+      <View style={{ marginTop: 10, gap: 10 }}>
+        {totals.map(slice => (
+          <Pressable key={slice.key} style={styles.sliceRow} onPress={() => handleSelect(slice.key)}>
+            <View style={[styles.sliceDot, { backgroundColor: slice.color, opacity: activeSeries && activeSeries !== slice.key ? 0.35 : 1 }]} />
+            <Text style={[styles.cardTitle, activeSeries && activeSeries !== slice.key ? styles.muted : null]}>{slice.label}</Text>
+            <Text style={styles.mutedSmall}>{Math.round((slice.total / grandTotal) * 100)}%</Text>
+          </Pressable>
+        ))}
       </View>
     );
   }
 
-  // default to bars/lines style rendering
-  return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 8 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 10 }}>
-        {series[0].points.map((pt, idx) => (
-          chartType === 'columns' || chartType === 'stacked' || chartType === 'bar' ? (
-            <View key={`${pt.x}-${idx}`} style={styles.barItem}>
-              <View
-                style={[
-                  styles.bar,
-                  { height: Math.max(12, Math.min(140, pt.y / 10)), backgroundColor: colors.primary },
-                ]}
-              />
-              <Text style={styles.barLabel}>{pt.x}</Text>
-              <Text style={styles.mutedSmall}>{pt.y}</Text>
+  if (chartType === 'heatmap') {
+    return (
+      <View style={{ gap: 8, marginTop: 8 }}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <View style={{ flexDirection: 'column', gap: 8 }}>
+            <View style={{ flexDirection: 'row', gap: 6 }}>
+              {isoList.map(iso => (
+                <Text key={iso} style={styles.heatmapLabel}>{formatLabelDate(iso, granularity)}</Text>
+              ))}
             </View>
-          ) : (
-            renderPoint({ x: pt.x, y: pt.y }, idx, colors.primary)
-          )
-        ))}
+            {normalizedSeries.map(seriesItem => (
+              <View key={seriesItem.key} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text style={[styles.mutedSmall, { width: 80 }]} numberOfLines={1}>
+                  {seriesItem.label}
+                </Text>
+                {seriesItem.points.map(pt => {
+                  const intensity = maxValue ? Math.min(1, (pt.value || 0) / maxValue) : 0;
+                  return (
+                    <Pressable
+                      key={`${seriesItem.key}-${pt.iso}`}
+                      onPress={() => handleSelect(seriesItem.key)}
+                      style={[
+                        styles.heatmapCell,
+                        { backgroundColor: `${seriesItem.color}33`, opacity: 0.35 + intensity * 0.65, borderColor: seriesItem.color },
+                        activeSeries && activeSeries !== seriesItem.key ? { opacity: 0.25 } : null,
+                      ]}
+                    >
+                      <Text style={styles.heatmapValue}>{Math.round(pt.value || 0)}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            ))}
+          </View>
+        </ScrollView>
+      </View>
+    );
+  }
+
+  const renderBars = () => (
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 8 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 12 }}>
+        {isoList.map((iso, idx) => {
+          const values = focused.map(s => s.points[idx]?.value || 0);
+          const isoTotal = values.reduce((a, b) => a + b, 0);
+          return (
+            <View key={iso} style={{ alignItems: 'center', gap: 4 }}>
+              {chartType === 'stacked' ? (
+                <View style={[styles.barStack, { height: 140 }]}>
+                  {focused.map((s, sIdx) => {
+                    const val = s.points[idx]?.value || 0;
+                    const height = maxValue ? (val / maxValue) * 140 : 0;
+                    return (
+                      <Pressable
+                        key={`${s.key}-${iso}`}
+                        style={[styles.barSegment, { height, backgroundColor: s.color, opacity: activeSeries && activeSeries !== s.key ? 0.35 : 1 }]}
+                        onPress={() => {
+                          handleSelect(s.key);
+                          setTooltip({ series: s.label, label: formatLabelDate(iso, granularity), value: Math.round(val) });
+                        }}
+                      />
+                    );
+                  })}
+                </View>
+              ) : (
+                <View style={{ flexDirection: 'row', gap: 4, alignItems: 'flex-end' }}>
+                  {focused.map(s => {
+                    const val = s.points[idx]?.value || 0;
+                    const height = maxValue ? (val / maxValue) * 140 : 0;
+                    return (
+                      <Pressable
+                        key={`${s.key}-${iso}`}
+                        style={[styles.bar, { height: Math.max(6, height), backgroundColor: s.color, opacity: activeSeries && activeSeries !== s.key ? 0.35 : 1 }]}
+                        onPress={() => {
+                          handleSelect(s.key);
+                          setTooltip({ series: s.label, label: formatLabelDate(iso, granularity), value: Math.round(val) });
+                        }}
+                      />
+                    );
+                  })}
+                </View>
+              )}
+              <Text style={styles.barLabel}>{formatLabelDate(iso, granularity)}</Text>
+              <Text style={styles.mutedSmall}>{chartType === 'stacked' ? Math.round(isoTotal) : ''}</Text>
+            </View>
+          );
+        })}
       </View>
     </ScrollView>
+  );
+
+  const renderLines = () => (
+    <View style={{ gap: 10, marginTop: 10 }}>
+      {focused.map(seriesItem => (
+        <View key={seriesItem.key} style={{ gap: 6 }}>
+          <Pressable style={styles.seriesHeader} onPress={() => handleSelect(seriesItem.key)}>
+            <View style={[styles.seriesDot, { backgroundColor: seriesItem.color }]} />
+            <Text style={[styles.cardTitle, activeSeries && activeSeries !== seriesItem.key ? styles.muted : null]}>{seriesItem.label}</Text>
+          </Pressable>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
+              {seriesItem.points.map(pt => (
+                <Pressable
+                  key={`${seriesItem.key}-${pt.iso}`}
+                  onPress={() => {
+                    handleSelect(seriesItem.key);
+                    setTooltip({ series: seriesItem.label, label: formatLabelDate(pt.iso, granularity), value: Math.round(pt.value || 0) });
+                  }}
+                  style={{ alignItems: 'center', gap: 4 }}>
+                  <View style={[styles.point, { backgroundColor: seriesItem.color, opacity: activeSeries && activeSeries !== seriesItem.key ? 0.35 : 1 }]} />
+                  <Text style={styles.mutedSmall}>{Math.round(pt.value || 0)}</Text>
+                  <Text style={styles.barLabel}>{formatLabelDate(pt.iso, granularity)}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </ScrollView>
+        </View>
+      ))}
+    </View>
+  );
+
+  const renderRadar = () => {
+    const totals = focused.map(s => ({
+      key: s.key,
+      label: s.label,
+      avg: s.points.reduce((acc, pt) => acc + (pt.value || 0), 0) / (s.points.length || 1),
+      color: s.color,
+    }));
+    return (
+      <View style={{ gap: 8, marginTop: 8 }}>
+        {totals.map(item => (
+          <Pressable key={item.key} style={styles.sliceRow} onPress={() => handleSelect(item.key)}>
+            <View style={[styles.sliceDot, { backgroundColor: item.color }]} />
+            <Text style={[styles.cardTitle, activeSeries && activeSeries !== item.key ? styles.muted : null]}>{item.label}</Text>
+            <Text style={styles.mutedSmall}>avg: {Math.round(item.avg)}</Text>
+          </Pressable>
+        ))}
+      </View>
+    );
+  };
+
+  if (chartType === 'columns' || chartType === 'stacked') {
+    return renderBars();
+  }
+
+  if (chartType === 'radar') {
+    return renderRadar();
+  }
+
+  return (
+    <View>
+      {renderLines()}
+      {tooltip ? (
+        <View style={styles.tooltip}>
+          <Text style={styles.tooltipText}>{tooltip.series}: {tooltip.value} • {tooltip.label}</Text>
+        </View>
+      ) : null}
+    </View>
   );
 }
 
@@ -458,22 +664,77 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontWeight: '700',
   },
+  heatmapLabel: {
+    color: colors.muted,
+    fontSize: 11,
+    minWidth: 64,
+    textAlign: 'center',
+  },
+  heatmapCell: {
+    minWidth: 64,
+    minHeight: 40,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+  },
+  heatmapValue: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  sliceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 8,
+  },
+  sliceDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+  },
   barItem: {
     alignItems: 'center',
     gap: 4,
   },
   bar: {
-    width: 26,
+    width: 22,
     borderRadius: 8,
     backgroundColor: colors.primary,
   },
-  barLabel: {
-    color: colors.text,
-    fontSize: 12,
+  barStack: {
+    width: 30,
+    borderRadius: 8,
+    overflow: 'hidden',
+    backgroundColor: colors.surfaceMuted,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
-  mutedSmall: {
+  barSegment: {
+    width: '100%',
+  },
+  barLabel: {
     color: colors.muted,
-    fontSize: 12,
+    fontSize: 11,
+    textAlign: 'center',
+    width: 64,
+  },
+  seriesHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  seriesDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+  },
+  point: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
   },
   link: {
     marginTop: 6,
@@ -482,5 +743,17 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontSize: 13,
     fontWeight: '700',
+  },
+  tooltip: {
+    marginTop: 8,
+    padding: 10,
+    borderRadius: 10,
+    backgroundColor: colors.surfaceMuted,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  tooltipText: {
+    color: colors.text,
+    fontSize: 13,
   },
 });

@@ -79,7 +79,6 @@ const EditIcon = () => (
   </Svg>
 );
 
-const WEEKDAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 const STATIC_BASE_URL = config.apiUrl?.replace(/\/$/, '') || '';
 const EXPANSION_STORAGE_KEY = 'fitTODOay/workoutExpanded';
 const buildExerciseImageUrl = (path?: string) => {
@@ -178,7 +177,6 @@ export function WorkoutScreen() {
   }>({ visible: false });
   const [recInputs, setRecInputs] = useState<Record<number, { reps: string; weight: string }>>({});
   const todayIso = useMemo(() => new Date().toISOString().slice(0, 10), []);
-  const [setInputs, setSetInputs] = useState<Record<string, { reps: string; weight: string; time: string }>>({});
 
   const queueSyncHandlers = useMemo(
     () => ({
@@ -208,7 +206,7 @@ export function WorkoutScreen() {
     return { start, end };
   }, [cursorDate, selectedDate, todayIso]);
 
-  const { data, isLoading, isFetching, refetch, error } = useQuery({
+  const { data, isLoading, error } = useQuery({
     queryKey: ['workoutPlan', selectedDate],
     queryFn: () => {
       if (!token) {
@@ -267,7 +265,7 @@ export function WorkoutScreen() {
       queryClient.invalidateQueries({ queryKey: ['workoutPlan'] });
       getOfflineQueueCount().then(count => setQueueCount(count)).catch(() => null);
     },
-    onError: async (err, variables) => {
+    onError: async (_err, variables) => {
       if (!online) {
         await enqueueLog(variables);
         setQueueCount(prev => prev + 1);
@@ -598,7 +596,6 @@ export function WorkoutScreen() {
               const plannedWeight = set.default_weight ?? weightDefault;
               const plannedTime = set.default_time ?? timeDefault;
               const plannedRest = set.rest ?? restDefault;
-              const planTextParts = [];
               const log = logsBySet.get(key);
               const factParts: string[] = [];
               if (log?.reps != null) factParts.push(`Факт: ${log.reps} повт.`);
@@ -797,7 +794,7 @@ export function WorkoutScreen() {
       result[folder.id] = { done, total };
     });
     return result;
-  }, [data?.folders, logsBySet]);
+  }, [data?.folders, logsBySet, normalizeSets]);
 
   useEffect(() => {
     if (!data?.folders || !expansionHydrated) return;

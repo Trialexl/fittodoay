@@ -8,9 +8,6 @@ type RestTimerOverlayProps = {
   duration: number;
   hasTime?: boolean;
   hasWeight?: boolean;
-  initialReps?: number | null;
-  initialWeight?: number | null;
-  initialTime?: number | null;
   onChange: (field: 'reps' | 'weight' | 'time', value: string) => void;
   values: { reps: string; weight: string; time: string };
   onSkip: () => void;
@@ -22,9 +19,6 @@ export function RestTimerOverlay({
   duration,
   hasTime,
   hasWeight,
-  initialReps,
-  initialWeight,
-  initialTime,
   onChange,
   values,
   onSkip,
@@ -33,7 +27,7 @@ export function RestTimerOverlay({
   const [remaining, setRemaining] = useState(duration);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  const startTimer = () => {
+  const startTimer = React.useCallback(() => {
     intervalRef.current && clearInterval(intervalRef.current);
     intervalRef.current = setInterval(() => {
       setRemaining(prev => {
@@ -45,7 +39,7 @@ export function RestTimerOverlay({
         return prev - 1;
       });
     }, 1000);
-  };
+  }, [onFinish]);
 
   useEffect(() => {
     if (!visible) return;
@@ -54,7 +48,7 @@ export function RestTimerOverlay({
     return () => {
       intervalRef.current && clearInterval(intervalRef.current);
     };
-  }, [visible, duration, onFinish]);
+  }, [visible, duration, onFinish, startTimer]);
 
   const progress = duration > 0 ? Math.max(0, Math.min(1, remaining / duration)) : 0;
 

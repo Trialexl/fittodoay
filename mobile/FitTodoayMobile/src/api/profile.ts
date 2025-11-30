@@ -11,6 +11,11 @@ export type PreferencesPayload = {
   notes?: string | null;
   theme?: string | null;
   accent_color?: string | null;
+  experience?: string | null;
+  equipment?: string | null;
+  constraints?: string | null;
+  theme_updated_at?: string | null;
+  accent_color_updated_at?: string | null;
 };
 
 export async function fetchPreferences(token: string) {

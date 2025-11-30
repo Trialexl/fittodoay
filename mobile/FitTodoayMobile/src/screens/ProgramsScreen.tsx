@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -279,7 +279,7 @@ export function ProgramsScreen() {
         is_active: exerciseForm.is_active,
       });
     },
-    onSuccess: (_d, variables) => {
+    onSuccess: (_d, _variables) => {
       if (selectedFolderId) {
         queryClient.invalidateQueries({ queryKey: ['templates', selectedFolderId] });
       }
@@ -296,7 +296,7 @@ export function ProgramsScreen() {
       if (!token) throw new Error('Нет токена');
       return deleteTemplateExercise(token, payload.id);
     },
-    onSuccess: (_d, variables) => {
+    onSuccess: (_d, _variables) => {
       if (selectedFolderId) {
         queryClient.invalidateQueries({ queryKey: ['templates', selectedFolderId] });
       }
@@ -415,7 +415,7 @@ export function ProgramsScreen() {
     const exercises = template.template_exercises || [];
     const muscles = collectTemplateMuscles(template);
 
-    const renderExerciseItem = ({ item, drag, isActive, index }: any) => (
+    const renderExerciseItem = ({ item, drag, isActive }: any) => (
       <Pressable
         onLongPress={drag}
         delayLongPress={120}

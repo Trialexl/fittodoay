@@ -5,7 +5,6 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Screen } from '../../components/Screen';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { BrandMark } from '../../components/BrandMark';
-import { colors } from '../../theme/colors';
 import { AuthStackParamList } from '../../navigation/types';
 import { login, register, LoginRequest, RegisterRequest } from '../../api/auth';
 import { useAuthStore } from '../../state/auth';

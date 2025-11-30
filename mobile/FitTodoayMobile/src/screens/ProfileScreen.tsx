@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { ActivityIndicator, Button, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Button, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Screen } from '../components/Screen';
 import { ThemeSelector } from '../components/ThemeSelector';
 import { colors } from '../theme/colors';
@@ -28,6 +28,9 @@ export function ProfileScreen() {
       sessions_per_week: '',
       session_duration: '',
       notes: '',
+      experience: '',
+      equipment: '',
+      constraints: '',
     },
   });
 
@@ -44,6 +47,9 @@ export function ProfileScreen() {
         if (data.sessions_per_week != null) setValue('sessions_per_week', String(data.sessions_per_week));
         if (data.session_duration != null) setValue('session_duration', String(data.session_duration));
         if (data.notes) setValue('notes', String(data.notes));
+        if (data.experience) setValue('experience', String(data.experience));
+        if (data.equipment) setValue('equipment', String(data.equipment));
+        if (data.constraints) setValue('constraints', String(data.constraints));
       })
       .catch(() => null);
   }, [setValue, token]);
@@ -63,6 +69,9 @@ export function ProfileScreen() {
         sessions_per_week: values.sessions_per_week ? Number(values.sessions_per_week) : null,
         session_duration: values.session_duration ? Number(values.session_duration) : null,
         notes: values.notes?.trim() || null,
+        experience: values.experience?.trim() || null,
+        equipment: values.equipment?.trim() || null,
+        constraints: values.constraints?.trim() || null,
       });
       notifySuccess('Сохранено');
     } catch (e: any) {
@@ -124,23 +133,62 @@ export function ProfileScreen() {
               <TextField label="Длительность тренировки (мин)" placeholder="60" keyboardType="number-pad" onBlur={onBlur} onChangeText={onChange} value={value} />
             )}
           />
-          <Controller
-            control={control}
-            name="notes"
-            render={({ field: { onChange, onBlur, value } }) => (
-              <TextField
-                label="Пожелания"
-                placeholder="Ограничения, предпочтения..."
-                onBlur={onBlur}
-                onChangeText={onChange}
-                value={value}
-                multiline
-                style={{ height: 96, textAlignVertical: 'top' }}
-              />
-            )}
-          />
-          <Button title={isSubmitting ? 'Сохраняем...' : 'Сохранить профиль'} onPress={handleSubmit(onSubmit)} />
-        </View>
+        <Controller
+          control={control}
+          name="notes"
+          render={({ field: { onChange, onBlur, value } }) => (
+            <TextField
+              label="Пожелания"
+              placeholder="Ограничения, предпочтения..."
+              onBlur={onBlur}
+              onChangeText={onChange}
+              value={value}
+              multiline
+              style={{ height: 96, textAlignVertical: 'top' }}
+            />
+          )}
+        />
+        <Controller
+          control={control}
+          name="experience"
+          render={({ field: { onChange, onBlur, value } }) => (
+            <TextField
+              label="Опыт"
+              placeholder="Новичок / Средний / Продвинутый"
+              onBlur={onBlur}
+              onChangeText={onChange}
+              value={value}
+            />
+          )}
+        />
+        <Controller
+          control={control}
+          name="equipment"
+          render={({ field: { onChange, onBlur, value } }) => (
+            <TextField
+              label="Оборудование"
+              placeholder="Штанга, гантели, турник..."
+              onBlur={onBlur}
+              onChangeText={onChange}
+              value={value}
+            />
+          )}
+        />
+        <Controller
+          control={control}
+          name="constraints"
+          render={({ field: { onChange, onBlur, value } }) => (
+            <TextField
+              label="Ограничения"
+              placeholder="Боли в коленях, избегать беговых нагрузок..."
+              onBlur={onBlur}
+              onChangeText={onChange}
+              value={value}
+            />
+          )}
+        />
+        <Button title={isSubmitting ? 'Сохраняем...' : 'Сохранить профиль'} onPress={handleSubmit(onSubmit)} />
+      </View>
 
         <View style={styles.card}>
           <Text style={styles.title}>Тема и акцент</Text>

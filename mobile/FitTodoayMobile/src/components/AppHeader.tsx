@@ -1,5 +1,12 @@
 import React, { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import {
+  Modal,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { MainTabParamList } from '../navigation/types';
 import { BrandMark } from './BrandMark';
@@ -7,6 +14,7 @@ import { colors } from '../theme/colors';
 import { useAuthStore } from '../state/auth';
 import { notifyError } from '../utils/notify';
 import { apiFetch } from '../api/client';
+import { PrimaryButton } from './PrimaryButton';
 
 const LINKS: { key: keyof MainTabParamList; label: string }[] = [
   { key: 'Programs', label: 'Программы' },
@@ -21,6 +29,9 @@ export function AppHeader() {
   const route = useRoute();
   const [sendingFeedback, setSendingFeedback] = useState(false);
   const [feedbackError, setFeedbackError] = useState<string | null>(null);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [feedbackMessage, setFeedbackMessage] = useState('');
+  const [feedbackSuccess, setFeedbackSuccess] = useState<string | null>(null);
   const token = useAuthStore(state => state.token);
   const user = useAuthStore(state => state.user);
 
@@ -31,16 +42,30 @@ export function AppHeader() {
     navigation.navigate(key as never);
   };
 
+  const resetFeedback = () => {
+    setFeedbackError(null);
+    setFeedbackSuccess(null);
+    setFeedbackMessage('');
+  };
+
   const sendFeedback = async () => {
+    const trimmed = feedbackMessage.trim();
+    if (!trimmed) {
+      setFeedbackError('Напишите пару слов, что можно улучшить');
+      return;
+    }
     setSendingFeedback(true);
     setFeedbackError(null);
+    setFeedbackSuccess(null);
     try {
       await apiFetch({
         method: 'POST',
         path: '/api/feedback/',
         token,
-        body: { message: 'Мобильный: добавьте вашу форму фидбека' },
+        body: { message: trimmed },
       });
+      setFeedbackSuccess('Спасибо! Отзыв отправлен.');
+      setFeedbackMessage('');
     } catch (e: any) {
       const msg = e?.message || 'Не удалось отправить отзыв';
       setFeedbackError(msg);
@@ -70,12 +95,48 @@ export function AppHeader() {
         })}
       </View>
       <View style={styles.actions}>
-        <Pressable style={styles.feedback} onPress={sendFeedback} disabled={sendingFeedback}>
-          <Text style={styles.feedbackText}>{sendingFeedback ? '...' : 'Отзыв'}</Text>
+        <Pressable
+          style={styles.feedback}
+          onPress={() => {
+            resetFeedback();
+            setFeedbackOpen(true);
+          }}
+          disabled={sendingFeedback}>
+          <Text style={styles.feedbackText}>Отзыв</Text>
         </Pressable>
-        {feedbackError ? <Text style={styles.error}>{feedbackError}</Text> : null}
         {user?.email ? <Text style={styles.user}>{user.email}</Text> : null}
       </View>
+
+      <Modal transparent visible={feedbackOpen} animationType="fade" onRequestClose={() => setFeedbackOpen(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Отправить отзыв</Text>
+            <Text style={styles.modalSubtitle}>Расскажите, что улучшить в приложении.</Text>
+            <TextInput
+              style={styles.modalInput}
+              multiline
+              placeholder="Например: не хватает фильтра по мышцам, таймер зависает..."
+              placeholderTextColor={colors.muted}
+              value={feedbackMessage}
+              onChangeText={text => {
+                setFeedbackMessage(text);
+                if (feedbackError) setFeedbackError(null);
+              }}
+              editable={!sendingFeedback}
+            />
+            {feedbackError ? <Text style={styles.error}>{feedbackError}</Text> : null}
+            {feedbackSuccess ? <Text style={styles.success}>{feedbackSuccess}</Text> : null}
+            <View style={styles.modalActions}>
+              <PrimaryButton title="Закрыть" variant="ghost" onPress={() => setFeedbackOpen(false)} />
+              <PrimaryButton
+                title={sendingFeedback ? 'Отправляем...' : 'Отправить'}
+                onPress={sendFeedback}
+                loading={sendingFeedback}
+              />
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -126,12 +187,58 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontWeight: '700',
   },
+  user: {
+    color: colors.muted,
+    fontSize: 12,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: '#000000aa',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 480,
+    borderRadius: 16,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 16,
+    gap: 10,
+  },
+  modalTitle: {
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  modalSubtitle: {
+    color: colors.muted,
+    fontSize: 14,
+  },
+  modalInput: {
+    minHeight: 120,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 12,
+    color: colors.text,
+    backgroundColor: colors.surfaceMuted,
+    textAlignVertical: 'top',
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 10,
+    justifyContent: 'flex-end',
+  },
   error: {
     color: colors.danger,
     fontSize: 12,
   },
-  user: {
-    color: colors.muted,
+  success: {
+    color: colors.success,
     fontSize: 12,
+    fontWeight: '700',
   },
 });

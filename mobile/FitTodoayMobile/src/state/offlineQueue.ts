@@ -37,7 +37,7 @@ async function dequeueAndSend(token: string) {
   for (const item of queue) {
     try {
       await logWorkoutSet(token, item);
-    } catch (e) {
+    } catch {
       remaining.push(item);
     }
   }

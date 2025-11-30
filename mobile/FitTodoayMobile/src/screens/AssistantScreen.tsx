@@ -87,6 +87,9 @@ export function AssistantScreen() {
         sessions_per_week: payload.sessions_per_week,
         session_duration: payload.session_duration,
         notes: payload.notes,
+        experience: payload.experience,
+        equipment: payload.equipment,
+        constraints: payload.constraints,
       });
     },
   });
@@ -157,7 +160,8 @@ export function AssistantScreen() {
     };
     try {
       await savePrefsMutation.mutateAsync(payload);
-    } catch {
+    } catch (err: any) {
+      notifyError(err?.message || 'Не удалось сохранить предпочтения');
       // не блокируем ассистента из-за ошибки сохранения
     }
     assistantMutation.mutate(payload);
@@ -177,6 +181,9 @@ export function AssistantScreen() {
           if (data.sessions_per_week != null) setValue('sessions_per_week', String(data.sessions_per_week));
           if (data.session_duration != null) setValue('session_duration', String(data.session_duration));
           if (data.notes) setValue('notes', String(data.notes));
+          if (data.experience) setValue('experience', String(data.experience));
+          if (data.equipment) setValue('equipment', String(data.equipment));
+          if (data.constraints) setValue('constraints', String(data.constraints));
           setPrefetched(true);
         }
       })

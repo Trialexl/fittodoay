@@ -8,6 +8,7 @@ import { AppNavigator } from './navigation/AppNavigator';
 import { queryClient } from './api/queryClient';
 import { useOfflineQueueSync } from './state/offlineQueue';
 import { OfflineBanner } from './components/OfflineBanner';
+import { useThemePreferencesSync } from './hooks/useThemePreferencesSync';
 
 enableScreens();
 
@@ -26,6 +27,7 @@ TextInput.defaultProps.style = [
 function App() {
   const isDarkMode = useColorScheme() === 'dark';
   useOfflineQueueSync();
+  useThemePreferencesSync();
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>

@@ -12,16 +12,25 @@ export interface TopExerciseItem {
   sets: number;
 }
 
-export interface ProgramTrendPoint {
-  label: string;
-  volume: number;
-}
+export type TrendSeriesPoint = { date: string; load: number };
+export type TrendExercise = {
+  template_exercise_id: number;
+  exercise_name: string;
+  template_name: string;
+  series: TrendSeriesPoint[];
+};
+export type TrendFolder = {
+  id: number;
+  name: string;
+  series: TrendSeriesPoint[];
+  exercises: TrendExercise[];
+};
 
 export interface ProgramTrendsResponse {
-  range: string;
-  points: ProgramTrendPoint[];
-  view?: string;
-  granularity?: string;
+  start: string;
+  end: string;
+  granularity: 'day' | 'week';
+  folders: TrendFolder[];
 }
 
 export interface DailyLoadRangeResponse {
@@ -42,7 +51,7 @@ export async function fetchTopExercises(token: string) {
   });
 }
 
-export async function fetchProgramTrends(token: string, range: string, view = 'programs', granularity = 'day') {
+export async function fetchProgramTrends(token: string, range: string, view = 'programs', granularity: 'day' | 'week' = 'day') {
   return apiFetch<ProgramTrendsResponse>({
     path: `/api/analytics/program-trends/?range=${range}&granularity=${granularity}&view=${view}`,
     token,
