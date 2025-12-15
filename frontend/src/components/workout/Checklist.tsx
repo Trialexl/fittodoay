@@ -531,35 +531,20 @@ export const Checklist = ({
           actual_time: null,
         };
 
-    try {
-      await apiFetch("/api/workouts/logs/", {
-        method: "POST",
-        body: JSON.stringify({
-          workout_day: plan.id,
-          template_exercise: restOverlay.templateExerciseId,
-          set_index: restOverlay.setIndex,
-          ...normalizedPayload,
-        }),
-        token: auth.token ?? undefined,
-      });
-      closeRestOverlay();
-      refresh();
-    } catch (error: any) {
-      if (error instanceof ApiError) {
-        setRestError(error?.message ?? "Не удалось сохранить");
-        return;
-      }
-      const queued = enqueueOfflineLog({
-        workout_day: plan.id,
-        template_exercise: restOverlay.templateExerciseId,
-        set_index: restOverlay.setIndex,
-        ...normalizedPayload,
-      });
-      if (queued) {
-        closeRestOverlay();
-      } else {
-        setRestError("Нет соединения и не удалось сохранить локально");
-      }
+    const queued = enqueueOfflineLog({
+      workout_day: plan.id,
+      template_exercise: restOverlay.templateExerciseId,
+      set_index: restOverlay.setIndex,
+      ...normalizedPayload,
+    });
+    if (!queued) {
+      setRestError("Не удалось сохранить подход");
+      return;
+    }
+    setRestError(null);
+    closeRestOverlay();
+    if (auth.token) {
+      processQueue();
     }
   };
 
