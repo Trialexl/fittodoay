@@ -48,9 +48,15 @@ const getTemplateExerciseId = (
   (exercise as any).id ??
   0;
 
+const parseMuscles = (value?: string | null) =>
+  (value || '')
+    .split(/[\\/,\u2022]/)
+    .map(item => item.trim())
+    .filter(Boolean);
+
 const CheckIcon = ({ color }: { color: string }) => (
   <Svg width={18} height={18} viewBox="0 0 20 20">
-    <Circle cx={10} cy={10} r={9} fill="#0f1f15" stroke="#1f3b2b" strokeWidth={1.2} />
+    <Circle cx={10} cy={10} r={9} fill="#e6f6ed" stroke="#9fd0ae" strokeWidth={1.1} />
     <Path
       d="M6 10.5 9 13.5 14.5 8"
       stroke={color}
@@ -63,7 +69,7 @@ const CheckIcon = ({ color }: { color: string }) => (
 
 const InfoIcon = ({ border, stroke }: { border: string; stroke: string }) => (
   <Svg width={18} height={18} viewBox="0 0 20 20">
-    <Circle cx={10} cy={10} r={9} stroke={border} strokeWidth={1.2} fill="none" />
+    <Circle cx={10} cy={10} r={9} stroke={border} strokeWidth={1.1} fill="none" />
     <Path
       d="M10 6.5v1M9.5 9h1v5h-1Z"
       stroke={stroke}
@@ -103,6 +109,14 @@ const formatISODate = (value: Date) => {
   const month = String(value.getMonth() + 1).padStart(2, '0');
   const day = String(value.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+};
+const formatNumberTrim = (value: number | string | null | undefined) => {
+  if (value === null || value === undefined) return '';
+  const num = typeof value === 'string' ? Number(value) : value;
+  if (!Number.isFinite(num)) return String(value);
+  const rounded = Math.round(num * 100) / 100;
+  if (Number.isInteger(rounded)) return String(rounded);
+  return rounded.toFixed(2).replace(/\.?0+$/, '');
 };
 
 const buildCalendarGrid = (iso: string, loads: Record<string, number>) => {
@@ -567,6 +581,12 @@ export function WorkoutScreen() {
     }, 0);
     const exerciseComplete = normalizedSets.length > 0 && doneCount >= normalizedSets.length;
     const exerciseName = exercise.name || (exercise as any)?.source?.name || 'Упражнение';
+    const muscleLineSource =
+      (exercise as any)?.source?.target_muscles ||
+      (exercise as any)?.target_muscles ||
+      (exercise as any)?.muscles ||
+      ((exercise as any)?.muscle_groups || []).join(' • ');
+    const muscleLine = parseMuscles(muscleLineSource).join(' • ');
 
     const expanded = expandedExercises[templateExerciseId] ?? true;
     return (
@@ -576,19 +596,19 @@ export function WorkoutScreen() {
           expanded && styles.exerciseExpanded,
           exerciseComplete && styles.exerciseDone,
         ]}>
-        <Pressable
-          style={styles.exerciseHeader}
-          onPress={() =>
-            setExpandedExercises(prev => ({
-              ...prev,
-              [templateExerciseId]: !expanded,
-            }))
-          }>
-          <View style={{ flex: 1, gap: 4 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              {doneCount === normalizedSets.length ? <CheckIcon color={colors.success} /> : null}
-              <Text style={styles.exerciseTitle}>{exerciseName}</Text>
-              <Pressable
+      <Pressable
+        style={styles.exerciseHeader}
+        onPress={() =>
+          setExpandedExercises(prev => ({
+            ...prev,
+            [templateExerciseId]: !expanded,
+          }))
+        }>
+        <View style={{ flex: 1, gap: 4 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            {doneCount === normalizedSets.length ? <CheckIcon color={colors.success} /> : null}
+            <Text style={styles.exerciseTitle}>{exerciseName}</Text>
+            <Pressable
                 onPress={() => {
                   const source: any = (exercise as any).source || {};
                   setInfoModal({
@@ -603,29 +623,27 @@ export function WorkoutScreen() {
                     images: source.images || [],
                   });
                 }}>
-                <InfoIcon border={colors.border} stroke={colors.muted} />
+                <InfoIcon border={colors.primary} stroke={colors.primary} />
               </Pressable>
               <EditIcon />
             </View>
-            <Text style={styles.exerciseProgress}>
-              Выполнено: {doneCount}/{normalizedSets.length}
+            {/* Мышцы не показываем в мобильной версии для совпадения с веб-референсом */}
+        </View>
+        <View style={{ alignItems: 'flex-end', gap: 2 }}>
+          <Text style={styles.progressPill}>
+            {doneCount}/{normalizedSets.length}
             </Text>
-          </View>
-          <View style={{ alignItems: 'flex-end', gap: 2 }}>
-            <Text style={styles.progressPill}>
-              {doneCount}/{normalizedSets.length}
-            </Text>
-            {restDefault ? <Text style={styles.muted}>Отдых: {restDefault}s</Text> : null}
           </View>
           <Text style={styles.chevron}>{expanded ? '▾' : '▸'}</Text>
         </Pressable>
         {expanded ? (
           <View style={{ gap: 10 }}>
-            {normalizedSets.map((set, idx) => {
-              const key = `${templateExerciseId}-${set.set_index ?? idx}`;
-              const altKey = `${templateExerciseId}-${(set.set_index ?? idx) + 1}`;
-              const isDone = logsBySet.has(key) || logsBySet.has(altKey);
-              const setIndex = set.set_index ?? idx;
+              {normalizedSets.map((set, idx) => {
+                const key = `${templateExerciseId}-${set.set_index ?? idx}`;
+                const altKey = `${templateExerciseId}-${(set.set_index ?? idx) + 1}`;
+                const isDone = logsBySet.has(key) || logsBySet.has(altKey);
+                const setIndex = set.set_index ?? idx;
+                const displayIndex = idx + 1;
               const plannedReps = set.default_reps ?? repsDefault;
               const plannedWeight = set.default_weight ?? weightDefault;
               const plannedTime = set.default_time ?? timeDefault;
@@ -636,122 +654,127 @@ export function WorkoutScreen() {
               const weightVal = (log as any)?.actual_weight ?? log?.weight;
               const timeVal = (log as any)?.actual_time ?? log?.time_seconds;
               if (repVal != null) factParts.push(`Факт: ${repVal} повт.`);
-              if (weightVal != null) factParts.push(`${weightVal} кг`);
+              if (weightVal != null) factParts.push(`${formatNumberTrim(weightVal)} кг`);
               if (timeVal != null) factParts.push(`${timeVal}s`);
               return (
                 <View key={key} style={[styles.setCard, isDone && styles.setCardDone]}>
                   <View style={styles.setRow}>
-                    <Text style={[styles.setTitle, isDone && styles.setTitleDone]}>Сет {setIndex + 1}</Text>
-                    {plannedRest ? <Text style={styles.muted}>Отдых: {plannedRest}s</Text> : null}
+                    <Text style={[styles.setTitle, isDone && styles.setTitleDone]}>Сет {displayIndex}</Text>
+                    {isDone ? (
+                      <Pressable
+                        hitSlop={10}
+                        onPress={() =>
+                          setEditModal({
+                            visible: true,
+                            log,
+                            exerciseName,
+                            hasTime: exercise.has_time,
+                            hasWeight: exercise.has_weight,
+                            values: {
+                              reps:
+                                (log as any)?.actual_reps != null
+                                  ? formatNumberTrim((log as any).actual_reps)
+                                  : log?.reps != null
+                                    ? formatNumberTrim(log.reps)
+                                    : plannedReps != null
+                                      ? formatNumberTrim(plannedReps)
+                                      : '',
+                              weight:
+                                (log as any)?.actual_weight != null
+                                  ? formatNumberTrim((log as any).actual_weight)
+                                  : log?.weight != null
+                                    ? formatNumberTrim(log.weight)
+                                    : plannedWeight != null
+                                      ? formatNumberTrim(plannedWeight)
+                                      : '',
+                              time:
+                                (log as any)?.actual_time != null
+                                  ? formatNumberTrim((log as any).actual_time)
+                                  : log?.time_seconds != null
+                                    ? formatNumberTrim(log.time_seconds)
+                                    : plannedTime != null
+                                      ? formatNumberTrim(plannedTime)
+                                      : '',
+                            },
+                          })
+                        }>
+                        <EditIcon color={colors.primary} />
+                      </Pressable>
+                    ) : null}
                   </View>
                   <View style={styles.planRow}>
                     {!exercise.has_time ? (
-                      <>
-                        <AdjustNumber
-                          label="План повт."
-                          value={String(plannedReps || '')}
-                          onChange={() => {}}
-                          disabled
-                        />
-                        {exercise.has_weight ? (
-                          <AdjustNumber
-                            label="План вес"
-                            value={String(plannedWeight || '')}
-                            onChange={() => {}}
-                            disabled
-                          />
-                        ) : null}
-                      </>
+                      <Text style={styles.planText}>
+                        План: {plannedReps || 0} повт.
+                        {plannedWeight != null ? ` · ${formatNumberTrim(plannedWeight) || 0} кг` : ''}
+                      </Text>
                     ) : (
-                      <AdjustNumber label="План время" value={String(plannedTime || '')} onChange={() => {}} disabled />
+                      <Text style={styles.planText}>План: {plannedTime || 0}s</Text>
                     )}
                   </View>
                   {factParts.length > 0 ? <Text style={styles.factText}>{factParts.join(' • ')}</Text> : null}
-                  {isDone ? (
-                    <Pressable
-                      onPress={() =>
-                        setEditModal({
-                          visible: true,
-                          log,
-                          exerciseName,
-                          hasTime: exercise.has_time,
-                          hasWeight: exercise.has_weight,
-                          values: {
-                            reps: log?.reps != null ? String(log.reps) : '',
-                            weight: log?.weight != null ? String(log.weight) : '',
-                            time: log?.time_seconds != null ? String(log.time_seconds) : '',
-                          },
-                        })
-                      }
-                      style={styles.editLink}>
-                      <Text style={styles.editLinkText}>Редактировать</Text>
-                    </Pressable>
-                  ) : (
-                    <View style={styles.factInputs}>
-                      {!exercise.has_time ? (
-                        <>
-                          <AdjustNumber
-                            label="Факт повт."
-                            value={restValues.reps}
-                            onChange={text => setRestValues(prev => ({ ...prev, reps: text }))}
-                          />
-                          {exercise.has_weight ? (
+                  {isDone ? null : (
+                    <>
+                      <View style={styles.factInputs}>
+                        {!exercise.has_time ? (
+                          <>
                             <AdjustNumber
-                              label="Факт вес"
-                              value={restValues.weight}
-                              onChange={text => setRestValues(prev => ({ ...prev, weight: text }))}
-                              inputMode="decimal"
-                              step={2}
+                              label="Факт повт."
+                              value={restValues.reps}
+                              onChange={text => setRestValues(prev => ({ ...prev, reps: text }))}
                             />
-                          ) : null}
-                        </>
-                      ) : (
-                        <AdjustNumber
-                          label="Факт время"
-                          value={restValues.time}
-                          onChange={text => setRestValues(prev => ({ ...prev, time: text }))}
-                        />
-                      )}
-                    </View>
+                            {exercise.has_weight ? (
+                              <AdjustNumber
+                                label="Факт вес"
+                                value={restValues.weight}
+                                onChange={text => setRestValues(prev => ({ ...prev, weight: text }))}
+                                inputMode="decimal"
+                                step={2}
+                              />
+                            ) : null}
+                          </>
+                        ) : (
+                          <AdjustNumber
+                            label="Факт время"
+                            value={restValues.time}
+                            onChange={text => setRestValues(prev => ({ ...prev, time: text }))}
+                          />
+                        )}
+                      </View>
+                      <Pressable
+                        style={[styles.doneButton, styles.doneButtonPending]}
+                        onPress={() => {
+                          const templateExerciseId = getTemplateExerciseId(exercise);
+                          const basePayload = {
+                            workout_day: data?.workout_day_id || 0,
+                            template_exercise: templateExerciseId,
+                            set_index: setIndex,
+                          };
+                          if (exercise.has_time) {
+                            const duration = plannedTime || 0;
+                            setExecOverlay({
+                              visible: true,
+                              exerciseName,
+                              duration: duration || 0,
+                              rest: plannedRest || 0,
+                              payloadBase: basePayload,
+                            });
+                          } else {
+                            openRest(exercise, setIndex, {
+                              reps: plannedReps,
+                              weight: plannedWeight,
+                              rest: plannedRest,
+                            });
+                            setRestOverlay(prev => ({
+                              ...prev,
+                              payloadBase: basePayload,
+                            }));
+                          }
+                        }}>
+                        <Text style={styles.doneButtonText}>✓ Выполнено</Text>
+                      </Pressable>
+                    </>
                   )}
-                  <Pressable
-                    disabled={isDone}
-                    style={[
-                      styles.doneButton,
-                      isDone ? styles.doneButtonCompleted : styles.doneButtonPending,
-                    ]}
-                    onPress={() => {
-                      const templateExerciseId = getTemplateExerciseId(exercise);
-                      const basePayload = {
-                        workout_day: data?.workout_day_id || 0,
-                        template_exercise: templateExerciseId,
-                        set_index: setIndex,
-                      };
-                      if (exercise.has_time) {
-                        const duration = plannedTime || 0;
-                        setExecOverlay({
-                          visible: true,
-                          exerciseName,
-                          duration: duration || 0,
-                          rest: plannedRest || 0,
-                          payloadBase: basePayload,
-                        });
-                      } else {
-                        openRest(exercise, setIndex, {
-                          reps: plannedReps,
-                          weight: plannedWeight,
-                          rest: plannedRest,
-                        });
-                        setRestOverlay(prev => ({
-                          ...prev,
-                          payloadBase: basePayload,
-                        }));
-                      }
-                    }}>
-                    <Text style={isDone ? styles.doneButtonTextCompleted : styles.doneButtonText}>
-                      ✓ Выполнено
-                    </Text>
-                  </Pressable>
                 </View>
               );
             })}
@@ -794,16 +817,18 @@ export function WorkoutScreen() {
               [template.id]: !expanded,
             }))
           }>
-          <View style={{ gap: 4 }}>
+          <View style={{ gap: 4, flex: 1 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
               {templateDone ? <CheckIcon color={colors.success} /> : null}
               <Text style={styles.templateTitle}>{template.name}</Text>
             </View>
-            <Text style={styles.exerciseProgress}>Выполнено: {stats.done}/{stats.total}</Text>
+            {/* Мышцы для дня скрыты в мобильной версии */}
           </View>
-          {!template.is_active ? <Text style={styles.badge}>Не активен</Text> : null}
-          <Text style={styles.progressPill}>{stats.done}/{stats.total}</Text>
-          <Text style={styles.chevron}>{expanded ? '▾' : '▸'}</Text>
+          <View style={styles.metaRow}>
+            {template.is_active === false ? <Text style={styles.badge}>Не активен</Text> : null}
+            <Text style={styles.progressPill}>{stats.done}/{stats.total}</Text>
+            <Text style={styles.chevron}>{expanded ? '▾' : '▸'}</Text>
+          </View>
         </Pressable>
         {expanded ? (
           <View style={{ gap: 12 }}>
@@ -916,14 +941,13 @@ export function WorkoutScreen() {
               [item.id]: !expanded,
             }))
           }>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              {stats.total > 0 && stats.done >= stats.total ? <CheckIcon color={colors.success} /> : null}
-              <Text style={styles.folderTitle}>{item.name}</Text>
-            </View>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            {stats.total > 0 && stats.done >= stats.total ? <CheckIcon color={colors.success} /> : null}
+            <Text style={styles.folderTitle}>{item.name}</Text>
+          </View>
+          <View style={styles.metaRow}>
             <Text style={styles.progressPill}>{stats.done}/{stats.total}</Text>
-            {/* Не показываем негативный статус для активной программы в чеклисте */}
-            {!item.is_active ? <Text style={styles.badge}>Не активна</Text> : null}
+            {item.is_active === false ? <Text style={styles.badge}>Не активна</Text> : null}
             <Text style={styles.chevron}>{expanded ? '▾' : '▸'}</Text>
           </View>
         </Pressable>
@@ -1112,46 +1136,53 @@ export function WorkoutScreen() {
       />
       <Modal transparent visible={editModal.visible} animationType="fade" onRequestClose={closeEditModal}>
         <View style={styles.dateModalBackdrop}>
-          <View style={[styles.dateModalCard, { maxWidth: 420 }]}>
-            <Text style={styles.title}>Редактирование подхода</Text>
-            <Text style={styles.muted}>{editModal.exerciseName}</Text>
-            {!editModal.hasTime ? (
-              <>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Повторы"
-                  placeholderTextColor={colors.muted}
-                  keyboardType="number-pad"
+          <View style={[styles.dateModalCard, styles.editModalCard]}>
+            <Text style={styles.modalTitle}>Правка подхода</Text>
+            <Text style={styles.modalSubtitle}>{editModal.exerciseName}</Text>
+            <View style={styles.editGrid}>
+              <View style={styles.editColCentered}>
+                <Text style={styles.editLabel}>Повторы</Text>
+                <AdjustNumber
+                  label=""
                   value={editModal.values?.reps || ''}
-                  onChangeText={value => setEditModal(prev => ({ ...prev, values: { ...(prev.values || {}), reps: value } }))}
+                  onChange={value =>
+                    setEditModal(prev => ({ ...prev, values: { ...(prev.values || {}), reps: value } }))
+                  }
                 />
-                {editModal.hasWeight ? (
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Вес (кг)"
-                    placeholderTextColor={colors.muted}
-                    keyboardType="numeric"
-                    value={editModal.values?.weight || ''}
-                    onChangeText={value => setEditModal(prev => ({ ...prev, values: { ...(prev.values || {}), weight: value } }))}
+              </View>
+              <View style={styles.editColCentered}>
+                <Text style={styles.editLabel}>Вес (кг)</Text>
+                <AdjustNumber
+                  label=""
+                  value={editModal.values?.weight || ''}
+                  onChange={value =>
+                    setEditModal(prev => ({ ...prev, values: { ...(prev.values || {}), weight: value } }))
+                  }
+                  inputMode="decimal"
+                  step={2}
+                />
+              </View>
+              {editModal.hasTime ? (
+                <View style={styles.editColCentered}>
+                  <Text style={styles.editLabel}>Время (сек)</Text>
+                  <AdjustNumber
+                    label=""
+                    value={editModal.values?.time || ''}
+                    onChange={value =>
+                      setEditModal(prev => ({ ...prev, values: { ...(prev.values || {}), time: value } }))
+                    }
                   />
-                ) : null}
-              </>
-            ) : (
-              <TextInput
-                style={styles.input}
-                placeholder="Время (сек)"
-                placeholderTextColor={colors.muted}
-                keyboardType="number-pad"
-                value={editModal.values?.time || ''}
-                onChangeText={value => setEditModal(prev => ({ ...prev, values: { ...(prev.values || {}), time: value } }))}
-              />
-            )}
-            <View style={styles.row}>
+                </View>
+              ) : null}
+            </View>
+            <View style={styles.editButtons}>
               <Pressable style={styles.secondary} onPress={closeEditModal}>
                 <Text style={styles.secondaryText}>Отмена</Text>
               </Pressable>
-              <Pressable style={styles.secondary} onPress={handleEditDelete}>
-                <Text style={styles.secondaryText}>Удалить</Text>
+              <Pressable style={styles.editDanger} onPress={handleEditDelete}>
+                <Text style={styles.editDangerText} numberOfLines={2} adjustsFontSizeToFit>
+                  Отменить{'\n'}выполнение
+                </Text>
               </Pressable>
               <Pressable style={styles.primary} onPress={handleEditSave}>
                 <Text style={styles.primaryText}>Сохранить</Text>
@@ -1314,14 +1345,17 @@ const createStyles = (colors: ReturnType<typeof useThemedColors>) =>
     flexWrap: 'wrap',
   },
   progressPill: {
-    color: colors.text,
+    color: '#2f4636',
     fontSize: 12,
     fontWeight: '700',
     paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: colors.border,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#c4ddcc',
+    backgroundColor: '#e8f3ed',
+    minWidth: 58,
+    textAlign: 'center',
   },
   subtitle: {
     color: colors.muted,
@@ -1332,39 +1366,52 @@ const createStyles = (colors: ReturnType<typeof useThemedColors>) =>
     justifyContent: 'center',
   },
   folderCard: {
-    backgroundColor: colors.card,
-    borderRadius: 12,
+    backgroundColor: '#f4fbf6',
+    borderRadius: 14,
     padding: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    gap: 10,
-    shadowColor: '#000',
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#c8dfd0',
+    gap: 8,
   },
   folderCardInactive: {
     opacity: 0.7,
   },
   folderExpanded: {
-    borderColor: colors.primary,
+    borderColor: '#a5d9b8',
+    backgroundColor: '#f1f8f3',
   },
   cardDone: {
-    backgroundColor: '#0f1f15',
-    borderColor: '#1f3b2b',
+    backgroundColor: '#f0fbf4',
+    borderColor: '#b7e3c3',
   },
   folderHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    columnGap: 8,
   },
   folderTitle: {
     color: colors.text,
     fontWeight: '700',
     fontSize: 18,
+    flexShrink: 1,
   },
   badge: {
     color: colors.primary,
     fontSize: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    backgroundColor: colors.card,
+    flexShrink: 0,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexShrink: 0,
   },
   iconSuccess: {
     color: colors.success,
@@ -1378,48 +1425,51 @@ const createStyles = (colors: ReturnType<typeof useThemedColors>) =>
     marginTop: 4,
     padding: 8,
     borderRadius: 10,
-    backgroundColor: '#0f1f15',
+    backgroundColor: '#fff8e6',
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: '#f2c94c',
   },
   queueText: {
     color: colors.muted,
     fontSize: 12,
   },
   templateCard: {
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: colors.border,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#c8dfd0',
     padding: 10,
-    gap: 10,
+    gap: 8,
+    backgroundColor: '#f4fbf6',
   },
   templateExpanded: {
-    borderColor: colors.primary,
+    borderColor: '#a5d9b8',
   },
   templateHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    columnGap: 8,
   },
   templateTitle: {
     color: colors.text,
     fontWeight: '700',
     fontSize: 16,
+    flexShrink: 1,
   },
   exercise: {
-    backgroundColor: colors.surface,
-    borderRadius: 8,
+    backgroundColor: '#f8fdf9',
+    borderRadius: 10,
     padding: 10,
     gap: 6,
-    borderWidth: 1,
-    borderColor: colors.border,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#cde4d5',
   },
   exerciseExpanded: {
-    borderColor: colors.primary,
+    borderColor: '#a5d9b8',
   },
   exerciseDone: {
-    backgroundColor: '#0f1f15',
-    borderColor: '#1f3b2b',
+    backgroundColor: '#eaf6ee',
+    borderColor: '#9fd0ae',
   },
   exerciseHeader: {
     flexDirection: 'row',
@@ -1453,7 +1503,7 @@ const createStyles = (colors: ReturnType<typeof useThemedColors>) =>
     padding: 12,
     borderRadius: 12,
     backgroundColor: colors.card,
-    borderWidth: 1,
+    borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
     gap: 8,
   },
@@ -1462,13 +1512,13 @@ const createStyles = (colors: ReturnType<typeof useThemedColors>) =>
     borderRadius: 14,
     paddingVertical: 10,
     paddingHorizontal: 14,
-    borderWidth: 1,
+    borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
     minWidth: 120,
     gap: 4,
     shadowColor: '#000',
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
     flexShrink: 0,
     alignSelf: 'flex-start',
   },
@@ -1553,16 +1603,16 @@ const createStyles = (colors: ReturnType<typeof useThemedColors>) =>
     fontFamily: 'Inter-Bold',
   },
   setCard: {
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: 14,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    gap: 6,
+    backgroundColor: '#eaf6ef',
+    borderRadius: 12,
+    padding: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#c9e3d3',
+    gap: 4,
   },
   setCardDone: {
-    backgroundColor: '#0f1f15',
-    borderColor: '#1f3b2b',
+    backgroundColor: '#def2e6',
+    borderColor: '#9fd0ae',
   },
   setRow: {
     flexDirection: 'row',
@@ -1579,12 +1629,12 @@ const createStyles = (colors: ReturnType<typeof useThemedColors>) =>
   },
   doneButton: {
     marginTop: 6,
-    paddingVertical: 12,
+    paddingVertical: 10,
     paddingHorizontal: 12,
-    borderRadius: 12,
+    borderRadius: 10,
     alignItems: 'center',
-    borderWidth: 1,
-    minHeight: 44,
+    borderWidth: StyleSheet.hairlineWidth,
+    minHeight: 38,
     justifyContent: 'center',
   },
   doneButtonPending: {
@@ -1592,15 +1642,15 @@ const createStyles = (colors: ReturnType<typeof useThemedColors>) =>
     backgroundColor: colors.primary,
   },
   doneButtonCompleted: {
-    backgroundColor: '#0f1f15',
-    borderColor: '#1f3b2b',
+    backgroundColor: '#e6f6ed',
+    borderColor: '#9fd0ae',
   },
   doneButtonText: {
     color: colors.primaryText,
     fontWeight: '700',
   },
   doneButtonTextCompleted: {
-    color: colors.muted,
+    color: '#2f8556',
     fontWeight: '700',
   },
   mutedDone: {
@@ -1609,7 +1659,7 @@ const createStyles = (colors: ReturnType<typeof useThemedColors>) =>
   chevron: {
     color: colors.muted,
     fontSize: 14,
-    marginLeft: 8,
+    marginLeft: 6,
   },
   iconMuted: {
     color: colors.muted,
@@ -1621,15 +1671,15 @@ const createStyles = (colors: ReturnType<typeof useThemedColors>) =>
   },
   folderTab: {
     borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingVertical: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#f2b200',
+    paddingVertical: 6,
     paddingHorizontal: 12,
-    backgroundColor: colors.surface,
+    backgroundColor: '#fff',
   },
   folderTabActive: {
-    borderColor: colors.primary,
-    backgroundColor: colors.primary + '15',
+    borderColor: '#f2b200',
+    backgroundColor: '#fff8e6',
   },
   folderTabText: {
     color: colors.primary,
@@ -1654,10 +1704,19 @@ const createStyles = (colors: ReturnType<typeof useThemedColors>) =>
     color: colors.primaryText,
     fontWeight: '700',
   },
-  factText: {
+  muscleLine: {
     color: colors.text,
     fontSize: 12,
+    marginTop: 2,
+  },
+  factText: {
+    color: '#2f8556',
+    fontSize: 12,
     fontWeight: '600',
+  },
+  planText: {
+    color: colors.muted,
+    fontSize: 12,
   },
   planRow: {
     flexDirection: 'row',
@@ -1682,6 +1741,48 @@ const createStyles = (colors: ReturnType<typeof useThemedColors>) =>
     width: 320,
     borderWidth: 1,
     borderColor: colors.border,
+    gap: 10,
+  },
+  editModalCard: {
+    maxWidth: 680,
+    width: '90%',
+    padding: 20,
+    borderRadius: 24,
+    alignSelf: 'center',
+  },
+  modalTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: colors.text,
+  },
+  modalSubtitle: {
+    color: colors.muted,
+    fontSize: 14,
+    marginBottom: 6,
+  },
+  editLabel: {
+    textAlign: 'center',
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.text,
+    marginTop: 6,
+  },
+  editGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 16,
+    justifyContent: 'center',
+    marginTop: 6,
+  },
+  editColCentered: {
+    minWidth: 200,
+    gap: 6,
+    alignItems: 'center',
+  },
+  editButtons: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 16,
   },
   dateClose: {
     marginTop: 8,
@@ -1795,24 +1896,40 @@ const createStyles = (colors: ReturnType<typeof useThemedColors>) =>
   secondary: {
     flex: 1,
     paddingVertical: 12,
-    borderRadius: 12,
-    borderWidth: 1,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
     alignItems: 'center',
   },
   secondaryText: {
     color: colors.muted,
     fontFamily: 'Inter-SemiBold',
+    fontSize: 13,
   },
   primary: {
     flex: 1,
     paddingVertical: 12,
-    borderRadius: 12,
+    borderRadius: 14,
     backgroundColor: colors.primary,
     alignItems: 'center',
   },
   primaryText: {
     color: colors.primaryText,
     fontFamily: 'Inter-Bold',
+    fontSize: 14,
+  },
+  editDanger: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.primary,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+  },
+  editDangerText: {
+    color: colors.primaryText,
+    fontFamily: 'Inter-SemiBold',
+    fontSize: 13,
   },
 });
