@@ -5,6 +5,13 @@ import { logWorkoutSet, LogSetPayload } from '../api/workout';
 import { useToken } from '../hooks/useToken';
 
 const STORAGE_KEY = 'fitTODOay/offlineQueue';
+let queueLock: Promise<unknown> = Promise.resolve();
+
+function withQueueLock<T>(fn: () => Promise<T>): Promise<T> {
+  const next = queueLock.then(fn, fn);
+  queueLock = next.catch(() => undefined);
+  return next;
+}
 
 async function readQueue(): Promise<LogSetPayload[]> {
   const raw = await AsyncStorage.getItem(STORAGE_KEY);
@@ -21,18 +28,25 @@ async function writeQueue(queue: LogSetPayload[]) {
 }
 
 export async function enqueueLog(payload: LogSetPayload) {
-  const queue = await readQueue();
-  queue.push(payload);
-  await writeQueue(queue);
+  return withQueueLock(async () => {
+    const queue = await readQueue();
+    queue.push(payload);
+    await writeQueue(queue);
+    return queue.length;
+  });
 }
 
 export async function getOfflineQueueCount() {
-  const queue = await readQueue();
+  const queue = await withQueueLock(async () => readQueue());
   return queue.length;
 }
 
 async function dequeueAndSend(token: string) {
-  const queue = await readQueue();
+  const queue = await withQueueLock(async () => readQueue());
+  if (!queue.length) {
+    return { sent: 0, remaining: 0 };
+  }
+
   const remaining: LogSetPayload[] = [];
   for (const item of queue) {
     try {
@@ -41,7 +55,13 @@ async function dequeueAndSend(token: string) {
       remaining.push(item);
     }
   }
-  await writeQueue(remaining);
+  return withQueueLock(async () => {
+    const latest = await readQueue();
+    const newItems = latest.slice(queue.length);
+    const merged = [...remaining, ...newItems];
+    await writeQueue(merged);
+    return { sent: queue.length - remaining.length, remaining: merged.length };
+  });
 }
 
 type SyncHandlers = {
@@ -50,21 +70,40 @@ type SyncHandlers = {
   onError?: (error: Error) => void;
 };
 
+export async function syncOfflineQueue(token: string, options?: SyncHandlers) {
+  if (!token) return;
+  try {
+    const queuedBefore = await getOfflineQueueCount();
+    if (!queuedBefore) {
+      options?.onSync?.({ sent: 0, remaining: 0 });
+      return;
+    }
+    options?.onSyncStart?.();
+    const result = await dequeueAndSend(token);
+    options?.onSync?.(result);
+  } catch (e: any) {
+    options?.onError?.(e as Error);
+    throw e;
+  }
+}
+
 export function useOfflineQueueSync(options?: SyncHandlers) {
   const token = useToken();
 
   useEffect(() => {
-    const sub = NetInfo.addEventListener(async state => {
-      if (!state.isConnected || !token) return;
-      try {
-        options?.onSyncStart?.();
-        const before = await readQueue();
-        await dequeueAndSend(token);
-        const after = await readQueue();
-        options?.onSync?.({ sent: before.length - after.length, remaining: after.length });
-      } catch (e: any) {
-        options?.onError?.(e as Error);
-      }
+    if (!token) return undefined;
+
+    const trySync = async () => {
+      const state = await NetInfo.fetch();
+      if (!state.isConnected) return;
+      await syncOfflineQueue(token, options);
+    };
+
+    trySync().catch(() => null);
+
+    const sub = NetInfo.addEventListener(state => {
+      if (!state.isConnected) return;
+      syncOfflineQueue(token, options).catch(() => null);
     });
     return () => sub();
   }, [token, options]);

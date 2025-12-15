@@ -6,7 +6,6 @@ import { Screen } from '../../components/Screen';
 import { TextField } from '../../components/TextField';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { Stepper } from '../../components/Stepper';
-import { colors } from '../../theme/colors';
 import { register } from '../../api/auth';
 import { useAuthStore } from '../../state/auth';
 import { notifyError } from '../../utils/notify';
@@ -93,9 +92,9 @@ export function OnboardingScreen({ route }: Props) {
     setStep(prev => Math.min(prev + 1, steps.length - 1));
   };
 
-  const prev = () => {
+  const goBack = () => {
     setError(null);
-    setStep(prev => Math.max(prev - 1, 0));
+    setStep(current => Math.max(current - 1, 0));
   };
 
   const submit = async () => {
@@ -228,7 +227,7 @@ export function OnboardingScreen({ route }: Props) {
         </View>
 
         <View style={styles.footer}>
-          <PrimaryButton title="Назад" variant="ghost" onPress={prev} disabled={step === 0 || loading} />
+          <PrimaryButton title="Назад" variant="ghost" onPress={goBack} disabled={step === 0 || loading} />
           {step < steps.length - 1 ? (
             <PrimaryButton title="Далее" onPress={next} disabled={loading} />
           ) : (

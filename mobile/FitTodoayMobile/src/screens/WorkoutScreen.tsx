@@ -9,7 +9,6 @@ import {
   Modal,
   TouchableOpacity,
   ScrollView,
-  TextInput,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -19,24 +18,23 @@ import { Screen } from '../components/Screen';
 import { useToken } from '../hooks/useToken';
 import {
   fetchWorkoutPlan,
-  logWorkoutSet,
   PlanFolder,
   PlanTemplate,
   PlanExercise,
   WorkoutLog,
   updateWorkoutLog,
   deleteWorkoutLog,
+  LogSetPayload,
 } from '../api/workout';
 import { fetchDailyLoadsRange } from '../api/analytics';
 import { fetchRecommendations, applyRecommendation, Recommendation } from '../api/recommendations';
-import { useOfflineQueueSync, enqueueLog, getOfflineQueueCount } from '../state/offlineQueue';
+import { useOfflineQueueSync, enqueueLog, getOfflineQueueCount, syncOfflineQueue } from '../state/offlineQueue';
 import { useOnline } from '../hooks/useOnline';
 import { notifyError } from '../utils/notify';
 import { useThemedColors } from '../theme/colors';
 import { RestTimerOverlay } from '../components/RestTimerOverlay';
 import { ExecutionOverlay } from '../components/ExecutionOverlay';
 import { AdjustNumber } from '../components/AdjustNumber';
-import { BrandMark } from '../components/BrandMark';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { config } from '../config/env';
 
@@ -47,12 +45,6 @@ const getTemplateExerciseId = (
   (exercise as any).template_exercise_id ??
   (exercise as any).id ??
   0;
-
-const parseMuscles = (value?: string | null) =>
-  (value || '')
-    .split(/[\\/,\u2022]/)
-    .map(item => item.trim())
-    .filter(Boolean);
 
 const CheckIcon = ({ color }: { color: string }) => (
   <Svg width={18} height={18} viewBox="0 0 20 20">
@@ -221,13 +213,16 @@ export function WorkoutScreen() {
       onSync: (info: { sent: number; remaining: number }) => {
         setQueueSyncing(false);
         setQueueCount(info.remaining);
+        if (info.sent > 0) {
+          queryClient.invalidateQueries({ queryKey: ['workoutPlan'] });
+        }
       },
       onError: (err: Error) => {
         setQueueSyncing(false);
         setQueueError(err?.message || 'Не удалось синхронизировать очередь');
       },
     }),
-    [],
+    [queryClient],
   );
 
   useOfflineQueueSync(queueSyncHandlers);
@@ -287,25 +282,6 @@ export function WorkoutScreen() {
       .catch(() => null)
       .finally(() => setExpansionHydrated(true));
   }, []);
-
-  const mutation = useMutation({
-    mutationFn: (payload: Parameters<typeof logWorkoutSet>[1]) => {
-      if (!token) {
-        throw new Error('Нет токена');
-      }
-      return logWorkoutSet(token, payload);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['workoutPlan'] });
-      getOfflineQueueCount().then(count => setQueueCount(count)).catch(() => null);
-    },
-    onError: async (_err, variables) => {
-      if (!online) {
-        await enqueueLog(variables);
-        setQueueCount(prev => prev + 1);
-      }
-    },
-  });
 
   const applyRecMutation = useMutation({
     mutationFn: (rec: Recommendation) => {
@@ -388,7 +364,7 @@ export function WorkoutScreen() {
 
   const handleRestFinish = () => {
     const base = restOverlay.payloadBase;
-    const payload: Parameters<typeof logWorkoutSet>[1] = {
+    const payload: LogSetPayload = {
       workout_day: base.workout_day,
       template_exercise: base.template_exercise,
       set_index: base.set_index,
@@ -400,7 +376,7 @@ export function WorkoutScreen() {
     } else {
       payload.actual_reps = parseNumber(restValues.reps) ?? restOverlay.initialReps ?? undefined;
       if (restOverlay.hasWeight) {
-          payload.actual_weight = parseNumber(restValues.weight) ?? restOverlay.initialWeight ?? undefined;
+        payload.actual_weight = parseNumber(restValues.weight) ?? restOverlay.initialWeight ?? undefined;
       }
       payload.actual_time = null;
     }
@@ -558,27 +534,29 @@ export function WorkoutScreen() {
     );
   };
 
-  const submitLog = async (payload: Parameters<typeof logWorkoutSet>[1], restSeconds?: number) => {
-    mutation.mutate(payload, {
-      onSuccess: () => {
-        setRestOverlay(prev => ({ ...prev, visible: false }));
-        setExecOverlay(prev => ({ ...prev, visible: false }));
-        if (restSeconds) {
-          setRestOverlay(prev => ({ ...prev, visible: true, rest: restSeconds }));
-        }
-      },
-      onError: async () => {
-        if (!online) {
-          await enqueueLog(payload);
-          setQueueCount(prev => prev + 1);
-          if (restSeconds) {
-            setRestOverlay(prev => ({ ...prev, visible: true, rest: restSeconds }));
-          }
-        } else {
-          notifyError('Не удалось сохранить подход');
-        }
-      },
-    });
+  const submitLog = async (payload: LogSetPayload, restSeconds?: number) => {
+    if (!token) {
+      notifyError('Нет токена');
+      return;
+    }
+    try {
+      const count = await enqueueLog(payload);
+      setQueueCount(count);
+      setQueueError(null);
+    } catch {
+      notifyError('Не удалось сохранить подход');
+      return;
+    }
+
+    setRestOverlay(prev => ({ ...prev, visible: false }));
+    setExecOverlay(prev => ({ ...prev, visible: false }));
+    if (restSeconds) {
+      setRestOverlay(prev => ({ ...prev, visible: true, rest: restSeconds }));
+    }
+
+    if (online) {
+      syncOfflineQueue(token, queueSyncHandlers).catch(() => null);
+    }
   };
 
   const renderExercise = (exercise: PlanExercise) => {
@@ -591,12 +569,6 @@ export function WorkoutScreen() {
     }, 0);
     const exerciseComplete = normalizedSets.length > 0 && doneCount >= normalizedSets.length;
     const exerciseName = exercise.name || (exercise as any)?.source?.name || 'Упражнение';
-    const muscleLineSource =
-      (exercise as any)?.source?.target_muscles ||
-      (exercise as any)?.target_muscles ||
-      (exercise as any)?.muscles ||
-      ((exercise as any)?.muscle_groups || []).join(' • ');
-    const muscleLine = parseMuscles(muscleLineSource).join(' • ');
 
     const expanded = expandedExercises[templateExerciseId] ?? true;
     return (

@@ -76,7 +76,10 @@ export function AnalyticsScreen() {
 
   const refreshing = dailyQuery.isFetching || topQuery.isFetching || trendQuery.isFetching;
 
-  const folders = (trendQuery.data?.folders || []) as ProgramTrendsResponse['folders'];
+  const folders = React.useMemo(
+    () => (trendQuery.data?.folders || []) as ProgramTrendsResponse['folders'],
+    [trendQuery.data?.folders],
+  );
 
   React.useEffect(() => {
     if (!folders.length) {
@@ -484,7 +487,7 @@ function TrendCharts({ data, chartType, activeSeries, onSelectSeries, view, acti
             <View key={iso} style={{ alignItems: 'center', gap: 4 }}>
               {chartType === 'stacked' ? (
                 <View style={[styles.barStack, { height: 140 }]}>
-                  {focused.map((s, sIdx) => {
+                  {focused.map(s => {
                     const val = s.points[idx]?.value || 0;
                     const height = maxValue ? (val / maxValue) * 140 : 0;
                     return (
