@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ApiError, apiFetch } from "@/lib/api";
 
@@ -86,6 +86,7 @@ export const useOfflineWorkoutQueue = (
   const [pendingEntries, setPendingEntries] = useState<OfflineQueueEntry[]>([]);
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const syncingRef = useRef(false);
 
   const reloadPending = useCallback(() => {
     if (!planId) {
@@ -121,40 +122,49 @@ export const useOfflineWorkoutQueue = (
     if (!token) {
       return;
     }
+    if (syncingRef.current) {
+      return;
+    }
     const queue = readEntries();
     if (!queue.length) {
+      setSyncError(null);
       return;
     }
     setSyncing(true);
+    syncingRef.current = true;
     let syncedAny = false;
     let lastError: string | null = null;
-    for (const entry of queue) {
-      try {
-        await apiFetch("/api/workouts/logs/", {
-          method: "POST",
-          body: JSON.stringify(entry.payload),
-          token,
-        });
-        removeEntry(entry.id);
-        syncedAny = true;
-      } catch (error: any) {
-        if (error instanceof ApiError) {
+    try {
+      for (const entry of queue) {
+        try {
+          await apiFetch("/api/workouts/logs/", {
+            method: "POST",
+            body: JSON.stringify(entry.payload),
+            token,
+          });
           removeEntry(entry.id);
-          if (error.status >= 500) {
-            lastError = error.message ?? "Не удалось синхронизировать один из подходов";
+          syncedAny = true;
+        } catch (error: any) {
+          if (error instanceof ApiError) {
+            removeEntry(entry.id);
+            if (error.status >= 500) {
+              lastError = error.message ?? "Не удалось синхронизировать один из подходов";
+            }
+            continue;
           }
-          continue;
+          lastError = "Нет соединения";
+          break;
         }
-        lastError = "Нет соединения";
-        break;
       }
+      if (syncedAny) {
+        reloadPending();
+        refreshPlan();
+      }
+      setSyncError(lastError);
+    } finally {
+      syncingRef.current = false;
+      setSyncing(false);
     }
-    if (syncedAny) {
-      reloadPending();
-      refreshPlan();
-    }
-    setSyncError(lastError);
-    setSyncing(false);
   }, [token, reloadPending, refreshPlan]);
 
   useEffect(() => {
