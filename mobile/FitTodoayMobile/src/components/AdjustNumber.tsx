@@ -105,7 +105,7 @@ const createStyles = (colors: ReturnType<typeof useThemedColors>) =>
     row: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 8,
+      gap: 10,
     },
     btn: {
       width: 44,
@@ -126,14 +126,14 @@ const createStyles = (colors: ReturnType<typeof useThemedColors>) =>
       fontWeight: '800',
     },
     input: {
-      flex: 1,
+      minWidth: 78,
       height: 44,
       borderRadius: 12,
       borderWidth: 1,
       borderColor: colors.border,
       backgroundColor: colors.surface,
       color: colors.text,
-      paddingHorizontal: 10,
+      paddingHorizontal: 12,
       fontWeight: '700',
       textAlign: 'center',
     },

@@ -191,6 +191,16 @@ export function WorkoutScreen() {
     hasWeight?: boolean;
     values?: { reps: string; weight: string; time: string };
   }>({ visible: false });
+  const editValues = useMemo(() => {
+    const log: any = editModal.log || {};
+    return {
+      reps: editModal.values?.reps ?? formatNumberTrim(log.actual_reps ?? log.reps ?? ''),
+      weight: editModal.values?.weight ?? formatNumberTrim(log.actual_weight ?? log.weight ?? ''),
+      time: editModal.values?.time ?? formatNumberTrim(log.actual_time ?? log.time_seconds ?? log.time ?? ''),
+    };
+  }, [editModal.log, editModal.values]);
+  const modalHasTime = !!editModal.hasTime || (editModal.log as any)?.has_time === true;
+  const modalHasWeight = editModal.hasWeight === undefined ? (editModal.log as any)?.has_weight !== false : editModal.hasWeight;
   const [infoModal, setInfoModal] = useState<{
     visible: boolean;
     name?: string;
@@ -1140,40 +1150,45 @@ export function WorkoutScreen() {
             <Text style={styles.modalTitle}>Правка подхода</Text>
             <Text style={styles.modalSubtitle}>{editModal.exerciseName}</Text>
             <View style={styles.editGrid}>
-              <View style={styles.editColCentered}>
-                <Text style={styles.editLabel}>Повторы</Text>
-                <AdjustNumber
-                  label=""
-                  value={editModal.values?.reps || ''}
-                  onChange={value =>
-                    setEditModal(prev => ({ ...prev, values: { ...(prev.values || {}), reps: value } }))
-                  }
-                />
-              </View>
-              <View style={styles.editColCentered}>
-                <Text style={styles.editLabel}>Вес (кг)</Text>
-                <AdjustNumber
-                  label=""
-                  value={editModal.values?.weight || ''}
-                  onChange={value =>
-                    setEditModal(prev => ({ ...prev, values: { ...(prev.values || {}), weight: value } }))
-                  }
-                  inputMode="decimal"
-                  step={2}
-                />
-              </View>
-              {editModal.hasTime ? (
+              {modalHasTime ? (
                 <View style={styles.editColCentered}>
                   <Text style={styles.editLabel}>Время (сек)</Text>
                   <AdjustNumber
                     label=""
-                    value={editModal.values?.time || ''}
+                    value={editValues.time}
                     onChange={value =>
                       setEditModal(prev => ({ ...prev, values: { ...(prev.values || {}), time: value } }))
                     }
                   />
                 </View>
-              ) : null}
+              ) : (
+                <>
+                  <View style={styles.editColCentered}>
+                    <Text style={styles.editLabel}>Повторы</Text>
+                    <AdjustNumber
+                      label=""
+                      value={editValues.reps}
+                      onChange={value =>
+                        setEditModal(prev => ({ ...prev, values: { ...(prev.values || {}), reps: value } }))
+                      }
+                    />
+                  </View>
+                  {modalHasWeight ? (
+                    <View style={styles.editColCentered}>
+                      <Text style={styles.editLabel}>Вес (кг)</Text>
+                      <AdjustNumber
+                        label=""
+                        value={editValues.weight}
+                        onChange={value =>
+                          setEditModal(prev => ({ ...prev, values: { ...(prev.values || {}), weight: value } }))
+                        }
+                        inputMode="decimal"
+                        step={2}
+                      />
+                    </View>
+                  ) : null}
+                </>
+              )}
             </View>
             <View style={styles.editButtons}>
               <Pressable style={styles.secondary} onPress={closeEditModal}>
@@ -1896,10 +1911,12 @@ const createStyles = (colors: ReturnType<typeof useThemedColors>) =>
   secondary: {
     flex: 1,
     paddingVertical: 12,
-    borderRadius: 14,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 12,
+    borderWidth: 1,
     borderColor: colors.border,
     alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
   },
   secondaryText: {
     color: colors.muted,
@@ -1912,6 +1929,7 @@ const createStyles = (colors: ReturnType<typeof useThemedColors>) =>
     borderRadius: 14,
     backgroundColor: colors.primary,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   primaryText: {
     color: colors.primaryText,
@@ -1921,15 +1939,17 @@ const createStyles = (colors: ReturnType<typeof useThemedColors>) =>
   editDanger: {
     flex: 1,
     paddingVertical: 12,
-    borderRadius: 14,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 12,
+    borderWidth: 1,
     borderColor: colors.primary,
-    backgroundColor: colors.primary,
+    backgroundColor: colors.surface,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   editDangerText: {
-    color: colors.primaryText,
+    color: colors.primary,
     fontFamily: 'Inter-SemiBold',
     fontSize: 13,
+    textAlign: 'center',
   },
 });
