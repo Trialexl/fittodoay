@@ -253,12 +253,7 @@ export const Checklist = ({
     return map;
   }, [combinedLogs]);
 
-  const isExerciseActive = useCallback((exercise: ExercisePayload) => {
-    const raw = (exercise as any).is_active ?? (exercise as any).active;
-    if (raw === false || raw === 0) return false;
-    if (typeof raw === "string" && raw.toLowerCase() === "false") return false;
-    return true;
-  }, []);
+  const isExerciseActive = useCallback((exercise: ExercisePayload) => exercise.is_active !== false, []);
 
   const isExerciseComplete = useCallback(
     (exercise: ExercisePayload) =>
@@ -1077,11 +1072,12 @@ export const Checklist = ({
                             {templateExpanded && (
                               <div className="space-y-2.5 sm:space-y-3.5">
                                 {activeExercises.map((exercise) => {
+                            const exerciseActive = isExerciseActive(exercise);
+                            if (!exerciseActive) return null;
                             const exerciseComplete = isExerciseComplete(exercise);
                             const storedExpanded = expandedExercises[exercise.template_exercise_id];
                             const exerciseExpanded =
                               storedExpanded !== undefined ? storedExpanded : !exerciseComplete;
-                        const exerciseActive = exercise.is_active ?? true;
                         const completedSets = exercise.sets.filter((set) =>
                           getLogForSet(exercise.template_exercise_id, set.set_index),
                         ).length;
