@@ -82,6 +82,9 @@ def _build_snapshot_index(day: WorkoutDay):
             template_id = template.get("id")
             template_name = template.get("name") or f"День {template_id}"
             for exercise in template.get("exercises", []):
+                # Пропускаем деактивированные упражнения, чтобы не блокировать рекомендации
+                if exercise.get("is_active") is False:
+                    continue
                 te_id = exercise.get("template_exercise_id")
                 if not te_id:
                     continue
