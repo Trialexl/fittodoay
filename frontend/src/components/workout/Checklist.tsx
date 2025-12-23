@@ -252,37 +252,48 @@ export const Checklist = ({
     return map;
   }, [combinedLogs]);
 
+  const isExerciseActive = useCallback(
+    (exercise: ExercisePayload) => exercise.is_active ?? true,
+    [],
+  );
+
   const isExerciseComplete = useCallback(
     (exercise: ExercisePayload) =>
+      !isExerciseActive(exercise) ||
       exercise.sets.every((set) =>
         logsBySet.has(keyForSet(exercise.template_exercise_id, set.set_index)),
       ),
-    [logsBySet],
+    [isExerciseActive, logsBySet],
   );
 
   const isTemplateComplete = useCallback(
-    (template: TemplatePayload) => template.exercises.every((exercise) => isExerciseComplete(exercise)),
-    [isExerciseComplete],
+    (template: TemplatePayload) =>
+      template.exercises.filter(isExerciseActive).every((exercise) => isExerciseComplete(exercise)),
+    [isExerciseActive, isExerciseComplete],
   );
 
   const isFolderComplete = useCallback(
-    (folder: WorkoutPlan["folders"][number]) => folder.templates.every((template) => isTemplateComplete(template)),
+    (folder: WorkoutPlan["folders"][number]) =>
+      folder.templates.every((template) => isTemplateComplete(template)),
     [isTemplateComplete],
   );
 
-  const getTemplateMuscles = (template: TemplatePayload) => {
-    const seen = new Set<string>();
-    const result: string[] = [];
-    template.exercises.forEach((exercise) => {
-      getExerciseMuscles(exercise).forEach((muscle) => {
-        if (!seen.has(muscle)) {
-          seen.add(muscle);
-          result.push(muscle);
-        }
+  const getTemplateMuscles = useCallback(
+    (template: TemplatePayload) => {
+      const seen = new Set<string>();
+      const result: string[] = [];
+      template.exercises.filter(isExerciseActive).forEach((exercise) => {
+        getExerciseMuscles(exercise).forEach((muscle) => {
+          if (!seen.has(muscle)) {
+            seen.add(muscle);
+            result.push(muscle);
+          }
+        });
       });
-    });
-    return result;
-  };
+      return result;
+    },
+    [isExerciseActive],
+  );
 
   const orderedSetMeta = useMemo(() => {
     if (!plan) {
@@ -293,6 +304,7 @@ export const Checklist = ({
     for (const folder of plan.folders) {
       for (const template of folder.templates) {
         for (const exercise of template.exercises) {
+          if (!isExerciseActive(exercise)) continue;
           for (const set of exercise.sets) {
             const key = keyForSet(exercise.template_exercise_id, set.set_index);
             positions.set(key, order.length);
@@ -302,7 +314,7 @@ export const Checklist = ({
       }
     }
     return { order, positions };
-  }, [plan]);
+  }, [plan, isExerciseActive]);
 
   const orderedSetKeys = orderedSetMeta.order;
   const orderedSetPositions = orderedSetMeta.positions;
@@ -332,7 +344,7 @@ export const Checklist = ({
       const next: Record<number, boolean> = {};
       plan.folders.forEach((folder) => {
         folder.templates.forEach((template) => {
-          template.exercises.forEach((exercise) => {
+          template.exercises.filter(isExerciseActive).forEach((exercise) => {
             const isComplete = isExerciseComplete(exercise);
             if (prev[exercise.template_exercise_id] !== undefined) {
               next[exercise.template_exercise_id] = prev[exercise.template_exercise_id];
@@ -344,7 +356,7 @@ export const Checklist = ({
       });
       return next;
     });
-  }, [plan?.folders, logsBySet, isExerciseComplete]);
+  }, [plan?.folders, logsBySet, isExerciseActive, isExerciseComplete]);
 
   useEffect(() => {
     setFolderRecommendations({});
@@ -990,8 +1002,9 @@ export const Checklist = ({
                     {folder.templates.map((template) => {
                       const folderTemplateState = expandedTemplates[folder.id] ?? {};
                       const templateExpanded = folderTemplateState[template.id] ?? true;
+                      const activeExercises = template.exercises.filter(isExerciseActive);
                       const templateComplete = isTemplateComplete(template);
-                      const templateProgress = template.exercises.reduce<{
+                      const templateProgress = activeExercises.reduce<{
                         completed: number;
                         total: number;
                       }>(
@@ -1057,7 +1070,7 @@ export const Checklist = ({
                           >
                             {templateExpanded && (
                               <div className="space-y-2.5 sm:space-y-3.5">
-                                {template.exercises.map((exercise) => {
+                                {activeExercises.map((exercise) => {
                             const exerciseComplete = isExerciseComplete(exercise);
                             const storedExpanded = expandedExercises[exercise.template_exercise_id];
                             const exerciseExpanded =
