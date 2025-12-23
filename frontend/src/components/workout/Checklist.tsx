@@ -237,6 +237,7 @@ export const Checklist = ({
     enqueueLog: enqueueOfflineLog,
     syncing: isOfflineSyncing,
     syncError: offlineSyncError,
+    processQueue,
   } = useOfflineWorkoutQueue(plan?.id ?? null, auth.token ?? null, refresh);
 
   const hasTemplates =
