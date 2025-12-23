@@ -252,10 +252,12 @@ export const Checklist = ({
     return map;
   }, [combinedLogs]);
 
-  const isExerciseActive = useCallback(
-    (exercise: ExercisePayload) => exercise.is_active ?? true,
-    [],
-  );
+  const isExerciseActive = useCallback((exercise: ExercisePayload) => {
+    const raw = (exercise as any).is_active ?? (exercise as any).active;
+    if (raw === false || raw === 0) return false;
+    if (typeof raw === "string" && raw.toLowerCase() === "false") return false;
+    return true;
+  }, []);
 
   const isExerciseComplete = useCallback(
     (exercise: ExercisePayload) =>
@@ -1003,6 +1005,9 @@ export const Checklist = ({
                       const folderTemplateState = expandedTemplates[folder.id] ?? {};
                       const templateExpanded = folderTemplateState[template.id] ?? true;
                       const activeExercises = template.exercises.filter(isExerciseActive);
+                      if (activeExercises.length === 0) {
+                        return null;
+                      }
                       const templateComplete = isTemplateComplete(template);
                       const templateProgress = activeExercises.reduce<{
                         completed: number;
