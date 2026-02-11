@@ -198,16 +198,6 @@ def _build_recommendation(
             )
             action = "info_low_reps"
             informational = True
-        elif (avg_weight is None or abs(float(avg_weight) - planned_weight) <= float(AUTO_ALIGN_THRESHOLD)):
-            if planned_reps < TARGET_REP_MAX:
-                if rounded_avg >= planned_reps:
-                    next_reps = min(planned_reps + 1, TARGET_REP_MAX)
-                    suggested_reps = next_reps
-                    reason = (
-                        f"Вы уверенно держите {rounded_avg:.1f} повт. — повышаем целевой шаг до {next_reps}, "
-                        "продолжайте наращивать повторы перед следующим ростом веса."
-                    )
-                    action = "increase_reps_after_weight"
         elif rounded_avg >= TARGET_REP_MAX and estimated_rir > TARGET_RIR + RIR_TOLERANCE:
             suggested_weight = _round_weight_up(planned_decimal + WEIGHT_STEP)
             suggested_reps = TARGET_REP_MIN
@@ -215,6 +205,15 @@ def _build_recommendation(
                 f"Повторы вышли на {rounded_avg:.1f} (RIR≈{estimated_rir:.1f}) — повышаем вес и начинаем новый цикл с 8 повторений."
             )
             action = "increase_weight"
+        elif (avg_weight is None or abs(float(avg_weight) - planned_weight) <= float(AUTO_ALIGN_THRESHOLD)):
+            if planned_reps < TARGET_REP_MAX and rounded_avg >= planned_reps:
+                next_reps = min(planned_reps + 1, TARGET_REP_MAX)
+                suggested_reps = next_reps
+                reason = (
+                    f"Вы уверенно держите {rounded_avg:.1f} повт. — повышаем целевой шаг до {next_reps}, "
+                    "продолжайте наращивать повторы перед следующим ростом веса."
+                )
+                action = "increase_reps_after_weight"
         elif rep_goal != planned_reps:
             suggested_reps = rep_goal
             reason = "Фиксируем план в диапазоне 8–12 повт., чтобы отслеживать прогрессию."
