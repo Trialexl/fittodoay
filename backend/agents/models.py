@@ -55,6 +55,12 @@ class LLMProgramMessage(TimestampedModel):
         USER = "user", "User"
         ASSISTANT = "assistant", "Assistant"
 
+    class ProposalStatus(models.TextChoices):
+        NONE = "none", "None"
+        PENDING = "pending", "Pending"
+        APPLIED = "applied", "Applied"
+        CANCELLED = "cancelled", "Cancelled"
+
     thread = models.ForeignKey(
         LLMProgramThread,
         on_delete=models.CASCADE,
@@ -63,6 +69,11 @@ class LLMProgramMessage(TimestampedModel):
     role = models.CharField(max_length=16, choices=Role.choices)
     content = models.TextField()
     actions = models.JSONField(blank=True, null=True)
+    proposal_status = models.CharField(
+        max_length=16,
+        choices=ProposalStatus.choices,
+        default=ProposalStatus.NONE,
+    )
 
     class Meta:
         ordering = ["created_at", "id"]

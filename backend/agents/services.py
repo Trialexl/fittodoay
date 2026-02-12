@@ -364,35 +364,35 @@ class LLMProgramChatService:
     def send(self, user_message: str) -> LLMProgramMessage:
         """Сохраняет сообщение пользователя, дергает LLM (текстовый ответ), сохраняет ответ."""
         LLMProgramMessage.objects.create(
-            thread=self.thread, role=LLMProgramMessage.Role.USER, content=user_message
+            thread=self.thread,
+            role=LLMProgramMessage.Role.USER,
+            content=user_message,
+            proposal_status=LLMProgramMessage.ProposalStatus.NONE,
         )
         payload = self._build_messages(user_message, mode="chat")
         raw = self._call_llm(payload)
         parsed = self._parse_chat_response(raw)
+        actions = parsed.get("actions") if isinstance(parsed.get("actions"), list) else []
+        proposal_status = (
+            LLMProgramMessage.ProposalStatus.PENDING
+            if actions
+            else LLMProgramMessage.ProposalStatus.NONE
+        )
         assistant_msg = LLMProgramMessage.objects.create(
             thread=self.thread,
             role=LLMProgramMessage.Role.ASSISTANT,
             content=parsed.get("assistant_reply", ""),
-            actions=parsed.get("actions"),
+            actions=actions,
+            proposal_status=proposal_status,
         )
         self.thread.updated_at = timezone.now()
         self.thread.save(update_fields=["updated_at"])
         return assistant_msg
 
-    def apply_latest_actions(self):
-        """Получает (или генерирует) actions и применяет их к программе."""
-        last_assistant = (
-            self.thread.messages.filter(role=LLMProgramMessage.Role.ASSISTANT).order_by("-id").first()
-        )
-        actions = last_assistant.actions if last_assistant and last_assistant.actions else None
-        if not actions:
-            actions = self._generate_actions()
-            LLMProgramMessage.objects.create(
-                thread=self.thread,
-                role=LLMProgramMessage.Role.ASSISTANT,
-                content="Применяю согласованные изменения.",
-                actions=actions,
-            )
+    def apply_actions(self, message_id: int):
+        """Применяет подтверждённый пользователем набор действий из конкретного сообщения."""
+        message = self._get_actionable_message(message_id)
+        actions = message.actions or []
         if not actions:
             raise LLMInvalidResponse("no_actions_to_apply")
         with transaction.atomic():
@@ -400,7 +400,28 @@ class LLMProgramChatService:
             for action in actions:
                 result = self._apply_action(action)
                 results.append(result)
+            message.proposal_status = LLMProgramMessage.ProposalStatus.APPLIED
+            message.save(update_fields=["proposal_status"])
         return results
+
+    def cancel_actions(self, message_id: int):
+        message = self._get_actionable_message(message_id)
+        message.proposal_status = LLMProgramMessage.ProposalStatus.CANCELLED
+        message.save(update_fields=["proposal_status"])
+        return {"message_id": message.id, "status": message.proposal_status}
+
+    def _get_actionable_message(self, message_id: int) -> LLMProgramMessage:
+        message = self.thread.messages.filter(
+            id=message_id,
+            role=LLMProgramMessage.Role.ASSISTANT,
+        ).first()
+        if not message:
+            raise LLMInvalidResponse("message_not_found")
+        if not isinstance(message.actions, list) or not message.actions:
+            raise LLMInvalidResponse("message_has_no_actions")
+        if message.proposal_status != LLMProgramMessage.ProposalStatus.PENDING:
+            raise LLMInvalidResponse(f"proposal_not_pending_{message.proposal_status}")
+        return message
 
     def _apply_action(self, action: Dict[str, Any]) -> Dict[str, Any]:
         action_type = action.get("type")

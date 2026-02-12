@@ -12,6 +12,7 @@ from accounts.serializers import LLMPreferencesSerializer
 from decimal import Decimal
 
 from agents.serializers import (
+    LLMProgramActionSerializer,
     LLMProgramMessageCreateSerializer,
     LLMProgramMessageSerializer,
     LLMProgramRequestSerializer,
@@ -132,9 +133,29 @@ class LLMProgramApplyView(APIView):
             thread = LLMProgramThread.objects.get(id=pk, user=request.user)
         except LLMProgramThread.DoesNotExist:
             return Response({"detail": "thread_not_found"}, status=status.HTTP_404_NOT_FOUND)
+        serializer = LLMProgramActionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
         service = LLMProgramChatService(thread)
         try:
-            results = service.apply_latest_actions()
+            results = service.apply_actions(serializer.validated_data["message_id"])
         except LLMInvalidResponse as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response({"applied": results}, status=status.HTTP_200_OK)
+
+
+class LLMProgramCancelView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk: int, *args, **kwargs):
+        try:
+            thread = LLMProgramThread.objects.get(id=pk, user=request.user)
+        except LLMProgramThread.DoesNotExist:
+            return Response({"detail": "thread_not_found"}, status=status.HTTP_404_NOT_FOUND)
+        serializer = LLMProgramActionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        service = LLMProgramChatService(thread)
+        try:
+            result = service.cancel_actions(serializer.validated_data["message_id"])
+        except LLMInvalidResponse as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(result, status=status.HTTP_200_OK)

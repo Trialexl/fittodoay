@@ -122,7 +122,7 @@ def _first_recommendation(day):
 
 @pytest.mark.django_db
 def test_template_matches_weekly_day():
-    folder = ProgramFolder.objects.create(user=User.objects.create_user("a@a.a"), name="Основные")
+    folder = ProgramFolder.objects.create(user=User.objects.create_user("a@a.a"), name="Тестовая папка")
     template = DayTemplate.objects.create(
         folder=folder,
         name="Monday",
@@ -136,7 +136,9 @@ def test_template_matches_weekly_day():
 @pytest.mark.django_db
 def test_generate_daily_plan_prioritizes_primary_folder():
     user = User.objects.create_user(email="user@example.com", password="pass")
-    primary = ProgramFolder.objects.create(user=user, name="Основные", sort_order=0)
+    primary = ProgramFolder.objects.get(user=user, name="Основные")
+    primary.sort_order = 0
+    primary.save(update_fields=["sort_order"])
     extra = ProgramFolder.objects.create(user=user, name="Доп", sort_order=1)
     template_primary = DayTemplate.objects.create(
         folder=primary,
@@ -270,7 +272,7 @@ def test_recommendation_adjust_reps_when_plan_out_of_range():
         rep_override=15,
         weight_override=24,
         actual_reps=[10, 10, 10],
-        actual_weights=[24, 24, 24],
+        actual_weights=[23.4, 23.4, 23.4],
     )
     rec = _first_recommendation(day)
 

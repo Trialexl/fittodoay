@@ -54,7 +54,7 @@ class LLMProgramThreadSerializer(serializers.ModelSerializer):
 class LLMProgramMessageSerializer(serializers.ModelSerializer):
     class Meta:
         model = LLMProgramMessage
-        fields = ["id", "role", "content", "actions", "created_at"]
+        fields = ["id", "role", "content", "actions", "proposal_status", "created_at"]
         read_only_fields = fields
 
 
@@ -66,3 +66,7 @@ class LLMProgramMessageCreateSerializer(serializers.Serializer):
         if not message:
             raise serializers.ValidationError("Сообщение не может быть пустым")
         return attrs
+
+
+class LLMProgramActionSerializer(serializers.Serializer):
+    message_id = serializers.IntegerField(min_value=1)

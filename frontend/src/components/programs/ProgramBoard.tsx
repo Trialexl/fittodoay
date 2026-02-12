@@ -147,6 +147,14 @@ type ProgramBoardProps = {
   };
 };
 
+type ChatMessage = {
+  id: number;
+  role: string;
+  content: string;
+  actions?: any[] | null;
+  proposal_status?: "none" | "pending" | "applied" | "cancelled";
+};
+
 export const ProgramBoard = ({ initialFocus }: ProgramBoardProps = {}) => {
   const router = useRouter();
   const { token } = useAuth();
@@ -171,19 +179,31 @@ export const ProgramBoard = ({ initialFocus }: ProgramBoardProps = {}) => {
   const [chatError, setChatError] = useState<string | null>(null);
   const [chatLoading, setChatLoading] = useState(false);
   const [applying, setApplying] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
 
   const { data: chatMessages, mutate: refreshChat } = useSWR(
     token && chatState.threadId
       ? [`/api/llm-agent/threads/${chatState.threadId}/messages/`, token]
       : null,
     ([url, auth]) =>
-      apiFetch<{ id: number; role: string; content: string; actions?: any }[]>(url, {
+      apiFetch<ChatMessage[]>(url, {
         token: auth as string,
       }),
   );
 
-  const latestActions =
-    chatMessages?.filter((m) => m.role === "assistant").slice(-1)[0]?.actions ?? null;
+  const latestPendingProposal = useMemo(
+    () =>
+      chatMessages
+        ?.filter(
+          (m) =>
+            m.role === "assistant" &&
+            Array.isArray(m.actions) &&
+            m.actions.length > 0 &&
+            m.proposal_status === "pending",
+        )
+        .slice(-1)[0] ?? null,
+    [chatMessages],
+  );
 
   const reorderExercises = async (templateId: number, exerciseIds: number[]) => {
     if (!token) return;
@@ -279,12 +299,13 @@ export const ProgramBoard = ({ initialFocus }: ProgramBoardProps = {}) => {
   };
 
   const applyChatActions = async () => {
-    if (!token || !chatState.threadId) return;
+    if (!token || !chatState.threadId || !latestPendingProposal) return;
     setApplying(true);
     setChatError(null);
     try {
       await apiFetch(`/api/llm-agent/threads/${chatState.threadId}/apply/`, {
         method: "POST",
+        body: JSON.stringify({ message_id: latestPendingProposal.id }),
         token,
       });
       refreshChat();
@@ -295,6 +316,25 @@ export const ProgramBoard = ({ initialFocus }: ProgramBoardProps = {}) => {
       setChatError(message);
     } finally {
       setApplying(false);
+    }
+  };
+
+  const cancelChatActions = async () => {
+    if (!token || !chatState.threadId || !latestPendingProposal) return;
+    setCancelling(true);
+    setChatError(null);
+    try {
+      await apiFetch(`/api/llm-agent/threads/${chatState.threadId}/cancel/`, {
+        method: "POST",
+        body: JSON.stringify({ message_id: latestPendingProposal.id }),
+        token,
+      });
+      refreshChat();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Не удалось отменить изменения";
+      setChatError(message);
+    } finally {
+      setCancelling(false);
     }
   };
 
@@ -371,9 +411,17 @@ export const ProgramBoard = ({ initialFocus }: ProgramBoardProps = {}) => {
               Закрыть
             </Button>
             <Button
+              variant="ghost"
+              onClick={cancelChatActions}
+              disabled={!latestPendingProposal || applying || cancelling}
+              loading={cancelling}
+            >
+              Отменить изменения
+            </Button>
+            <Button
               variant="secondary"
               onClick={applyChatActions}
-              disabled={!latestActions || applying}
+              disabled={!latestPendingProposal || applying || cancelling}
               loading={applying}
             >
               Применить изменения
@@ -409,6 +457,16 @@ export const ProgramBoard = ({ initialFocus }: ProgramBoardProps = {}) => {
                       ))}
                     </ul>
                   )}
+                  {msg.role === "assistant" && msg.proposal_status && msg.proposal_status !== "none" && (
+                    <p className="mt-1 text-[11px] text-slate-500">
+                      Статус:{" "}
+                      {msg.proposal_status === "pending"
+                        ? "ожидает подтверждения"
+                        : msg.proposal_status === "applied"
+                          ? "применено"
+                          : "отменено"}
+                    </p>
+                  )}
                 </div>
               ))
             ) : (
@@ -422,7 +480,7 @@ export const ProgramBoard = ({ initialFocus }: ProgramBoardProps = {}) => {
             placeholder="Например: хочу заменить жим лежа на отжимания и уменьшить вес в среду"
           />
           {chatError && <p className="text-sm text-red-500">{chatError}</p>}
-          {latestActions && (
+          {latestPendingProposal && (
             <p className="text-xs text-slate-500">
               Ассистент предложил набор действий. Нажмите «Применить изменения», когда будете готовы.
             </p>
