@@ -147,6 +147,33 @@ type EditState = {
   hasTime: boolean;
 };
 
+type ExecutionOverlayState = {
+  exercise: ExercisePayload;
+  set: SetPayload;
+  exerciseName: string;
+  duration: number;
+  template?: TemplatePayload;
+  folderId?: number;
+};
+
+type PersistedRestOverlay = {
+  planId: number;
+  planDate: string;
+  overlay: PendingSet;
+  form: { reps: string; weight: string; time: string };
+  endsAt: number | null;
+};
+
+type PersistedExecutionOverlay = {
+  planId: number;
+  planDate: string;
+  overlay: ExecutionOverlayState;
+  endsAt: number | null;
+};
+
+const REST_OVERLAY_STORAGE_KEY = "fittodoay:workout:rest-overlay:v1";
+const EXEC_OVERLAY_STORAGE_KEY = "fittodoay:workout:exec-overlay:v1";
+
 const parseTargetMuscles = (value?: string | null) =>
   value
     ?.split(/[\/,]/)
@@ -199,14 +226,11 @@ export const Checklist = ({
     isActive: isExecActive,
   } = executionTimer;
   const [restOverlay, setRestOverlay] = useState<PendingSet | null>(null);
-  const [executionOverlay, setExecutionOverlay] = useState<{
-    exercise: ExercisePayload;
-    set: SetPayload;
-    exerciseName: string;
-    duration: number;
-    template?: TemplatePayload;
-    folderId?: number;
-  } | null>(null);
+  const [executionOverlay, setExecutionOverlay] = useState<ExecutionOverlayState | null>(null);
+  const [restEndsAt, setRestEndsAt] = useState<number | null>(null);
+  const [execEndsAt, setExecEndsAt] = useState<number | null>(null);
+  const [shouldAutoSubmitRest, setShouldAutoSubmitRest] = useState(false);
+  const [timersRestored, setTimersRestored] = useState(false);
   const [restForm, setRestForm] = useState({ reps: "", weight: "", time: "" });
   const [restError, setRestError] = useState<string | null>(null);
   const [editState, setEditState] = useState<EditState | null>(null);
@@ -363,7 +387,41 @@ export const Checklist = ({
     setRecommendationsLoadedDate(null);
     setRecommendationsApplied({});
     setRecommendationsError(null);
+    setTimersRestored(false);
   }, [plan?.date]);
+
+  useEffect(() => {
+    if (!plan || typeof window === "undefined") return;
+    if (!timersRestored) return;
+    if (!restOverlay) {
+      window.localStorage.removeItem(REST_OVERLAY_STORAGE_KEY);
+      return;
+    }
+    const payload: PersistedRestOverlay = {
+      planId: plan.id,
+      planDate: plan.date,
+      overlay: restOverlay,
+      form: restForm,
+      endsAt: restEndsAt,
+    };
+    window.localStorage.setItem(REST_OVERLAY_STORAGE_KEY, JSON.stringify(payload));
+  }, [plan, restOverlay, restForm, restEndsAt, timersRestored]);
+
+  useEffect(() => {
+    if (!plan || typeof window === "undefined") return;
+    if (!timersRestored) return;
+    if (!executionOverlay) {
+      window.localStorage.removeItem(EXEC_OVERLAY_STORAGE_KEY);
+      return;
+    }
+    const payload: PersistedExecutionOverlay = {
+      planId: plan.id,
+      planDate: plan.date,
+      overlay: executionOverlay,
+      endsAt: execEndsAt,
+    };
+    window.localStorage.setItem(EXEC_OVERLAY_STORAGE_KEY, JSON.stringify(payload));
+  }, [plan, executionOverlay, execEndsAt, timersRestored]);
 
   useEffect(() => {
     if (!restOverlay || restOverlay.autoSubmitted || restOverlay.rest <= 0) return;
@@ -380,10 +438,18 @@ export const Checklist = ({
     if (!isExecActive && execRemaining <= 0) {
       const payload = executionOverlay;
       setExecutionOverlay(null);
+      setExecEndsAt(null);
       openRestOverlay(payload.exercise, payload.set, payload.duration, payload.template, payload.folderId);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [executionOverlay, isExecActive, execRemaining]);
+
+  useEffect(() => {
+    if (!shouldAutoSubmitRest || !restOverlay) return;
+    setShouldAutoSubmitRest(false);
+    submitRestSet();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shouldAutoSubmitRest, restOverlay]);
 
   const getLogForSet = (templateExerciseId: number, setIndex: number) =>
     logsBySet.get(keyForSet(templateExerciseId, setIndex));
@@ -471,8 +537,10 @@ export const Checklist = ({
     });
     setRestError(null);
     if (restSeconds > 0) {
+      setRestEndsAt(Date.now() + restSeconds * 1000);
       startRestTimer(restSeconds);
     } else {
+      setRestEndsAt(null);
       stopRestTimer();
     }
   };
@@ -480,6 +548,7 @@ export const Checklist = ({
   const closeRestOverlay = () => {
     stopRestTimer();
     setRestOverlay(null);
+    setRestEndsAt(null);
     setRestError(null);
   };
 
@@ -502,16 +571,19 @@ export const Checklist = ({
       template,
       folderId,
     });
+    setExecEndsAt(Date.now() + duration * 1000);
     startExecTimer(duration);
   };
 
   const cancelExecutionOverlay = () => {
     stopExecTimer();
     setExecutionOverlay(null);
+    setExecEndsAt(null);
   };
 
   const finishExecutionEarly = (actualTime: number) => {
     stopExecTimer();
+    setExecEndsAt(null);
     setExecutionOverlay((current) => {
       if (current) {
         openRestOverlay(current.exercise, current.set, actualTime, current.template, current.folderId);
@@ -561,6 +633,93 @@ export const Checklist = ({
   const skipRest = () => {
     submitRestSet();
   };
+
+  useEffect(() => {
+    if (!plan || timersRestored || typeof window === "undefined") return;
+    setTimersRestored(true);
+
+    const restoreRestOverlay = () => {
+      const raw = window.localStorage.getItem(REST_OVERLAY_STORAGE_KEY);
+      if (!raw) return false;
+      try {
+        const parsed = JSON.parse(raw) as PersistedRestOverlay;
+        if (parsed.planId !== plan.id || parsed.planDate !== plan.date) {
+          window.localStorage.removeItem(REST_OVERLAY_STORAGE_KEY);
+          return false;
+        }
+        const alreadyLogged = Boolean(
+          getLogForSet(parsed.overlay.templateExerciseId, parsed.overlay.setIndex),
+        );
+        if (alreadyLogged) {
+          window.localStorage.removeItem(REST_OVERLAY_STORAGE_KEY);
+          return false;
+        }
+        setRestOverlay(parsed.overlay);
+        setRestForm(parsed.form ?? { reps: "", weight: "", time: "" });
+        setRestError(null);
+
+        const remainingSeconds = parsed.endsAt
+          ? Math.ceil((parsed.endsAt - Date.now()) / 1000)
+          : 0;
+        if (remainingSeconds > 0) {
+          setRestEndsAt(Date.now() + remainingSeconds * 1000);
+          startRestTimer(remainingSeconds);
+        } else {
+          setRestEndsAt(null);
+          stopRestTimer();
+          setShouldAutoSubmitRest(true);
+        }
+        return true;
+      } catch {
+        window.localStorage.removeItem(REST_OVERLAY_STORAGE_KEY);
+        return false;
+      }
+    };
+
+    const restoreExecutionOverlay = () => {
+      const raw = window.localStorage.getItem(EXEC_OVERLAY_STORAGE_KEY);
+      if (!raw) return;
+      try {
+        const parsed = JSON.parse(raw) as PersistedExecutionOverlay;
+        if (parsed.planId !== plan.id || parsed.planDate !== plan.date) {
+          window.localStorage.removeItem(EXEC_OVERLAY_STORAGE_KEY);
+          return;
+        }
+        const alreadyLogged = Boolean(
+          getLogForSet(parsed.overlay.exercise.template_exercise_id, parsed.overlay.set.set_index),
+        );
+        if (alreadyLogged) {
+          window.localStorage.removeItem(EXEC_OVERLAY_STORAGE_KEY);
+          return;
+        }
+        const remainingSeconds = parsed.endsAt
+          ? Math.ceil((parsed.endsAt - Date.now()) / 1000)
+          : 0;
+        if (remainingSeconds > 0) {
+          setExecutionOverlay(parsed.overlay);
+          setExecEndsAt(Date.now() + remainingSeconds * 1000);
+          startExecTimer(remainingSeconds);
+          return;
+        }
+        window.localStorage.removeItem(EXEC_OVERLAY_STORAGE_KEY);
+        openRestOverlay(
+          parsed.overlay.exercise,
+          parsed.overlay.set,
+          parsed.overlay.duration,
+          parsed.overlay.template,
+          parsed.overlay.folderId,
+        );
+      } catch {
+        window.localStorage.removeItem(EXEC_OVERLAY_STORAGE_KEY);
+      }
+    };
+
+    const restoredRest = restoreRestOverlay();
+    if (!restoredRest) {
+      restoreExecutionOverlay();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [plan, timersRestored]);
 
   const openEditModal = (exercise: ExercisePayload, log: WorkoutLog) => {
     setEditState({
@@ -1471,6 +1630,7 @@ export const Checklist = ({
             {activeInfoImage && (
               <div className="space-y-2">
                 <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-white">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={buildExerciseImageUrl(activeInfoImage.path)}
                     alt={`${infoExercise.name} — шаг ${infoImageIndex + 1}`}

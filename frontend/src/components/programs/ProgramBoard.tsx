@@ -1487,6 +1487,7 @@ const TemplateExerciseModal = ({
             {activePreviewImage && (
               <div className="space-y-2">
                 <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-white">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={buildExerciseImageUrl(activePreviewImage.path)}
                     alt={`${previewExercise.name} — шаг ${previewImageIndex + 1}`}
