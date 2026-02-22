@@ -573,24 +573,28 @@ const FolderCallout = ({
     <div className="rounded-3xl border border-slate-300 bg-slate-200 px-5 py-4 shadow-sm">
       <div className="flex items-center justify-between gap-3">
         <button
-          className="flex flex-1 items-center gap-3 text-left"
+          className="flex min-w-0 flex-1 items-center gap-3 text-left"
           onClick={onToggle}
           aria-expanded={expanded}
           type="button"
         >
           <ChevronIcon expanded={expanded} />
-          <div>
+          <div className="min-w-0">
             <p className="text-lg font-semibold text-slate-900">{folder.name}</p>
             {folder.comment && <p className="text-sm text-slate-500 hidden sm:block">{folder.comment}</p>}
           </div>
         </button>
-        <div className="flex flex-wrap items-center justify-end gap-2">
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
           {!folder.is_active && (
             <span className="flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1 text-xs uppercase tracking-widest text-slate-500">
               ● Не активна
             </span>
           )}
-          <Button variant="secondary" onClick={onOpenChat} className="inline-flex whitespace-nowrap px-3 py-2 text-sm">
+          <Button
+            variant="secondary"
+            onClick={onOpenChat}
+            className="inline-flex shrink-0 whitespace-nowrap px-3 py-2 text-sm"
+          >
             <span className="sm:hidden">Обсудить</span>
             <span className="hidden sm:inline">Обсудить с ассистентом</span>
           </Button>
