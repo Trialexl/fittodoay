@@ -18,10 +18,8 @@ ENV NODE_ENV=production \
     PORT=3000 \
     NEXT_SHARP_PATH=/app/node_modules/sharp
 
-COPY --from=builder /app/frontend/package*.json ./
-COPY --from=builder /app/frontend/.next ./.next
-COPY --from=builder /app/frontend/public ./public
-COPY --from=builder /app/frontend/node_modules ./node_modules
+# Keep source files in runtime image so dockerized lint/test commands work.
+COPY --from=builder /app/frontend ./
 
 EXPOSE 3000
 

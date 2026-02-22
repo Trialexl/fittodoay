@@ -6,10 +6,14 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y build-essential libpq-dev && rm -rf /var/lib/apt/lists/*
+RUN apt-get update -o Acquire::Retries=5 \
+    && apt-get install -y --no-install-recommends --fix-missing build-essential libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY backend/requirements.txt ./requirements.txt
-RUN pip install --upgrade pip && pip install -r requirements.txt
+COPY backend/requirements-dev.txt ./requirements-dev.txt
+COPY pyproject.toml ./pyproject.toml
+RUN pip install --upgrade pip && pip install -r requirements.txt -r requirements-dev.txt
 
 COPY backend /app
 COPY docs/exercises /docs/exercises

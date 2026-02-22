@@ -17,7 +17,7 @@ def test_template_creation_with_exercises():
     user = User.objects.create_user(email="prog@example.com", password="pass")
     client = APIClient()
     client.force_authenticate(user=user)
-    folder = ProgramFolder.objects.create(user=user, name="Основные")
+    folder = ProgramFolder.objects.get(user=user, name="Основные")
     exercise = Exercise_DB.objects.create(
         id="barbell_row",
         name_en="Barbell Row",

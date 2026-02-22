@@ -15,7 +15,7 @@ User = get_user_model()
 @pytest.mark.django_db
 def test_aggregate_daily_loads_handles_weight_and_time():
     user = User.objects.create_user(email="test@example.com", password="password")
-    folder = ProgramFolder.objects.create(user=user, name="Основные")
+    folder = ProgramFolder.objects.get(user=user, name="Основные")
     template = DayTemplate.objects.create(
         folder=folder,
         name="Понедельник",
@@ -67,7 +67,7 @@ def test_aggregate_daily_loads_handles_weight_and_time():
 @pytest.mark.django_db
 def test_aggregate_exercise_loads_sums_per_entry():
     user = User.objects.create_user(email="user@example.com", password="password")
-    folder = ProgramFolder.objects.create(user=user, name="Основные")
+    folder = ProgramFolder.objects.get(user=user, name="Основные")
     template = DayTemplate.objects.create(
         folder=folder,
         name="Среда",
