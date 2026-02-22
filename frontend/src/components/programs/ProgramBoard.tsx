@@ -155,6 +155,10 @@ type ChatMessage = {
   proposal_status?: "none" | "pending" | "applied" | "cancelled";
 };
 
+type ApplyActionsResponse = {
+  applied: Array<Record<string, any>>;
+};
+
 export const ProgramBoard = ({ initialFocus }: ProgramBoardProps = {}) => {
   const router = useRouter();
   const { token } = useAuth();
@@ -310,11 +314,24 @@ export const ProgramBoard = ({ initialFocus }: ProgramBoardProps = {}) => {
     setApplying(true);
     setChatError(null);
     try {
-      await apiFetch(`/api/llm-agent/threads/${chatState.threadId}/apply/`, {
+      const result = await apiFetch<ApplyActionsResponse>(
+        `/api/llm-agent/threads/${chatState.threadId}/apply/`,
+        {
         method: "POST",
         body: JSON.stringify({ message_id: latestPendingProposal.id }),
         token,
-      });
+      },
+      );
+      const applied = result?.applied ?? [];
+      const hasAppliedChanges = applied.some((item) => item?.status !== "skipped");
+      if (!hasAppliedChanges) {
+        const firstSkippedReason =
+          applied.find((item) => item?.status === "skipped")?.reason ??
+          "Ассистент не смог применить изменения к текущей программе.";
+        setChatError(firstSkippedReason);
+        refreshChat();
+        return;
+      }
       refreshChat();
       refreshFolders();
       setChatState((prev) => ({ ...prev, open: false }));
@@ -567,14 +584,15 @@ const FolderCallout = ({
             {folder.comment && <p className="text-sm text-slate-500 hidden sm:block">{folder.comment}</p>}
           </div>
         </button>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           {!folder.is_active && (
             <span className="flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1 text-xs uppercase tracking-widest text-slate-500">
               ● Не активна
             </span>
           )}
-          <Button variant="secondary" onClick={onOpenChat} className="hidden sm:inline-flex">
-            Обсудить с ассистентом
+          <Button variant="secondary" onClick={onOpenChat} className="inline-flex whitespace-nowrap px-3 py-2 text-sm">
+            <span className="sm:hidden">Обсудить</span>
+            <span className="hidden sm:inline">Обсудить с ассистентом</span>
           </Button>
           <IconButton
             label="Новый шаблон"

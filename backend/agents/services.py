@@ -492,18 +492,27 @@ class LLMProgramChatService:
         return message
 
     def _apply_action(self, action: Dict[str, Any]) -> Dict[str, Any]:
-        action_type = action.get("type") or action.get("action_type")
+        raw_action_type = action.get("type") or action.get("action_type") or action.get("action")
+        action_type = str(raw_action_type).strip().lower() if raw_action_type is not None else None
         alias_map = {
             "add_exercise_to_day": "add_exercise",
+            "add_exercise": "add_exercise",
             "replace_exercise_in_day": "replace_exercise",
+            "replace_exercise": "replace_exercise",
+            "remove_exercise_from_day": "remove_exercise",
+            "remove_exercise": "remove_exercise",
+            "delete_exercise": "remove_exercise",
             "update_exercise": "update_weight",
             "update_exercise_params": "update_weight",
+            "update_weight": "update_weight",
         }
         action_type = alias_map.get(action_type, action_type)
         if action_type == "add_exercise":
             return self._add_exercise(action)
         if action_type == "replace_exercise":
             return self._replace_exercise(action)
+        if action_type == "remove_exercise":
+            return self._remove_exercise(action)
         if action_type == "update_weight":
             return self._update_weight(action)
         raise LLMInvalidResponse(f"unknown_action_{action_type}")
@@ -515,17 +524,18 @@ class LLMProgramChatService:
             raise LLMInvalidResponse(
                 "add_exercise requires valid day_id/day_name and exercise_id/exercise_name"
             )
+        defaults = self._build_exercise_defaults(exercise, action)
         sort_order = (day.template_exercises.aggregate(models.Max("sort_order")).get("sort_order__max") or 0) + 1
         new_te = TemplateExercise.objects.create(
             template=day,
             exercise=exercise,
             custom_exercise=None,
             sort_order=sort_order,
-            set_override=action.get("sets"),
-            rep_override=action.get("reps"),
-            weight_override=action.get("weight"),
-            time_override=action.get("time"),
-            rest_override=action.get("rest"),
+            set_override=defaults["sets"],
+            rep_override=defaults["reps"],
+            weight_override=defaults["weight"],
+            time_override=defaults["time"],
+            rest_override=defaults["rest"],
             note=action.get("note") or "",
             is_active=True,
         )
@@ -546,16 +556,17 @@ class LLMProgramChatService:
             )
         old_te.is_active = False
         old_te.save(update_fields=["is_active"])
+        defaults = self._build_exercise_defaults(exercise, action)
         sort_order = (day.template_exercises.aggregate(models.Max("sort_order")).get("sort_order__max") or 0) + 1
         new_te = TemplateExercise.objects.create(
             template=day,
             exercise=exercise,
             sort_order=sort_order,
-            set_override=action.get("sets"),
-            rep_override=action.get("reps"),
-            weight_override=action.get("weight"),
-            time_override=action.get("time"),
-            rest_override=action.get("rest"),
+            set_override=defaults["sets"],
+            rep_override=defaults["reps"],
+            weight_override=defaults["weight"],
+            time_override=defaults["time"],
+            rest_override=defaults["rest"],
             note=action.get("note") or "",
             is_active=True,
         )
@@ -565,11 +576,53 @@ class LLMProgramChatService:
             "template_exercise_id": new_te.id,
         }
 
+    def _remove_exercise(self, action: Dict[str, Any]) -> Dict[str, Any]:
+        day = self._resolve_day(action)
+        exercise = self._resolve_exercise(action)
+        te_id = action.get("template_exercise_id") or action.get("deactivate_exercise_id")
+
+        qs = TemplateExercise.objects.filter(
+            template__folder=self.thread.program,
+            template__folder__user=self.thread.user,
+            is_active=True,
+        )
+        if day:
+            qs = qs.filter(template=day)
+        if exercise:
+            qs = qs.filter(exercise=exercise)
+        if te_id:
+            qs = qs.filter(id=te_id)
+
+        target = qs.order_by("sort_order", "id").first()
+        if not target:
+            raise LLMInvalidResponse(
+                "remove_exercise requires valid template_exercise_id or resolvable day/exercise"
+            )
+
+        target.is_active = False
+        target.save(update_fields=["is_active"])
+        return {"type": "remove_exercise", "template_exercise_id": target.id}
+
     def _update_weight(self, action: Dict[str, Any]) -> Dict[str, Any]:
         te_id = action.get("template_exercise_id")
-        te = TemplateExercise.objects.filter(
-            id=te_id, template__folder=self.thread.program, template__folder__user=self.thread.user
-        ).first()
+        te = None
+        if te_id:
+            te = TemplateExercise.objects.filter(
+                id=te_id, template__folder=self.thread.program, template__folder__user=self.thread.user
+            ).first()
+        if not te:
+            day = self._resolve_day(action)
+            exercise = self._resolve_exercise(action)
+            qs = TemplateExercise.objects.filter(
+                template__folder=self.thread.program,
+                template__folder__user=self.thread.user,
+                is_active=True,
+            )
+            if day:
+                qs = qs.filter(template=day)
+            if exercise:
+                qs = qs.filter(exercise=exercise)
+            te = qs.order_by("sort_order", "id").first()
         if not te:
             raise LLMInvalidResponse("invalid_update_weight_action")
         changed_fields = []
@@ -578,13 +631,38 @@ class LLMProgramChatService:
             if field == "note":
                 value = action.get("note", "")
             else:
-                value = action.get(key) if key in action else action.get(field)
+                aliases = {
+                    "rep": ("reps", "rep"),
+                    "set": ("sets", "set"),
+                }
+                alias_keys = aliases.get(key, (key,))
+                value = None
+                for alias_key in alias_keys:
+                    if alias_key in action:
+                        value = action.get(alias_key)
+                        break
+                if value is None:
+                    value = action.get(field)
             if value is not None:
                 setattr(te, field, value)
                 changed_fields.append(field)
         if changed_fields:
             te.save(update_fields=changed_fields)
         return {"type": "update_weight", "template_exercise_id": te.id}
+
+    def _build_exercise_defaults(self, exercise: Exercise_DB, action: Dict[str, Any]) -> Dict[str, Any]:
+        sets = action.get("sets")
+        reps = action.get("reps")
+        weight = action.get("weight")
+        time = action.get("time")
+        rest = action.get("rest")
+        return {
+            "sets": sets if sets is not None else exercise.default_sets,
+            "reps": reps if reps is not None else (exercise.default_reps if not exercise.has_time else None),
+            "weight": weight if weight is not None else (exercise.default_weight if exercise.has_weight else None),
+            "time": time if time is not None else (exercise.default_time if exercise.has_time else None),
+            "rest": rest if rest is not None else exercise.default_rest,
+        }
 
     def _build_messages(self, user_message: str, *, mode: str) -> List[Dict[str, Any]]:
         shortlist = self._build_shortlist(user_message)
@@ -601,6 +679,9 @@ class LLMProgramChatService:
                 "actions — только конкретные изменения для подтверждения пользователем; если изменений нет, верни пустой массив. "
                 "Если пользователь указывает день недели (например, 'среда'), используй это как day_name. "
                 "Если такого дня в программе нет, все равно формируй действия с этим day_name — система создаст день автоматически. "
+                "Если пользователь просит помочь с выбором упражнения, обязательно предложи 2-4 варианта и коротко объясни, чем они отличаются и кому подходят. "
+                "Если пользователь просит 'как делать', дай краткую технику выполнения: исходное положение, движение, дыхание, типичные ошибки и безопасный диапазон нагрузки. "
+                "Не отказывай в таком объяснении по общим причинам, если запрос относится к обычным упражнениям из фитнес-каталога. "
                 "Не применяй изменения самостоятельно, не отвечай служебным текстом."
             )
         else:

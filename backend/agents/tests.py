@@ -230,6 +230,21 @@ def test_chat_parser_extracts_reply_from_malformed_json():
 
 
 @pytest.mark.django_db
+def test_chat_prompt_requires_exercise_choice_and_technique_help():
+    user = User.objects.create_user(email="agent_prompt_help@example.com", password="pass")
+    folder, _ = _create_base_program(user)
+    thread = LLMProgramThread.objects.create(user=user, program=folder, title="Чат")
+    service = LLMProgramChatService(thread)
+
+    messages = service._build_messages("опиши как делать", mode="chat")
+    system_prompt = messages[0]["content"]
+
+    assert "предложи 2-4 варианта" in system_prompt
+    assert "дай краткую технику выполнения" in system_prompt
+    assert "Не отказывай в таком объяснении" in system_prompt
+
+
+@pytest.mark.django_db
 def test_apply_actions_accepts_action_type_alias_for_add_exercise():
     user = User.objects.create_user(email="agent_alias_apply@example.com", password="pass")
     folder = ProgramFolder.objects.create(user=user, name="Силовая alias")
@@ -522,3 +537,319 @@ def test_apply_actions_creates_weekday_day_when_missing():
     assert created_day is not None
     assert (created_day.schedule_config or {}).get("days_of_week") == [2]
     assert TemplateExercise.objects.filter(template=created_day, exercise_id="weekday_crunch").exists()
+
+
+@pytest.mark.django_db
+def test_apply_actions_supports_action_key_alias():
+    user = User.objects.create_user(email="agent_action_alias@example.com", password="pass")
+    folder = ProgramFolder.objects.create(user=user, name="Силовая action alias")
+    day = DayTemplate.objects.create(
+        folder=folder,
+        name="День 1",
+        schedule_type=DayTemplate.ScheduleType.WEEKLY,
+        schedule_config={"days_of_week": [0]},
+    )
+    Exercise_DB.objects.create(
+        id="action_alias_crunch",
+        name_en="Crunches",
+        name_ru="Скручивания",
+        force_en="pull",
+        force_ru="",
+        level_en="beginner",
+        level_ru="начальный",
+        mechanic_en="isolation",
+        mechanic_ru="",
+        equipment_en="body_only",
+        equipment_ru="без оборудования",
+        category_en="strength",
+        category_ru="Силовая",
+        default_sets=3,
+        default_reps=15,
+    )
+    thread = LLMProgramThread.objects.create(user=user, program=folder, title="Чат")
+    message = LLMProgramMessage.objects.create(
+        thread=thread,
+        role=LLMProgramMessage.Role.ASSISTANT,
+        content="Добавим упражнение",
+        actions=[
+            {
+                "action": "add_exercise",
+                "day_id": day.id,
+                "exercise_id": "action_alias_crunch",
+                "sets": 3,
+                "reps": 15,
+            }
+        ],
+        proposal_status=LLMProgramMessage.ProposalStatus.PENDING,
+    )
+
+    client = APIClient()
+    client.force_authenticate(user=user)
+    response = client.post(
+        f"/api/llm-agent/threads/{thread.id}/apply/",
+        {"message_id": message.id},
+        format="json",
+    )
+
+    assert response.status_code == 200
+    assert TemplateExercise.objects.filter(template=day, exercise_id="action_alias_crunch").exists()
+
+
+@pytest.mark.django_db
+def test_apply_actions_supports_remove_exercise_from_day():
+    user = User.objects.create_user(email="agent_remove_alias@example.com", password="pass")
+    folder = ProgramFolder.objects.create(user=user, name="Силовая remove alias")
+    day = DayTemplate.objects.create(
+        folder=folder,
+        name="День 1",
+        schedule_type=DayTemplate.ScheduleType.WEEKLY,
+        schedule_config={"days_of_week": [0]},
+    )
+    exercise = Exercise_DB.objects.create(
+        id="remove_alias_crunch",
+        name_en="Crunches",
+        name_ru="Скручивания",
+        force_en="pull",
+        force_ru="",
+        level_en="beginner",
+        level_ru="начальный",
+        mechanic_en="isolation",
+        mechanic_ru="",
+        equipment_en="body_only",
+        equipment_ru="без оборудования",
+        category_en="strength",
+        category_ru="Силовая",
+        default_sets=3,
+        default_reps=15,
+    )
+    te = TemplateExercise.objects.create(
+        template=day,
+        exercise=exercise,
+        set_override=3,
+        rep_override=15,
+        is_active=True,
+    )
+    thread = LLMProgramThread.objects.create(user=user, program=folder, title="Чат")
+    message = LLMProgramMessage.objects.create(
+        thread=thread,
+        role=LLMProgramMessage.Role.ASSISTANT,
+        content="Уберем упражнение",
+        actions=[
+            {
+                "action_type": "remove_exercise_from_day",
+                "day_id": day.id,
+                "exercise_name": "скручивания",
+            }
+        ],
+        proposal_status=LLMProgramMessage.ProposalStatus.PENDING,
+    )
+
+    client = APIClient()
+    client.force_authenticate(user=user)
+    response = client.post(
+        f"/api/llm-agent/threads/{thread.id}/apply/",
+        {"message_id": message.id},
+        format="json",
+    )
+
+    assert response.status_code == 200
+    te.refresh_from_db()
+    assert te.is_active is False
+
+
+@pytest.mark.django_db
+def test_add_exercise_uses_catalog_defaults_when_action_params_missing():
+    user = User.objects.create_user(email="agent_defaults_add@example.com", password="pass")
+    folder = ProgramFolder.objects.create(user=user, name="Силовая defaults add")
+    day = DayTemplate.objects.create(
+        folder=folder,
+        name="День 1",
+        schedule_type=DayTemplate.ScheduleType.WEEKLY,
+        schedule_config={"days_of_week": [0]},
+    )
+    Exercise_DB.objects.create(
+        id="defaults_machine_crunch",
+        name_en="Machine Crunch",
+        name_ru="Скручивания в тренажере",
+        force_en="pull",
+        force_ru="",
+        level_en="beginner",
+        level_ru="начальный",
+        mechanic_en="isolation",
+        mechanic_ru="",
+        equipment_en="machine",
+        equipment_ru="тренажер",
+        category_en="strength",
+        category_ru="Силовая",
+        has_weight=True,
+        has_time=False,
+        default_sets=4,
+        default_reps=12,
+        default_rest=75,
+        default_weight=35,
+    )
+    thread = LLMProgramThread.objects.create(user=user, program=folder, title="Чат")
+    message = LLMProgramMessage.objects.create(
+        thread=thread,
+        role=LLMProgramMessage.Role.ASSISTANT,
+        content="Добавим упражнение",
+        actions=[
+            {
+                "action_type": "add_exercise_to_day",
+                "day_id": day.id,
+                "exercise_id": "defaults_machine_crunch",
+            }
+        ],
+        proposal_status=LLMProgramMessage.ProposalStatus.PENDING,
+    )
+
+    client = APIClient()
+    client.force_authenticate(user=user)
+    response = client.post(
+        f"/api/llm-agent/threads/{thread.id}/apply/",
+        {"message_id": message.id},
+        format="json",
+    )
+
+    assert response.status_code == 200
+    te = TemplateExercise.objects.filter(template=day, exercise_id="defaults_machine_crunch").first()
+    assert te is not None
+    assert te.set_override == 4
+    assert te.rep_override == 12
+    assert te.rest_override == 75
+    assert float(te.weight_override) == 35.0
+
+
+@pytest.mark.django_db
+def test_update_weight_resolves_template_exercise_by_day_and_exercise():
+    user = User.objects.create_user(email="agent_update_resolve@example.com", password="pass")
+    folder = ProgramFolder.objects.create(user=user, name="Силовая update resolve")
+    day = DayTemplate.objects.create(
+        folder=folder,
+        name="День 1",
+        schedule_type=DayTemplate.ScheduleType.WEEKLY,
+        schedule_config={"days_of_week": [0]},
+    )
+    exercise = Exercise_DB.objects.create(
+        id="update_resolve_press",
+        name_en="Dumbbell Bench Press",
+        name_ru="Жим гантелей лежа",
+        force_en="push",
+        force_ru="",
+        level_en="beginner",
+        level_ru="начальный",
+        mechanic_en="compound",
+        mechanic_ru="",
+        equipment_en="dumbbell",
+        equipment_ru="гантели",
+        category_en="strength",
+        category_ru="Силовая",
+        has_weight=True,
+        default_sets=3,
+        default_reps=10,
+        default_rest=60,
+        default_weight=20,
+    )
+    te = TemplateExercise.objects.create(
+        template=day,
+        exercise=exercise,
+        set_override=3,
+        rep_override=10,
+        weight_override=20,
+        is_active=True,
+    )
+    thread = LLMProgramThread.objects.create(user=user, program=folder, title="Чат")
+    message = LLMProgramMessage.objects.create(
+        thread=thread,
+        role=LLMProgramMessage.Role.ASSISTANT,
+        content="Обновим вес",
+        actions=[
+            {
+                "action_type": "update_weight",
+                "day_name": "день 1",
+                "exercise_id": "update_resolve_press",
+                "weight": 24,
+                "reps": 8,
+            }
+        ],
+        proposal_status=LLMProgramMessage.ProposalStatus.PENDING,
+    )
+
+    client = APIClient()
+    client.force_authenticate(user=user)
+    response = client.post(
+        f"/api/llm-agent/threads/{thread.id}/apply/",
+        {"message_id": message.id},
+        format="json",
+    )
+
+    assert response.status_code == 200
+    te.refresh_from_db()
+    assert float(te.weight_override) == 24.0
+    assert te.rep_override == 8
+
+
+@pytest.mark.django_db
+def test_apply_actions_supports_uppercase_delete_exercise_alias():
+    user = User.objects.create_user(email="agent_delete_upper@example.com", password="pass")
+    folder = ProgramFolder.objects.create(user=user, name="Силовая delete upper")
+    day = DayTemplate.objects.create(
+        folder=folder,
+        name="День 1",
+        schedule_type=DayTemplate.ScheduleType.WEEKLY,
+        schedule_config={"days_of_week": [0]},
+    )
+    exercise = Exercise_DB.objects.create(
+        id="delete_upper_press",
+        name_en="Dumbbell Bench Press",
+        name_ru="Жим гантелей лежа",
+        force_en="push",
+        force_ru="",
+        level_en="beginner",
+        level_ru="начальный",
+        mechanic_en="compound",
+        mechanic_ru="",
+        equipment_en="dumbbell",
+        equipment_ru="гантели",
+        category_en="strength",
+        category_ru="Силовая",
+        has_weight=True,
+        default_sets=3,
+        default_reps=10,
+        default_rest=60,
+        default_weight=20,
+    )
+    te = TemplateExercise.objects.create(
+        template=day,
+        exercise=exercise,
+        set_override=3,
+        rep_override=10,
+        weight_override=20,
+        is_active=True,
+    )
+    thread = LLMProgramThread.objects.create(user=user, program=folder, title="Чат")
+    message = LLMProgramMessage.objects.create(
+        thread=thread,
+        role=LLMProgramMessage.Role.ASSISTANT,
+        content="Удалим упражнение",
+        actions=[
+            {
+                "action_type": "DELETE_EXERCISE",
+                "day_id": day.id,
+                "exercise_id": "delete_upper_press",
+            }
+        ],
+        proposal_status=LLMProgramMessage.ProposalStatus.PENDING,
+    )
+
+    client = APIClient()
+    client.force_authenticate(user=user)
+    response = client.post(
+        f"/api/llm-agent/threads/{thread.id}/apply/",
+        {"message_id": message.id},
+        format="json",
+    )
+
+    assert response.status_code == 200
+    te.refresh_from_db()
+    assert te.is_active is False
