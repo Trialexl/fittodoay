@@ -209,7 +209,17 @@ export const Checklist = ({
   refresh: () => void;
 }) => {
   const auth = useAuth();
-  const restTimer = useRestTimer();
+  const triggerRestCompletionVibration = useCallback(() => {
+    if (typeof window === "undefined") return;
+    const vibrate = window.navigator?.vibrate;
+    if (typeof vibrate !== "function") return;
+    try {
+      vibrate.call(window.navigator, [200, 120, 240]);
+    } catch {
+      // Ignore unsupported environments and permission/runtime issues.
+    }
+  }, []);
+  const restTimer = useRestTimer({ onComplete: triggerRestCompletionVibration });
   const executionTimer = useRestTimer();
   const {
     start: startRestTimer,

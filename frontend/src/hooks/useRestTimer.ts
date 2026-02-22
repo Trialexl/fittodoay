@@ -2,7 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-export const useRestTimer = () => {
+type UseRestTimerOptions = {
+  onComplete?: () => void;
+};
+
+export const useRestTimer = (options: UseRestTimerOptions = {}) => {
+  const { onComplete } = options;
   const [duration, setDuration] = useState(0);
   const [remaining, setRemaining] = useState(0);
   const [isActive, setIsActive] = useState(false);
@@ -28,15 +33,16 @@ export const useRestTimer = () => {
     setIsActive(true);
     timerRef.current = setInterval(() => {
       setRemaining((prev) => {
-          if (prev <= 1) {
-            clear();
-            setIsActive(false);
-            return 0;
-          }
-          return prev - 1;
-        });
+        if (prev <= 1) {
+          clear();
+          setIsActive(false);
+          onComplete?.();
+          return 0;
+        }
+        return prev - 1;
+      });
     }, 1000);
-  }, []);
+  }, [onComplete]);
 
   const stop = useCallback(() => {
     clear();
