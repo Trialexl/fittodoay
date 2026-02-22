@@ -201,3 +201,49 @@ body {
   animation: calloutPop 1800ms ease-in;
   animation-fill-mode: both;
 }
+
+.form-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  font-size: 0.875rem;
+  color: var(--slate-700);
+}
+
+.form-field,
+.form-select,
+.form-textarea {
+  width: 100%;
+  border: 1px solid var(--slate-300);
+  border-radius: 0.9rem;
+  background: linear-gradient(180deg, rgb(var(--color-surface)) 0%, rgb(var(--color-surface-muted)) 100%);
+  color: var(--slate-900);
+  font-size: 0.95rem;
+  line-height: 1.35rem;
+  padding: 0.72rem 0.92rem;
+  outline: none;
+  transition: border-color 150ms ease, box-shadow 150ms ease, transform 120ms ease;
+}
+
+.form-field::placeholder,
+.form-textarea::placeholder {
+  color: var(--slate-400);
+}
+
+.form-field:focus,
+.form-select:focus,
+.form-textarea:focus {
+  border-color: rgb(var(--color-primary));
+  box-shadow: 0 0 0 3px rgb(var(--color-primary) / 0.2);
+}
+
+.form-textarea {
+  min-height: 124px;
+  resize: vertical;
+}
+
+[data-theme="dark"] .form-field,
+[data-theme="dark"] .form-select,
+[data-theme="dark"] .form-textarea {
+  border-color: var(--slate-400);
+}

@@ -606,9 +606,9 @@ export const ProgramTrendPanel = () => {
       </div>
       {view === "exercises" && data?.folders?.length ? (
         <div className="mt-3">
-          <label className="text-xs uppercase text-slate-500">Программа</label>
+          <label className="text-xs uppercase tracking-wide text-slate-500">Программа</label>
           <select
-            className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+            className="form-select mt-1 text-sm"
             value={selectedFolder?.id ?? ""}
             onChange={(event) => setSelectedFolderId(Number(event.target.value))}
           >

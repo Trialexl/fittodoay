@@ -428,42 +428,35 @@ export const ProgramBoard = ({ initialFocus }: ProgramBoardProps = {}) => {
         open={chatState.open}
         onClose={() => setChatState({ open: false })}
         title={chatState.folder ? `Чат по программе: ${chatState.folder.name}` : "Чат ассистента"}
-        className="max-w-3xl"
+        className="sm:max-w-3xl"
+        mobileSheet
         footer={
-          <>
-            <Button variant="ghost" onClick={() => setChatState({ open: false })} disabled={chatLoading || applying}>
-              Закрыть
-            </Button>
-            <Button
-              variant="ghost"
-              onClick={cancelChatActions}
-              disabled={!latestPendingProposal || applying || cancelling}
-              loading={cancelling}
-            >
-              Отменить изменения
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={applyChatActions}
-              disabled={!latestPendingProposal || applying || cancelling}
-              loading={applying}
-            >
-              Применить изменения
-            </Button>
-            <Button onClick={sendChatMessage} loading={chatLoading} disabled={!chatInput.trim()}>
-              Отправить
-            </Button>
-          </>
+          latestPendingProposal ? (
+            <div className="w-full">
+              <Button
+                variant="secondary"
+                onClick={applyChatActions}
+                disabled={applying || cancelling}
+                loading={applying}
+                className="w-full justify-center text-base sm:w-auto"
+              >
+                Применить изменения
+              </Button>
+            </div>
+          ) : undefined
         }
       >
-        <div className="flex flex-col gap-3">
+        <div className="flex h-full min-h-0 flex-col">
           <div
             ref={chatScrollRef}
-            className="max-h-[360px] overflow-y-auto rounded-xl border border-slate-100 bg-slate-50 p-3"
+            className="min-h-0 flex-1 overflow-y-auto rounded-2xl border border-slate-200 bg-gradient-to-b from-slate-50 to-slate-100/80 p-3"
           >
             {chatMessages?.length ? (
               chatMessages.map((msg) => (
-                <div key={msg.id} className="mb-3">
+                <div
+                  key={msg.id}
+                  className="mb-3 rounded-xl border border-slate-200/70 bg-white/80 p-2.5 shadow-[0_1px_8px_rgba(15,23,42,0.05)] transition-transform duration-200 ease-out"
+                >
                   <p className="text-xs uppercase tracking-wide text-slate-400">
                     {msg.role === "assistant" ? "Ассистент" : "Вы"}
                   </p>
@@ -485,13 +478,9 @@ export const ProgramBoard = ({ initialFocus }: ProgramBoardProps = {}) => {
                     </ul>
                   )}
                   {msg.role === "assistant" && msg.proposal_status && msg.proposal_status !== "none" && (
-                    <p className="mt-1 text-[11px] text-slate-500">
-                      Статус:{" "}
-                      {msg.proposal_status === "pending"
-                        ? "ожидает подтверждения"
-                        : msg.proposal_status === "applied"
-                          ? "применено"
-                          : "отменено"}
+                    <p className={clsx("mt-1 inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium", getProposalStatusMeta(msg.proposal_status).className)}>
+                      {getProposalStatusMeta(msg.proposal_status).icon}
+                      {getProposalStatusMeta(msg.proposal_status).label}
                     </p>
                   )}
                 </div>
@@ -500,24 +489,46 @@ export const ProgramBoard = ({ initialFocus }: ProgramBoardProps = {}) => {
               <p className="text-sm text-slate-500">Напишите, что хотите поменять в программе.</p>
             )}
           </div>
-          <textarea
-            value={chatInput}
-            onChange={(event) => setChatInput(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key !== "Enter" || event.shiftKey) return;
-              event.preventDefault();
-              if (chatLoading || !chatInput.trim()) return;
-              void sendChatMessage();
-            }}
-            className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-800 outline-none ring-primary/40 transition focus:ring"
-            placeholder="Например: хочу заменить жим лежа на отжимания и уменьшить вес в среду"
-          />
-          {chatError && <p className="text-sm text-red-500">{chatError}</p>}
-          {latestPendingProposal && (
-            <p className="text-xs text-slate-500">
-              Ассистент предложил набор действий. Нажмите «Применить изменения», когда будете готовы.
-            </p>
-          )}
+          <div className="sticky bottom-0 mt-3 border-t border-slate-200/80 bg-white/95 pt-2 backdrop-blur">
+            {chatError && <p className="mb-2 text-sm text-red-500">{chatError}</p>}
+            {latestPendingProposal && (
+              <div className="mb-2 flex items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
+                <p className="text-xs text-amber-700">Есть неподтвержденные изменения.</p>
+                <button
+                  type="button"
+                  onClick={cancelChatActions}
+                  disabled={applying || cancelling}
+                  className="text-xs font-medium text-amber-800 underline-offset-2 transition hover:underline disabled:opacity-50"
+                >
+                  {cancelling ? "Отмена..." : "Отменить"}
+                </button>
+              </div>
+            )}
+            <div className="relative">
+              <textarea
+                value={chatInput}
+                onChange={(event) => setChatInput(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter" || event.shiftKey) return;
+                  event.preventDefault();
+                  if (chatLoading || !chatInput.trim()) return;
+                  void sendChatMessage();
+                }}
+                className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2.5 pr-14 text-base text-slate-800 outline-none ring-primary/40 transition placeholder:text-slate-400 focus:ring sm:text-sm"
+                placeholder="Например: хочу заменить жим лежа на отжимания и уменьшить вес в среду"
+              />
+              <button
+                type="button"
+                aria-label="Отправить сообщение"
+                title="Отправить"
+                onClick={() => void sendChatMessage()}
+                disabled={chatLoading || !chatInput.trim()}
+                className="absolute bottom-2 right-2 inline-flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-white shadow-sm transition hover:bg-primary-dark disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {chatLoading ? "…" : <SendIcon />}
+              </button>
+            </div>
+          </div>
         </div>
       </Modal>
     </div>
@@ -571,7 +582,7 @@ const FolderCallout = ({
 
   return (
     <div className="rounded-3xl border border-slate-300 bg-slate-200 px-5 py-4 shadow-sm">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <button
           className="flex min-w-0 flex-1 items-center gap-3 text-left"
           onClick={onToggle}
@@ -580,16 +591,17 @@ const FolderCallout = ({
         >
           <ChevronIcon expanded={expanded} />
           <div className="min-w-0">
-            <p className="text-lg font-semibold text-slate-900">{folder.name}</p>
+            <p className="text-base font-semibold leading-tight text-slate-900 sm:text-lg">{folder.name}</p>
             {folder.comment && <p className="text-sm text-slate-500 hidden sm:block">{folder.comment}</p>}
           </div>
         </button>
-        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+        <div className="flex w-full items-center justify-end gap-2 sm:w-auto sm:shrink-0 sm:flex-wrap">
           {!folder.is_active && (
-            <span className="flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1 text-xs uppercase tracking-widest text-slate-500">
+            <span className="hidden items-center gap-1 rounded-full bg-slate-100 px-3 py-1 text-xs uppercase tracking-widest text-slate-500 sm:flex">
               ● Не активна
             </span>
           )}
+          {!folder.is_active && <span className="text-xs uppercase tracking-wider text-slate-500 sm:hidden">не активна</span>}
           <Button
             variant="secondary"
             onClick={onOpenChat}
@@ -901,6 +913,53 @@ const PlusIcon = () => (
   </svg>
 );
 
+const SendIcon = () => (
+  <svg
+    viewBox="0 0 20 20"
+    xmlns="http://www.w3.org/2000/svg"
+    className="h-4 w-4"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.8}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M3 10 17 3l-4 14-3-5-7-2Z" />
+  </svg>
+);
+
+const StatusDot = ({ className }: { className?: string }) => (
+  <svg viewBox="0 0 20 20" className={clsx("h-3.5 w-3.5", className)} fill="currentColor" aria-hidden="true">
+    <circle cx="10" cy="10" r="4.5" />
+  </svg>
+);
+
+const StatusCheck = ({ className }: { className?: string }) => (
+  <svg
+    viewBox="0 0 20 20"
+    className={clsx("h-3.5 w-3.5", className)}
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={2}
+    aria-hidden="true"
+  >
+    <path d="M4.5 10.5 8.5 14l7-8" />
+  </svg>
+);
+
+const StatusClose = ({ className }: { className?: string }) => (
+  <svg
+    viewBox="0 0 20 20"
+    className={clsx("h-3.5 w-3.5", className)}
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={2}
+    aria-hidden="true"
+  >
+    <path d="m6 6 8 8M14 6l-8 8" />
+  </svg>
+);
+
 const InfoIcon = () => (
   <svg
     viewBox="0 0 20 20"
@@ -1011,9 +1070,10 @@ const ProgramModal = ({
           value={form.comment}
           onChange={(e) => setForm((prev) => ({ ...prev, comment: e.target.value }))}
         />
-        <label className="flex items-center gap-2 text-sm text-slate-600">
+        <label className="flex items-center gap-2 text-sm font-medium text-slate-600">
           <input
             type="checkbox"
+            className="h-4 w-4 rounded border-slate-300 text-primary focus:ring-primary"
             checked={form.is_active}
             onChange={(e) => setForm((prev) => ({ ...prev, is_active: e.target.checked }))}
           />
@@ -1499,7 +1559,7 @@ const TemplateExerciseModal = ({
             onChange={(e) => setForm((prev) => ({ ...prev, rest_override: e.target.value }))}
           />
           </div>
-          <label className="flex items-center gap-2 text-sm text-slate-600">
+          <label className="flex items-center gap-2 text-sm font-medium text-slate-600">
             <input
               type="checkbox"
               className="h-4 w-4 rounded border-slate-300 text-primary focus:ring-primary"
@@ -1508,10 +1568,10 @@ const TemplateExerciseModal = ({
             />
             <span>Упражнение активно</span>
           </label>
-          <label className="block text-sm text-slate-600">
-          <span>Комментарий</span>
+          <label className="form-label block text-sm text-slate-600">
+          <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Комментарий</span>
           <textarea
-            className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/40"
+            className="form-textarea mt-1 min-h-[104px] text-sm"
             rows={3}
             value={form.note}
             onChange={(e) => setForm((prev) => ({ ...prev, note: e.target.value }))}
@@ -1659,6 +1719,28 @@ const getChatMessageContent = (msg: ChatMessage) => {
     return "Подготовил предложения по изменениям. Проверьте список ниже и подтвердите, если подходит.";
   }
   return "Не удалось корректно отобразить ответ ассистента. Попробуйте переформулировать запрос.";
+};
+
+const getProposalStatusMeta = (status: NonNullable<ChatMessage["proposal_status"]>) => {
+  if (status === "pending") {
+    return {
+      label: "Ожидает подтверждения",
+      className: "bg-amber-100 text-amber-800",
+      icon: <StatusDot className="text-amber-500" />,
+    };
+  }
+  if (status === "applied") {
+    return {
+      label: "Применено",
+      className: "bg-emerald-100 text-emerald-800",
+      icon: <StatusCheck className="text-emerald-500" />,
+    };
+  }
+  return {
+    label: "Отменено",
+    className: "bg-slate-200 text-slate-700",
+    icon: <StatusClose className="text-slate-500" />,
+  };
 };
 
 const parseOrNull = (value: string) => {

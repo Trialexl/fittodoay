@@ -211,10 +211,10 @@ export const TemplateEditor = ({
       </h3>
       <div className="mt-4 grid gap-4 md:grid-cols-2">
         {showFolderSelect && (
-          <label className="text-sm">
+          <label className="form-label">
             Программа
             <select
-              className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
+              className="form-select mt-1"
               value={form.folder}
               onChange={(e) => setForm((prev) => ({ ...prev, folder: Number(e.target.value) }))}
             >
@@ -238,10 +238,10 @@ export const TemplateEditor = ({
           value={form.comment}
           onChange={(e) => setForm((prev) => ({ ...prev, comment: e.target.value }))}
         />
-        <label className="text-sm">
+        <label className="form-label">
           Тип расписания
           <select
-            className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
+            className="form-select mt-1"
             value={form.schedule_type}
             onChange={(e) => {
               const nextType = e.target.value as ScheduleType;
@@ -430,11 +430,11 @@ const InputDate = ({
   value: string;
   onChange: (value: string) => void;
 }) => (
-  <label className="text-sm">
+  <label className="form-label">
     {label}
     <input
       type="date"
-      className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
+      className="form-field mt-1"
       value={value}
       onChange={(e) => onChange(e.target.value)}
     />
@@ -452,12 +452,12 @@ const InputNumber = ({
   onChange: (value: number) => void;
   min?: number;
 }) => (
-  <label className="text-sm">
+  <label className="form-label">
     {label}
     <input
       type="number"
       min={min}
-      className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
+      className="form-field mt-1"
       value={value}
       onChange={(e) => onChange(Math.max(min, Number(e.target.value) || min))}
     />
@@ -490,7 +490,7 @@ const CustomDatesConfigurator = ({
       <div className="mt-3 flex flex-wrap gap-3">
         <input
           type="date"
-          className="rounded border border-slate-300 px-3 py-2"
+          className="form-field"
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
         />

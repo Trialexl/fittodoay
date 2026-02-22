@@ -245,7 +245,7 @@ export const AppHeader = () => {
           <textarea
             value={feedbackMessage}
             onChange={(event) => setFeedbackMessage(event.target.value)}
-            className="min-h-[140px] w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-800 outline-none ring-primary/40 transition focus:ring"
+            className="form-textarea min-h-[160px] text-sm"
             placeholder="Опишите, чего вам не хватает или что можно сделать удобнее"
           />
           <p className="text-sm text-slate-500">

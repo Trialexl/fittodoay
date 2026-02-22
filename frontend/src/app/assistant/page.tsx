@@ -239,10 +239,10 @@ export default function AssistantPage() {
               {currentStep.fields.map((field) => (
                 <div key={field.name}>
                   {field.type === "select" ? (
-                    <label className="mb-3 flex flex-col gap-1 text-sm">
-                      <span className="font-medium text-slate-700">{field.label}</span>
+                    <label className="form-label mb-3">
+                      <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{field.label}</span>
                       <select
-                        className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                        className="form-select mt-1"
                         value={fieldValue(field.name)}
                         onChange={(e) => updateField(field.name, e.target.value)}
                       >
@@ -254,10 +254,10 @@ export default function AssistantPage() {
                       </select>
                     </label>
                   ) : field.type === "textarea" ? (
-                    <label className="mb-3 flex flex-col gap-1 text-sm">
-                      <span className="font-medium text-slate-700">{field.label}</span>
+                    <label className="form-label mb-3">
+                      <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{field.label}</span>
                       <textarea
-                        className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                        className="form-textarea mt-1"
                         rows={4}
                         placeholder={field.placeholder}
                         value={fieldValue(field.name)}
