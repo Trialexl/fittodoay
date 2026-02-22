@@ -1,6 +1,6 @@
 "use client";
 
-import { ComponentProps, ReactNode, useEffect, useMemo, useState } from "react";
+import { ComponentProps, ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
 import {
   DndContext,
@@ -180,6 +180,7 @@ export const ProgramBoard = ({ initialFocus }: ProgramBoardProps = {}) => {
   const [chatLoading, setChatLoading] = useState(false);
   const [applying, setApplying] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const chatScrollRef = useRef<HTMLDivElement | null>(null);
 
   const { data: chatMessages, mutate: refreshChat } = useSWR(
     token && chatState.threadId
@@ -204,6 +205,12 @@ export const ProgramBoard = ({ initialFocus }: ProgramBoardProps = {}) => {
         .slice(-1)[0] ?? null,
     [chatMessages],
   );
+
+  useEffect(() => {
+    if (!chatState.open) return;
+    if (!chatScrollRef.current) return;
+    chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+  }, [chatMessages, chatState.open]);
 
   const reorderExercises = async (templateId: number, exerciseIds: number[]) => {
     if (!token) return;
@@ -433,7 +440,10 @@ export const ProgramBoard = ({ initialFocus }: ProgramBoardProps = {}) => {
         }
       >
         <div className="flex flex-col gap-3">
-          <div className="max-h-[360px] overflow-y-auto rounded-xl border border-slate-100 bg-slate-50 p-3">
+          <div
+            ref={chatScrollRef}
+            className="max-h-[360px] overflow-y-auto rounded-xl border border-slate-100 bg-slate-50 p-3"
+          >
             {chatMessages?.length ? (
               chatMessages.map((msg) => (
                 <div key={msg.id} className="mb-3">
@@ -441,7 +451,7 @@ export const ProgramBoard = ({ initialFocus }: ProgramBoardProps = {}) => {
                     {msg.role === "assistant" ? "Ассистент" : "Вы"}
                   </p>
                   <p className="whitespace-pre-line text-sm text-slate-800">
-                    {isProbablyJson(msg.content) ? "Ассистент ответил служебным текстом — сформулируйте вопрос проще." : msg.content}
+                    {getChatMessageContent(msg)}
                   </p>
                   {msg.actions && Array.isArray(msg.actions) && msg.actions.length > 0 && (
                     <ul className="mt-1 space-y-1 text-xs text-slate-600">
@@ -476,6 +486,12 @@ export const ProgramBoard = ({ initialFocus }: ProgramBoardProps = {}) => {
           <textarea
             value={chatInput}
             onChange={(event) => setChatInput(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter" || event.shiftKey) return;
+              event.preventDefault();
+              if (chatLoading || !chatInput.trim()) return;
+              void sendChatMessage();
+            }}
             className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-800 outline-none ring-primary/40 transition focus:ring"
             placeholder="Например: хочу заменить жим лежа на отжимания и уменьшить вес в среду"
           />
@@ -1586,13 +1602,41 @@ const TemplateExerciseModal = ({
   );
 };
 
-const isProbablyJson = (text?: string | null) => {
-  if (!text) return false;
-  const trimmed = text.trim();
-  return (
-    (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
-    (trimmed.startsWith("[") && trimmed.endsWith("]"))
-  );
+const getChatMessageContent = (msg: ChatMessage) => {
+  if (!msg.content) return "";
+  if (msg.role !== "assistant") return msg.content;
+  const trimmed = msg.content.trim();
+  if (!trimmed) return "";
+  const looksJsonLike = trimmed.startsWith("{") || trimmed.startsWith("[");
+  if (!looksJsonLike) return msg.content;
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const candidate =
+        (typeof parsed.assistant_reply === "string" && parsed.assistant_reply) ||
+        (typeof parsed.reply === "string" && parsed.reply) ||
+        (typeof parsed.message === "string" && parsed.message) ||
+        (typeof parsed.text === "string" && parsed.text) ||
+        "";
+      if (candidate.trim()) return candidate.trim();
+    }
+  } catch {
+    const malformedMatch = trimmed.match(/"assistant_reply"\s*:\s*"([\s\S]*)$/);
+    if (malformedMatch) {
+      const tail = malformedMatch[1];
+      const cleaned = tail
+        .replace(/\\"/g, '"')
+        .replace(/\\n/g, "\n")
+        .replace(/\\t/g, "\t")
+        .replace(/"+$/g, "")
+        .trim();
+      if (cleaned) return cleaned;
+    }
+  }
+  if (Array.isArray(msg.actions) && msg.actions.length > 0) {
+    return "Подготовил предложения по изменениям. Проверьте список ниже и подтвердите, если подходит.";
+  }
+  return "Не удалось корректно отобразить ответ ассистента. Попробуйте переформулировать запрос.";
 };
 
 const parseOrNull = (value: string) => {

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from dataclasses import dataclass
 from typing import Any, Dict, List
 
@@ -358,6 +359,30 @@ class LLMProgramGenerationService:
 class LLMProgramChatService:
     """Диалог по программе с предложением действий без немедленного применения."""
 
+    WEEKDAY_ALIASES = {
+        "понедельник": (0, "Понедельник"),
+        "пн": (0, "Понедельник"),
+        "monday": (0, "Понедельник"),
+        "вторник": (1, "Вторник"),
+        "вт": (1, "Вторник"),
+        "tuesday": (1, "Вторник"),
+        "среда": (2, "Среда"),
+        "ср": (2, "Среда"),
+        "wednesday": (2, "Среда"),
+        "четверг": (3, "Четверг"),
+        "чт": (3, "Четверг"),
+        "thursday": (3, "Четверг"),
+        "пятница": (4, "Пятница"),
+        "пт": (4, "Пятница"),
+        "friday": (4, "Пятница"),
+        "суббота": (5, "Суббота"),
+        "сб": (5, "Суббота"),
+        "saturday": (5, "Суббота"),
+        "воскресенье": (6, "Воскресенье"),
+        "вс": (6, "Воскресенье"),
+        "sunday": (6, "Воскресенье"),
+    }
+
     def __init__(self, thread: LLMProgramThread):
         self.thread = thread
 
@@ -370,8 +395,38 @@ class LLMProgramChatService:
             proposal_status=LLMProgramMessage.ProposalStatus.NONE,
         )
         payload = self._build_messages(user_message, mode="chat")
-        raw = self._call_llm(payload)
-        parsed = self._parse_chat_response(raw)
+        raw = None
+        parsed = None
+        try:
+            raw = self._call_llm(payload)
+            parsed = self._parse_chat_response(raw)
+        except LLMUnavailableError as exc:
+            self._log_request(
+                payload=payload,
+                response={"raw": raw} if raw is not None else None,
+                success=False,
+                status="chat_unavailable",
+                error=str(exc),
+            )
+            raise
+        except LLMInvalidResponse as exc:
+            self._log_request(
+                payload=payload,
+                response={"raw": raw} if raw is not None else None,
+                success=False,
+                status="chat_invalid_response",
+                error=str(exc),
+            )
+            raise
+        except LLMServiceError as exc:
+            self._log_request(
+                payload=payload,
+                response={"raw": raw} if raw is not None else None,
+                success=False,
+                status="chat_error",
+                error=str(exc),
+            )
+            raise
         actions = parsed.get("actions") if isinstance(parsed.get("actions"), list) else []
         proposal_status = (
             LLMProgramMessage.ProposalStatus.PENDING
@@ -387,6 +442,12 @@ class LLMProgramChatService:
         )
         self.thread.updated_at = timezone.now()
         self.thread.save(update_fields=["updated_at"])
+        self._log_request(
+            payload=payload,
+            response={"raw": raw, "parsed": parsed},
+            success=True,
+            status="chat_ok",
+        )
         return assistant_msg
 
     def apply_actions(self, message_id: int):
@@ -398,7 +459,14 @@ class LLMProgramChatService:
         with transaction.atomic():
             results = []
             for action in actions:
-                result = self._apply_action(action)
+                try:
+                    result = self._apply_action(action)
+                except LLMInvalidResponse as exc:
+                    result = {
+                        "status": "skipped",
+                        "reason": str(exc),
+                        "action": action,
+                    }
                 results.append(result)
             message.proposal_status = LLMProgramMessage.ProposalStatus.APPLIED
             message.save(update_fields=["proposal_status"])
@@ -424,7 +492,14 @@ class LLMProgramChatService:
         return message
 
     def _apply_action(self, action: Dict[str, Any]) -> Dict[str, Any]:
-        action_type = action.get("type")
+        action_type = action.get("type") or action.get("action_type")
+        alias_map = {
+            "add_exercise_to_day": "add_exercise",
+            "replace_exercise_in_day": "replace_exercise",
+            "update_exercise": "update_weight",
+            "update_exercise_params": "update_weight",
+        }
+        action_type = alias_map.get(action_type, action_type)
         if action_type == "add_exercise":
             return self._add_exercise(action)
         if action_type == "replace_exercise":
@@ -520,8 +595,13 @@ class LLMProgramChatService:
         )
         if mode == "chat":
             system_prompt += (
-                " Отвечай кратко текстом для человека, без Markdown, без кодовых блоков и без JSON. "
-                "Просто предложи изменения или ответь на вопросы. Не применяй изменения, не перечисляй всю программу."
+                " Верни JSON без Markdown с полями: "
+                "{\"assistant_reply\": string, \"actions\": Array<object>}. "
+                "assistant_reply — это понятный человеку ответ простым языком. "
+                "actions — только конкретные изменения для подтверждения пользователем; если изменений нет, верни пустой массив. "
+                "Если пользователь указывает день недели (например, 'среда'), используй это как day_name. "
+                "Если такого дня в программе нет, все равно формируй действия с этим day_name — система создаст день автоматически. "
+                "Не применяй изменения самостоятельно, не отвечай служебным текстом."
             )
         else:
             system_prompt += (
@@ -625,11 +705,53 @@ class LLMProgramChatService:
             cleaned = cleaned.replace("json", "", 1).strip()
         try:
             data = json.loads(cleaned)
-            if "assistant_reply" in data:
-                return data
+            if isinstance(data, dict):
+                actions = data.get("actions") if isinstance(data.get("actions"), list) else []
+                reply = (
+                    data.get("assistant_reply")
+                    or data.get("reply")
+                    or data.get("message")
+                    or data.get("text")
+                )
+                if isinstance(reply, str) and reply.strip():
+                    return {"assistant_reply": reply.strip(), "actions": actions}
+                if actions:
+                    return {
+                        "assistant_reply": "Подготовил предложения по изменениям. Проверьте их ниже и примените при необходимости.",
+                        "actions": actions,
+                    }
         except Exception:
             pass
+        extracted_reply = self._extract_reply_from_malformed_json(cleaned)
+        if extracted_reply:
+            return {"assistant_reply": extracted_reply, "actions": []}
         return {"assistant_reply": cleaned, "actions": []}
+
+    def _extract_reply_from_malformed_json(self, text: str) -> str | None:
+        # Handle partial JSON like {"assistant_reply":"... without closing braces/quotes.
+        match = re.search(r'"assistant_reply"\s*:\s*"(.*)', text, flags=re.DOTALL)
+        if not match:
+            return None
+        raw_tail = match.group(1)
+        # Prefer content until the next unescaped quote if present.
+        end_match = re.search(r'(?<!\\)"', raw_tail)
+        value = raw_tail[: end_match.start()] if end_match else raw_tail
+        value = value.replace('\\"', '"').replace("\\n", "\n").replace("\\t", "\t").strip()
+        return value or None
+
+    def _log_request(self, *, payload, response, success: bool, status: str, error: str | None = None):
+        try:
+            LLMRequestLog.objects.create(
+                user=self.thread.user,
+                payload=payload,
+                response=response,
+                status=status,
+                success=success,
+                error_message=error or "",
+                created_at=timezone.now(),
+            )
+        except Exception:  # pragma: no cover
+            logger.exception("Failed to log LLM chat request")
 
     def _generate_actions(self) -> List[Dict[str, Any]]:
         payload = self._build_messages("Сформируй список действий для подтверждения.", mode="actions")
@@ -639,19 +761,27 @@ class LLMProgramChatService:
 
     def _resolve_day(self, action: Dict[str, Any], fallback_from_te: int | None = None) -> DayTemplate | None:
         day_id = action.get("day_id")
+        day_name = action.get("day_name") or action.get("day")
+        explicit_day_provided = bool(day_id or day_name)
         if day_id:
             day = DayTemplate.objects.filter(
                 id=day_id, folder=self.thread.program, folder__user=self.thread.user
             ).first()
             if day:
                 return day
-        day_name = action.get("day_name")
         if day_name:
             day = DayTemplate.objects.filter(
                 folder=self.thread.program, folder__user=self.thread.user, name__iexact=day_name
             ).first()
             if day:
                 return day
+            weekday = self._extract_weekday(day_name)
+            if weekday is not None:
+                weekday_index, weekday_label = weekday
+                by_weekday = self._find_day_by_weekday(weekday_index)
+                if by_weekday:
+                    return by_weekday
+                return self._create_weekday_day(weekday_index, weekday_label)
         if fallback_from_te:
             te = TemplateExercise.objects.filter(
                 id=fallback_from_te,
@@ -660,8 +790,17 @@ class LLMProgramChatService:
             ).first()
             if te:
                 return te.template
-        return (
+        if explicit_day_provided:
+            return None
+        active_day = (
             DayTemplate.objects.filter(folder=self.thread.program, folder__user=self.thread.user, is_active=True)
+            .order_by("sort_order", "id")
+            .first()
+        )
+        if active_day:
+            return active_day
+        return (
+            DayTemplate.objects.filter(folder=self.thread.program, folder__user=self.thread.user)
             .order_by("sort_order", "id")
             .first()
         )
@@ -672,15 +811,87 @@ class LLMProgramChatService:
             exercise = Exercise_DB.objects.filter(id=exercise_id).first()
             if exercise:
                 return exercise
-        name = action.get("exercise_name")
+            candidate_name = str(exercise_id).replace("_", " ").strip()
+            by_name = Exercise_DB.objects.filter(
+                models.Q(name_ru__iexact=candidate_name)
+                | models.Q(name_en__iexact=candidate_name)
+                | models.Q(id__iexact=candidate_name)
+            ).first()
+            if by_name:
+                return by_name
+        name = action.get("exercise_name") or action.get("name")
         if name:
-            return Exercise_DB.objects.filter(
+            exact = Exercise_DB.objects.filter(
                 models.Q(name_ru__iexact=name)
                 | models.Q(name_en__iexact=name)
-                | models.Q(english_name__iexact=name)
                 | models.Q(id__iexact=name)
             ).first()
+            if exact:
+                return exact
+            relaxed = Exercise_DB.objects.filter(
+                models.Q(name_ru__icontains=name)
+                | models.Q(name_en__icontains=name)
+                | models.Q(id__icontains=name.replace(" ", "_"))
+            ).first()
+            if relaxed:
+                return relaxed
+        if exercise_id:
+            relaxed_from_id = Exercise_DB.objects.filter(
+                models.Q(name_ru__icontains=str(exercise_id).replace("_", " "))
+                | models.Q(name_en__icontains=str(exercise_id).replace("_", " "))
+                | models.Q(id__icontains=str(exercise_id))
+            ).first()
+            if relaxed_from_id:
+                return relaxed_from_id
         return None
+
+    def _extract_weekday(self, text: str) -> tuple[int, str] | None:
+        normalized = re.sub(r"[^a-zA-Zа-яА-ЯёЁ0-9]+", " ", text).strip().lower()
+        if not normalized:
+            return None
+        if normalized in self.WEEKDAY_ALIASES:
+            return self.WEEKDAY_ALIASES[normalized]
+        for token in normalized.split():
+            if token in self.WEEKDAY_ALIASES:
+                return self.WEEKDAY_ALIASES[token]
+        return None
+
+    def _find_day_by_weekday(self, weekday_index: int) -> DayTemplate | None:
+        templates = DayTemplate.objects.filter(
+            folder=self.thread.program,
+            folder__user=self.thread.user,
+        ).order_by("sort_order", "id")
+        for template in templates:
+            if template.schedule_type != DayTemplate.ScheduleType.WEEKLY:
+                continue
+            days = (template.schedule_config or {}).get("days_of_week") or []
+            normalized_days = {int(day) for day in days if str(day).isdigit()}
+            if weekday_index in normalized_days:
+                return template
+        return None
+
+    def _create_weekday_day(self, weekday_index: int, weekday_label: str) -> DayTemplate:
+        base_name = f"День ({weekday_label})"
+        name = base_name
+        suffix = 2
+        while DayTemplate.objects.filter(folder=self.thread.program, name=name).exists():
+            name = f"{base_name} {suffix}"
+            suffix += 1
+        last_sort_order = (
+            DayTemplate.objects.filter(folder=self.thread.program)
+            .order_by("-sort_order", "-id")
+            .values_list("sort_order", flat=True)
+            .first()
+            or 0
+        )
+        return DayTemplate.objects.create(
+            folder=self.thread.program,
+            name=name,
+            schedule_type=DayTemplate.ScheduleType.WEEKLY,
+            schedule_config={"days_of_week": [weekday_index]},
+            sort_order=last_sort_order + 1,
+            is_active=True,
+        )
 
     def _build_shortlist(self, query: str | None) -> List[Dict[str, Any]]:
         base_qs = Exercise_DB.objects.exclude(embedding__isnull=True)
@@ -693,7 +904,6 @@ class LLMProgramChatService:
                     Exercise_DB.objects.filter(
                         models.Q(name_ru__icontains=query)
                         | models.Q(name_en__icontains=query)
-                        | models.Q(english_name__icontains=query)
                         | models.Q(target_muscles__icontains=query)
                     )
                     .exclude(embedding__isnull=True)

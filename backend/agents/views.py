@@ -116,7 +116,32 @@ class LLMProgramMessageView(APIView):
         serializer = LLMProgramMessageCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         service = LLMProgramChatService(thread)
-        assistant_message = service.send(serializer.validated_data["message"])
+        try:
+            assistant_message = service.send(serializer.validated_data["message"])
+        except LLMUnavailableError:
+            return Response(
+                {
+                    "detail": "assistant_unavailable",
+                    "message": "Ассистент временно недоступен. Попробуйте повторить запрос позже.",
+                },
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        except LLMInvalidResponse:
+            return Response(
+                {
+                    "detail": "assistant_invalid_response",
+                    "message": "Ассистент вернул некорректный ответ. Попробуйте переформулировать запрос.",
+                },
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        except LLMServiceError:
+            return Response(
+                {
+                    "detail": "assistant_error",
+                    "message": "Ошибка сервиса ассистента. Попробуйте позже.",
+                },
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
         return Response(
             {
                 "assistant": LLMProgramMessageSerializer(assistant_message).data,
