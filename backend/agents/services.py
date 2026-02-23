@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import re
+from datetime import date
 from dataclasses import dataclass
 from typing import Any, Dict, List
 
@@ -15,6 +16,8 @@ from django.utils import timezone
 from programs.models import DayTemplate, ProgramFolder, TemplateExercise
 from agents.models import LLMRequestLog, LLMProgramMessage, LLMProgramThread
 from workouts.models import Exercise_DB, ExerciseMuscle
+from workouts.models import WorkoutDay, WorkoutSetLog
+from workouts.recommendations import generate_recommendations_for_day
 from pgvector.django import L2Distance
 
 logger = logging.getLogger(__name__)
@@ -386,7 +389,13 @@ class LLMProgramChatService:
     def __init__(self, thread: LLMProgramThread):
         self.thread = thread
 
-    def send(self, user_message: str) -> LLMProgramMessage:
+    def send(
+        self,
+        user_message: str,
+        *,
+        chat_mode: str = "program_edit",
+        workout_date: date | None = None,
+    ) -> LLMProgramMessage:
         """Сохраняет сообщение пользователя, дергает LLM (текстовый ответ), сохраняет ответ."""
         LLMProgramMessage.objects.create(
             thread=self.thread,
@@ -394,7 +403,12 @@ class LLMProgramChatService:
             content=user_message,
             proposal_status=LLMProgramMessage.ProposalStatus.NONE,
         )
-        payload = self._build_messages(user_message, mode="chat")
+        payload = self._build_messages(
+            user_message,
+            mode="chat",
+            chat_mode=chat_mode,
+            workout_date=workout_date,
+        )
         raw = None
         parsed = None
         try:
@@ -664,13 +678,30 @@ class LLMProgramChatService:
             "rest": rest if rest is not None else exercise.default_rest,
         }
 
-    def _build_messages(self, user_message: str, *, mode: str) -> List[Dict[str, Any]]:
+    def _build_messages(
+        self,
+        user_message: str,
+        *,
+        mode: str,
+        chat_mode: str = "program_edit",
+        workout_date: date | None = None,
+    ) -> List[Dict[str, Any]]:
         shortlist = self._build_shortlist(user_message)
-        system_prompt = (
-            "Ты фитнес-ассистент. Обсуждаем корректировку уже существующей программы. "
-            "Всегда отвечай на русском. "
-            f"Вот доступные упражнения (используй их id): {json.dumps(shortlist, ensure_ascii=False)}"
-        )
+        if chat_mode == "post_workout_review":
+            system_prompt = (
+                "Ты фитнес-ассистент и эксперт по прогрессии нагрузки. "
+                "Мы обсуждаем прогресс после выполненной тренировки и возможные корректировки программы. "
+                "Всегда отвечай на русском. "
+                "Опирайся на фактические результаты тренировки, динамику по последним тренировкам и алгоритмические рекомендации. "
+                "Если предлагаешь изменить программу, формируй actions для подтверждения пользователем. "
+                f"Вот доступные упражнения (используй их id): {json.dumps(shortlist, ensure_ascii=False)}"
+            )
+        else:
+            system_prompt = (
+                "Ты фитнес-ассистент. Обсуждаем корректировку уже существующей программы. "
+                "Всегда отвечай на русском. "
+                f"Вот доступные упражнения (используй их id): {json.dumps(shortlist, ensure_ascii=False)}"
+            )
         if mode == "chat":
             system_prompt += (
                 " Верни JSON без Markdown с полями: "
@@ -682,6 +713,7 @@ class LLMProgramChatService:
                 "Если пользователь просит помочь с выбором упражнения, обязательно предложи 2-4 варианта и коротко объясни, чем они отличаются и кому подходят. "
                 "Если пользователь просит 'как делать', дай краткую технику выполнения: исходное положение, движение, дыхание, типичные ошибки и безопасный диапазон нагрузки. "
                 "Не отказывай в таком объяснении по общим причинам, если запрос относится к обычным упражнениям из фитнес-каталога. "
+                "Если обсуждается прогресс, дай оценку по факту, выдели сильные/слабые места и предложи 1-3 приоритета на ближайшие тренировки. "
                 "Не применяй изменения самостоятельно, не отвечай служебным текстом."
             )
         else:
@@ -705,6 +737,8 @@ class LLMProgramChatService:
             "latest_actions": self._latest_actions(),
             "available_exercises": shortlist,
         }
+        if chat_mode == "post_workout_review":
+            context["progress_context"] = self._build_post_workout_context(workout_date=workout_date)
         history = []
         for msg in self.thread.messages.order_by("-id")[:12][::-1]:
             history.append({"role": msg.role, "content": msg.content})
@@ -757,6 +791,191 @@ class LLMProgramChatService:
                 )
             data["days"].append(day_entry)
         return data
+
+    def _build_post_workout_context(self, *, workout_date: date | None = None) -> Dict[str, Any]:
+        program_id = self.thread.program_id
+        candidate_days = list(
+            WorkoutDay.objects.filter(user=self.thread.user).order_by("-date").prefetch_related("set_logs")[:45]
+        )
+        day_entries = []
+        for day in candidate_days:
+            ids = self._extract_folder_ids_from_day(day)
+            if program_id not in ids:
+                continue
+            day_entries.append((day, ids))
+
+        target_day = None
+        if workout_date:
+            for day, _ids in day_entries:
+                if day.date == workout_date:
+                    target_day = day
+                    break
+        if target_day is None and day_entries:
+            target_day = day_entries[0][0]
+
+        recent_days_payload = [
+            self._serialize_day_progress(day, program_id)
+            for day, _ids in day_entries[:7]
+        ]
+        latest_summary = recent_days_payload[0] if recent_days_payload else None
+        exercise_trend = self._build_exercise_trend(day_entries[:5], program_id)
+
+        algorithm_recommendations = []
+        if target_day:
+            folder_payloads = generate_recommendations_for_day(target_day)
+            for folder_payload in folder_payloads:
+                if folder_payload.get("folder_id") == program_id:
+                    algorithm_recommendations = folder_payload.get("recommendations") or []
+                    break
+
+        return {
+            "program_id": program_id,
+            "program_name": self.thread.program.name,
+            "requested_workout_date": workout_date.isoformat() if workout_date else None,
+            "latest_workout_summary": latest_summary,
+            "recent_workouts": recent_days_payload,
+            "exercise_trend": exercise_trend,
+            "algorithm_recommendations": algorithm_recommendations,
+        }
+
+    def _extract_folder_ids_from_day(self, day: WorkoutDay) -> set[int]:
+        result: set[int] = set()
+        for raw in (day.source_folder_ids or []):
+            try:
+                result.add(int(raw))
+            except (TypeError, ValueError):
+                continue
+        folders = (day.plan_snapshot or {}).get("folders") or []
+        for folder in folders:
+            folder_id = folder.get("id")
+            if folder_id is None:
+                continue
+            try:
+                result.add(int(folder_id))
+            except (TypeError, ValueError):
+                continue
+        return result
+
+    def _extract_program_template_exercise_ids(self, day: WorkoutDay, program_id: int) -> set[int]:
+        plan = day.plan_snapshot or {}
+        result: set[int] = set()
+        for folder in plan.get("folders", []):
+            folder_id = folder.get("id")
+            if folder_id is None:
+                continue
+            try:
+                normalized_folder_id = int(folder_id)
+            except (TypeError, ValueError):
+                continue
+            if normalized_folder_id != program_id:
+                continue
+            for template in folder.get("templates", []):
+                for exercise in template.get("exercises", []):
+                    te_id = exercise.get("template_exercise_id")
+                    if te_id is None:
+                        continue
+                    try:
+                        result.add(int(te_id))
+                    except (TypeError, ValueError):
+                        continue
+        return result
+
+    def _serialize_day_progress(self, day: WorkoutDay, program_id: int) -> Dict[str, Any]:
+        te_ids = self._extract_program_template_exercise_ids(day, program_id)
+        if not te_ids:
+            return {
+                "date": day.date.isoformat(),
+                "status": day.status,
+                "planned_sets": 0,
+                "logged_sets": 0,
+                "completion_percent": 0,
+            }
+        logs_count = WorkoutSetLog.objects.filter(workout_day=day, template_exercise_id__in=te_ids).count()
+        planned_sets = 0
+        plan = day.plan_snapshot or {}
+        for folder in plan.get("folders", []):
+            try:
+                if int(folder.get("id")) != program_id:
+                    continue
+            except (TypeError, ValueError):
+                continue
+            for template in folder.get("templates", []):
+                for exercise in template.get("exercises", []):
+                    if exercise.get("is_active") is False:
+                        continue
+                    planned_sets += len(exercise.get("sets") or [])
+        completion_percent = int((logs_count / planned_sets) * 100) if planned_sets else 0
+        return {
+            "date": day.date.isoformat(),
+            "status": day.status,
+            "planned_sets": planned_sets,
+            "logged_sets": logs_count,
+            "completion_percent": completion_percent,
+        }
+
+    def _build_exercise_trend(
+        self,
+        day_entries: List[tuple[WorkoutDay, set[int]]],
+        program_id: int,
+    ) -> List[Dict[str, Any]]:
+        stats: Dict[int, Dict[str, Any]] = {}
+        for day, _ids in day_entries:
+            te_ids = self._extract_program_template_exercise_ids(day, program_id)
+            if not te_ids:
+                continue
+            logs = WorkoutSetLog.objects.filter(
+                workout_day=day,
+                template_exercise_id__in=te_ids,
+            ).select_related("template_exercise__exercise", "template_exercise__custom_exercise")
+            for log in logs:
+                te = log.template_exercise
+                if not te:
+                    continue
+                source = te.exercise or te.custom_exercise
+                if not source:
+                    continue
+                bucket = stats.setdefault(
+                    te.id,
+                    {
+                        "template_exercise_id": te.id,
+                        "exercise_name": source.name,
+                        "sessions": 0,
+                        "reps_sum": 0.0,
+                        "reps_count": 0,
+                        "weight_sum": 0.0,
+                        "weight_count": 0,
+                    },
+                )
+                bucket["sessions"] += 1
+                if log.actual_reps is not None:
+                    bucket["reps_sum"] += float(log.actual_reps)
+                    bucket["reps_count"] += 1
+                if log.actual_weight is not None:
+                    bucket["weight_sum"] += float(log.actual_weight)
+                    bucket["weight_count"] += 1
+        trend = []
+        for item in stats.values():
+            avg_reps = (
+                round(item["reps_sum"] / item["reps_count"], 2)
+                if item["reps_count"]
+                else None
+            )
+            avg_weight = (
+                round(item["weight_sum"] / item["weight_count"], 2)
+                if item["weight_count"]
+                else None
+            )
+            trend.append(
+                {
+                    "template_exercise_id": item["template_exercise_id"],
+                    "exercise_name": item["exercise_name"],
+                    "logged_sets": item["sessions"],
+                    "average_reps": avg_reps,
+                    "average_weight": avg_weight,
+                }
+            )
+        trend.sort(key=lambda entry: entry["logged_sets"], reverse=True)
+        return trend[:12]
 
     def _call_llm(self, messages: List[Dict[str, Any]]) -> str:
         client = OpenRouterClient()
@@ -835,7 +1054,11 @@ class LLMProgramChatService:
             logger.exception("Failed to log LLM chat request")
 
     def _generate_actions(self) -> List[Dict[str, Any]]:
-        payload = self._build_messages("Сформируй список действий для подтверждения.", mode="actions")
+        payload = self._build_messages(
+            "Сформируй список действий для подтверждения.",
+            mode="actions",
+            chat_mode="program_edit",
+        )
         raw = self._call_llm(payload)
         parsed = self._parse_response(raw)
         return parsed.get("actions") or []

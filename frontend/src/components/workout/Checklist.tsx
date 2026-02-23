@@ -3,6 +3,7 @@
 import Link from "next/link";
 import clsx from "clsx";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import useSWR from "swr";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
@@ -11,7 +12,7 @@ import { RestTimerOverlay } from "@/components/workout/RestTimerOverlay";
 import { ExecutionTimerOverlay } from "@/components/workout/ExecutionTimerOverlay";
 import { useOfflineWorkoutQueue } from "@/hooks/useOfflineWorkoutQueue";
 import { useRestTimer } from "@/hooks/useRestTimer";
-import { API_BASE_URL, ApiError, apiFetch } from "@/lib/api";
+import { API_BASE_URL, apiFetch } from "@/lib/api";
 import { useAuth } from "@/state/AuthContext";
 
 type SetPayload = {
@@ -171,6 +172,18 @@ type PersistedExecutionOverlay = {
   endsAt: number | null;
 };
 
+type ChatMessage = {
+  id: number;
+  role: string;
+  content: string;
+  actions?: any[] | null;
+  proposal_status?: "none" | "pending" | "applied" | "cancelled";
+};
+
+type ApplyActionsResponse = {
+  applied: Array<Record<string, any>>;
+};
+
 const REST_OVERLAY_STORAGE_KEY = "fittodoay:workout:rest-overlay:v1";
 const EXEC_OVERLAY_STORAGE_KEY = "fittodoay:workout:exec-overlay:v1";
 
@@ -206,6 +219,106 @@ const CompletionMiniIcon = () => (
     ✓
   </span>
 );
+
+const SendIcon = () => (
+  <svg
+    viewBox="0 0 20 20"
+    xmlns="http://www.w3.org/2000/svg"
+    className="h-4 w-4"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.8}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M3 10 17 3l-4 14-3-5-7-2Z" />
+  </svg>
+);
+
+const StatusDot = ({ className }: { className?: string }) => (
+  <svg viewBox="0 0 20 20" className={clsx("h-3.5 w-3.5", className)} fill="currentColor" aria-hidden="true">
+    <circle cx="10" cy="10" r="4.5" />
+  </svg>
+);
+
+const StatusCheck = ({ className }: { className?: string }) => (
+  <svg
+    viewBox="0 0 20 20"
+    className={clsx("h-3.5 w-3.5", className)}
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={2}
+    aria-hidden="true"
+  >
+    <path d="M4.5 10.5 8.5 14l7-8" />
+  </svg>
+);
+
+const StatusClose = ({ className }: { className?: string }) => (
+  <svg
+    viewBox="0 0 20 20"
+    className={clsx("h-3.5 w-3.5", className)}
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={2}
+    aria-hidden="true"
+  >
+    <path d="m6 6 8 8M14 6l-8 8" />
+  </svg>
+);
+
+const getProposalStatusMeta = (status: ChatMessage["proposal_status"]) => {
+  switch (status) {
+    case "pending":
+      return {
+        label: "Статус: ожидает подтверждения",
+        className: "bg-amber-50 text-amber-700",
+        icon: <StatusDot className="text-amber-500" />,
+      };
+    case "applied":
+      return {
+        label: "Статус: применено",
+        className: "bg-emerald-50 text-emerald-700",
+        icon: <StatusCheck className="text-emerald-500" />,
+      };
+    case "cancelled":
+      return {
+        label: "Статус: отменено",
+        className: "bg-slate-100 text-slate-600",
+        icon: <StatusClose className="text-slate-500" />,
+      };
+    default:
+      return {
+        label: "Статус: без изменений",
+        className: "bg-slate-100 text-slate-600",
+        icon: <StatusDot className="text-slate-400" />,
+      };
+  }
+};
+
+const getChatMessageContent = (msg: ChatMessage) => {
+  if (msg.role !== "assistant") return msg.content;
+  const trimmed = msg.content.trim();
+  if (!trimmed) return "";
+  if (!(trimmed.startsWith("{") && trimmed.includes("assistant_reply"))) {
+    return msg.content;
+  }
+  try {
+    const parsed = JSON.parse(trimmed);
+    const reply =
+      (typeof parsed.assistant_reply === "string" && parsed.assistant_reply) ||
+      (typeof parsed.reply === "string" && parsed.reply) ||
+      (typeof parsed.message === "string" && parsed.message) ||
+      (typeof parsed.text === "string" && parsed.text);
+    if (reply) return reply;
+  } catch {
+    const malformedMatch = trimmed.match(/"assistant_reply"\s*:\s*"([\s\S]*)$/);
+    if (malformedMatch?.[1]) {
+      return malformedMatch[1].replace(/\\"/g, '"').replace(/\\n/g, "\n").trim();
+    }
+  }
+  return msg.content;
+};
 
 export const Checklist = ({
   plan,
@@ -271,6 +384,42 @@ export const Checklist = ({
   const [recommendationsError, setRecommendationsError] = useState<string | null>(null);
   const [recommendationsApplied, setRecommendationsApplied] = useState<Record<number, boolean>>({});
   const recommendationFocusRefs = useRef<Record<number, HTMLInputElement | null>>({});
+  const [chatState, setChatState] = useState<{
+    open: boolean;
+    folderId?: number;
+    folderName?: string;
+    threadId?: number;
+  }>({ open: false });
+  const [chatInput, setChatInput] = useState("");
+  const [chatError, setChatError] = useState<string | null>(null);
+  const [chatLoading, setChatLoading] = useState(false);
+  const [chatApplying, setChatApplying] = useState(false);
+  const [chatCancelling, setChatCancelling] = useState(false);
+  const chatScrollRef = useRef<HTMLDivElement | null>(null);
+
+  const { data: chatMessages, mutate: refreshChat } = useSWR(
+    auth.token && chatState.threadId
+      ? [`/api/llm-agent/threads/${chatState.threadId}/messages/`, auth.token]
+      : null,
+    ([url, token]) =>
+      apiFetch<ChatMessage[]>(url, {
+        token: token as string,
+      }),
+  );
+
+  const latestPendingProposal = useMemo(
+    () =>
+      chatMessages
+        ?.filter(
+          (m) =>
+            m.role === "assistant" &&
+            Array.isArray(m.actions) &&
+            m.actions.length > 0 &&
+            m.proposal_status === "pending",
+        )
+        .slice(-1)[0] ?? null,
+    [chatMessages],
+  );
   const {
     pendingLogs,
     pendingCount,
@@ -405,6 +554,11 @@ export const Checklist = ({
     setRecommendationsError(null);
     setTimersRestored(false);
   }, [plan?.date]);
+
+  useEffect(() => {
+    if (!chatState.open || !chatScrollRef.current) return;
+    chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+  }, [chatMessages, chatState.open]);
 
   useEffect(() => {
     if (!plan || typeof window === "undefined") return;
@@ -1074,6 +1228,118 @@ export const Checklist = ({
     }
   };
 
+  const openProgressChat = async (folderId: number, folderName: string) => {
+    if (!auth.token) return;
+    setChatError(null);
+    setChatLoading(true);
+    try {
+      const thread = await apiFetch<{ id: number; title: string }>(`/api/llm-agent/threads/`, {
+        method: "POST",
+        body: JSON.stringify({
+          program_id: folderId,
+          title: `Прогресс: ${folderName}`,
+        }),
+        token: auth.token,
+      });
+      setChatState({ open: true, folderId, folderName, threadId: thread.id });
+      setChatInput("");
+      await apiFetch(`/api/llm-agent/threads/${thread.id}/messages/`, {
+        method: "POST",
+        token: auth.token,
+        body: JSON.stringify({
+          message:
+            "Сделай краткий разбор моего прогресса за эту тренировку: оцени выполнение, выдели сильные/слабые места и предложи 1-3 конкретные правки по весам/повторам или упражнениям.",
+          mode: "post_workout_review",
+          workout_date: plan?.date,
+        }),
+      });
+      await refreshChat();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Не удалось открыть чат";
+      setChatError(message);
+      setChatState({ open: true, folderId, folderName });
+    } finally {
+      setChatLoading(false);
+    }
+  };
+
+  const sendChatMessage = async () => {
+    if (!auth.token || !chatState.threadId || !chatInput.trim()) return;
+    setChatLoading(true);
+    setChatError(null);
+    try {
+      await apiFetch(`/api/llm-agent/threads/${chatState.threadId}/messages/`, {
+        method: "POST",
+        token: auth.token,
+        body: JSON.stringify({
+          message: chatInput.trim(),
+          mode: "post_workout_review",
+          workout_date: plan?.date,
+        }),
+      });
+      setChatInput("");
+      refreshChat();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Не удалось отправить сообщение";
+      setChatError(message);
+    } finally {
+      setChatLoading(false);
+    }
+  };
+
+  const applyChatActions = async () => {
+    if (!auth.token || !chatState.threadId || !latestPendingProposal) return;
+    setChatApplying(true);
+    setChatError(null);
+    try {
+      const result = await apiFetch<ApplyActionsResponse>(
+        `/api/llm-agent/threads/${chatState.threadId}/apply/`,
+        {
+          method: "POST",
+          token: auth.token,
+          body: JSON.stringify({ message_id: latestPendingProposal.id }),
+        },
+      );
+      const applied = result?.applied ?? [];
+      const hasAppliedChanges = applied.some((item) => item?.status !== "skipped");
+      if (!hasAppliedChanges) {
+        const firstSkippedReason =
+          applied.find((item) => item?.status === "skipped")?.reason ??
+          "Ассистент не смог применить изменения к текущей программе.";
+        setChatError(firstSkippedReason);
+        refreshChat();
+        return;
+      }
+      refreshChat();
+      refresh();
+      setChatState((prev) => ({ ...prev, open: false }));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Не удалось применить изменения";
+      setChatError(message);
+    } finally {
+      setChatApplying(false);
+    }
+  };
+
+  const cancelChatActions = async () => {
+    if (!auth.token || !chatState.threadId || !latestPendingProposal) return;
+    setChatCancelling(true);
+    setChatError(null);
+    try {
+      await apiFetch(`/api/llm-agent/threads/${chatState.threadId}/cancel/`, {
+        method: "POST",
+        token: auth.token,
+        body: JSON.stringify({ message_id: latestPendingProposal.id }),
+      });
+      refreshChat();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Не удалось отменить изменения";
+      setChatError(message);
+    } finally {
+      setChatCancelling(false);
+    }
+  };
+
   if (!plan || !hasTemplates) {
     return (
       <div className="rounded-2xl border border-dashed border-slate-300 bg-white/60 p-6 text-center">
@@ -1144,6 +1410,17 @@ export const Checklist = ({
                   </div>
                 </button>
                 <div className="ml-auto flex items-center gap-2">
+                  {folderComplete && (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      className="rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide"
+                      onClick={() => openProgressChat(folder.id, folder.name)}
+                      disabled={chatLoading && chatState.folderId === folder.id}
+                    >
+                      Обсудить прогресс
+                    </Button>
+                  )}
                   {folderComplete && (
                     <Button
                       type="button"
@@ -1624,6 +1901,112 @@ export const Checklist = ({
           );
         })}
       </div>
+
+      <Modal
+        open={chatState.open}
+        onClose={() => setChatState({ open: false })}
+        title={chatState.folderName ? `Разбор прогресса: ${chatState.folderName}` : "Разбор прогресса"}
+        className="sm:max-w-3xl"
+        mobileSheet
+        footer={
+          latestPendingProposal ? (
+            <div className="w-full">
+              <Button
+                variant="secondary"
+                onClick={applyChatActions}
+                disabled={chatApplying || chatCancelling}
+                loading={chatApplying}
+                className="w-full justify-center text-base sm:w-auto"
+              >
+                Применить изменения
+              </Button>
+            </div>
+          ) : undefined
+        }
+      >
+        <div className="flex h-full min-h-0 flex-col">
+          <div
+            ref={chatScrollRef}
+            className="min-h-0 flex-1 overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-900/60"
+          >
+            {chatMessages?.length ? (
+              chatMessages.map((msg) => (
+                <div
+                  key={msg.id}
+                  className="mb-3 rounded-xl border border-slate-200 bg-white p-2.5 shadow-sm dark:border-slate-700 dark:bg-slate-800/80"
+                >
+                  <p className="text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                    {msg.role === "assistant" ? "Ассистент" : "Вы"}
+                  </p>
+                  <p className="whitespace-pre-line text-sm text-slate-800 dark:text-slate-100">
+                    {getChatMessageContent(msg)}
+                  </p>
+                  {msg.actions && Array.isArray(msg.actions) && msg.actions.length > 0 && (
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      Предложено изменений: {msg.actions.length}
+                    </p>
+                  )}
+                  {msg.role === "assistant" && msg.proposal_status && msg.proposal_status !== "none" && (
+                    <p
+                      className={clsx(
+                        "mt-1 inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium",
+                        getProposalStatusMeta(msg.proposal_status).className,
+                      )}
+                    >
+                      {getProposalStatusMeta(msg.proposal_status).icon}
+                      {getProposalStatusMeta(msg.proposal_status).label}
+                    </p>
+                  )}
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                Формируем разбор прогресса...
+              </p>
+            )}
+          </div>
+          <div className="sticky bottom-0 mt-3 border-t border-slate-200/80 bg-white/95 pt-2 backdrop-blur dark:border-slate-700 dark:bg-slate-900/95">
+            {chatError && <p className="mb-2 text-sm text-red-500">{chatError}</p>}
+            {latestPendingProposal && (
+              <div className="mb-2 flex items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 dark:border-amber-500/40 dark:bg-amber-500/10">
+                <p className="text-xs text-amber-700 dark:text-amber-300">Есть неподтвержденные изменения.</p>
+                <button
+                  type="button"
+                  onClick={cancelChatActions}
+                  disabled={chatApplying || chatCancelling}
+                  className="text-xs font-medium text-amber-800 underline-offset-2 transition hover:underline disabled:opacity-50 dark:text-amber-200"
+                >
+                  {chatCancelling ? "Отмена..." : "Отменить"}
+                </button>
+              </div>
+            )}
+            <div className="relative">
+              <textarea
+                value={chatInput}
+                onChange={(event) => setChatInput(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter" || event.shiftKey) return;
+                  event.preventDefault();
+                  if (chatLoading || !chatInput.trim()) return;
+                  void sendChatMessage();
+                }}
+                className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2.5 pr-14 text-base text-slate-800 outline-none ring-primary/40 transition placeholder:text-slate-400 focus:ring sm:text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500"
+                placeholder="Например: оцени прогресс за сегодня и предложи правки по весам"
+              />
+              <button
+                type="button"
+                aria-label="Отправить сообщение"
+                title="Отправить"
+                onClick={() => void sendChatMessage()}
+                disabled={chatLoading || !chatInput.trim() || !chatState.threadId}
+                className="absolute bottom-2 right-2 inline-flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-white shadow-sm transition hover:bg-primary-dark disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {chatLoading ? "…" : <SendIcon />}
+              </button>
+            </div>
+          </div>
+        </div>
+      </Modal>
 
       <RestTimerOverlay
         pending={restOverlay}

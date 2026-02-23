@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import date
+
 import pytest
 from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
@@ -7,7 +9,7 @@ from rest_framework.test import APIClient
 from agents.models import LLMProgramMessage, LLMProgramThread, LLMRequestLog
 from agents.services import LLMProgramChatService, LLMUnavailableError
 from programs.models import DayTemplate, ProgramFolder, TemplateExercise
-from workouts.models import Exercise_DB
+from workouts.models import Exercise_DB, WorkoutDay, WorkoutSetLog
 
 User = get_user_model()
 
@@ -655,6 +657,110 @@ def test_apply_actions_supports_remove_exercise_from_day():
     assert response.status_code == 200
     te.refresh_from_db()
     assert te.is_active is False
+
+
+@pytest.mark.django_db
+def test_chat_send_passes_post_workout_context_mode_and_date(monkeypatch):
+    user = User.objects.create_user(email="agent_post_workout_mode@example.com", password="pass")
+    folder, _ = _create_base_program(user)
+    thread = LLMProgramThread.objects.create(user=user, program=folder, title="Пост-трен чат")
+    service = LLMProgramChatService(thread)
+    captured: dict[str, object] = {}
+
+    def _fake_build_messages(user_message, *, mode, chat_mode="program_edit", workout_date=None):
+        captured["user_message"] = user_message
+        captured["mode"] = mode
+        captured["chat_mode"] = chat_mode
+        captured["workout_date"] = workout_date
+        return [{"role": "system", "content": "ok"}]
+
+    monkeypatch.setattr(service, "_build_messages", _fake_build_messages)
+    monkeypatch.setattr(
+        service,
+        "_call_llm",
+        lambda messages: '{"assistant_reply":"Разобрал прогресс","actions":[]}',
+    )
+
+    assistant = service.send(
+        "Оцени прогресс за тренировку",
+        chat_mode="post_workout_review",
+        workout_date=date(2026, 2, 23),
+    )
+
+    assert assistant.content == "Разобрал прогресс"
+    assert captured["mode"] == "chat"
+    assert captured["chat_mode"] == "post_workout_review"
+    assert captured["workout_date"] == date(2026, 2, 23)
+
+
+@pytest.mark.django_db
+def test_build_messages_includes_progress_context_for_post_workout_mode(monkeypatch):
+    user = User.objects.create_user(email="agent_post_workout_context@example.com", password="pass")
+    folder, te = _create_base_program(user)
+    thread = LLMProgramThread.objects.create(user=user, program=folder, title="Пост-трен контекст")
+    day = WorkoutDay.objects.create(
+        user=user,
+        date=date(2026, 2, 23),
+        source_folder_ids=[folder.id],
+        source_template_ids=[te.template_id],
+        plan_snapshot={
+            "folders": [
+                {
+                    "id": folder.id,
+                    "name": folder.name,
+                    "templates": [
+                        {
+                            "id": te.template_id,
+                            "name": te.template.name,
+                            "exercises": [
+                                {
+                                    "template_exercise_id": te.id,
+                                    "is_active": True,
+                                    "sets": [{"set_index": 1}, {"set_index": 2}, {"set_index": 3}],
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ]
+        },
+    )
+    WorkoutSetLog.objects.create(
+        workout_day=day,
+        template_exercise=te,
+        set_index=1,
+        actual_reps=10,
+        actual_weight=42,
+    )
+    service = LLMProgramChatService(thread)
+    monkeypatch.setattr(
+        "agents.services.generate_recommendations_for_day",
+        lambda _day: [
+            {
+                "folder_id": folder.id,
+                "folder_name": folder.name,
+                "recommendations": [
+                    {
+                        "template_exercise_id": te.id,
+                        "exercise_name": "Bench Press",
+                        "suggested_weight": 44,
+                    }
+                ],
+            }
+        ],
+    )
+
+    messages = service._build_messages(
+        "Что скорректировать?",
+        mode="chat",
+        chat_mode="post_workout_review",
+        workout_date=date(2026, 2, 23),
+    )
+    context = messages[1]["content"]
+
+    assert "\"progress_context\"" in context
+    assert "\"algorithm_recommendations\"" in context
+    assert "\"requested_workout_date\": \"2026-02-23\"" in context
 
 
 @pytest.mark.django_db

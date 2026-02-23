@@ -117,7 +117,13 @@ class LLMProgramMessageView(APIView):
         serializer.is_valid(raise_exception=True)
         service = LLMProgramChatService(thread)
         try:
-            assistant_message = service.send(serializer.validated_data["message"])
+            assistant_message = service.send(
+                serializer.validated_data["message"],
+                chat_mode=serializer.validated_data.get(
+                    "mode", LLMProgramMessageCreateSerializer.Mode.PROGRAM_EDIT
+                ),
+                workout_date=serializer.validated_data.get("workout_date"),
+            )
         except LLMUnavailableError:
             return Response(
                 {

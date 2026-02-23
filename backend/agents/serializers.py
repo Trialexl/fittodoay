@@ -59,7 +59,21 @@ class LLMProgramMessageSerializer(serializers.ModelSerializer):
 
 
 class LLMProgramMessageCreateSerializer(serializers.Serializer):
+    class Mode:
+        PROGRAM_EDIT = "program_edit"
+        POST_WORKOUT_REVIEW = "post_workout_review"
+        CHOICES = (
+            (PROGRAM_EDIT, PROGRAM_EDIT),
+            (POST_WORKOUT_REVIEW, POST_WORKOUT_REVIEW),
+        )
+
     message = serializers.CharField()
+    mode = serializers.ChoiceField(
+        choices=Mode.CHOICES,
+        required=False,
+        default=Mode.PROGRAM_EDIT,
+    )
+    workout_date = serializers.DateField(required=False)
 
     def validate(self, attrs):
         message = attrs.get("message", "").strip()
