@@ -1391,10 +1391,10 @@ export const Checklist = ({
                   : "border-slate-200 bg-surface-muted",
               )}
             >
-              <div className="flex items-center gap-2">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                 <button
                   type="button"
-                  className="flex flex-1 items-center gap-1 text-left"
+                  className="flex w-full flex-1 items-center gap-1 text-left"
                   onClick={() =>
                     setExpandedFolders((prev) => ({
                       ...prev,
@@ -1409,27 +1409,38 @@ export const Checklist = ({
                     <h3 className="text-base font-semibold text-slate-900 sm:text-lg">{folder.name}</h3>
                   </div>
                 </button>
-                <div className="ml-auto flex items-center gap-2">
+                <div className="flex w-full items-center justify-end gap-1.5 sm:ml-auto sm:w-auto sm:gap-2">
                   {folderComplete && (
                     <Button
                       type="button"
                       variant="secondary"
-                      className="rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide"
+                      className="rounded-xl px-2.5 py-1.5 text-[10px] font-semibold tracking-wide sm:rounded-full sm:px-3 sm:py-1 sm:text-xs sm:uppercase"
                       onClick={() => openProgressChat(folder.id, folder.name)}
                       disabled={chatLoading && chatState.folderId === folder.id}
                     >
-                      Обсудить прогресс
+                      <span className="sm:hidden">Прогресс</span>
+                      <span className="hidden sm:inline">Обсудить прогресс</span>
                     </Button>
                   )}
                   {folderComplete && (
                     <Button
                       type="button"
                       variant="secondary"
-                      className="rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide"
+                      className="rounded-xl px-2.5 py-1.5 text-[10px] font-semibold tracking-wide sm:rounded-full sm:px-3 sm:py-1 sm:text-xs sm:uppercase"
                       onClick={() => handleRecommendationToggle(folder.id)}
                       disabled={recommendationsLoading && !recommendationOpen}
                     >
-                      {recommendationOpen ? "Скрыть рекомендации" : "Рекомендации"}
+                      {recommendationOpen ? (
+                        <>
+                          <span className="sm:hidden">Скрыть</span>
+                          <span className="hidden sm:inline">Скрыть рекомендации</span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="sm:hidden">Реком.</span>
+                          <span className="hidden sm:inline">Рекомендации</span>
+                        </>
+                      )}
                     </Button>
                   )}
                   <Link
