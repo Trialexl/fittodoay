@@ -179,7 +179,7 @@ class LLMProgramGenerationService:
             snapshot.append(
                 {
                     "id": exercise.id,
-                    "name": exercise.english_name or exercise.name_en or exercise.name_ru,
+                    "name": exercise.name_ru or exercise.name_en or exercise.english_name,
                     "target_muscles": "/".join(muscle_map.get(exercise.id, [])),
                     "equipment": exercise.equipment_en or exercise.equipment_ru,
                     "difficulty": exercise.level_en or exercise.level_ru,
@@ -442,6 +442,7 @@ class LLMProgramChatService:
             )
             raise
         actions = parsed.get("actions") if isinstance(parsed.get("actions"), list) else []
+        actions = self._normalize_actions_for_display(actions)
         proposal_status = (
             LLMProgramMessage.ProposalStatus.PENDING
             if actions
@@ -472,9 +473,11 @@ class LLMProgramChatService:
             raise LLMInvalidResponse("no_actions_to_apply")
         with transaction.atomic():
             results = []
+            applied_count = 0
             for action in actions:
                 try:
                     result = self._apply_action(action)
+                    applied_count += 1
                 except LLMInvalidResponse as exc:
                     result = {
                         "status": "skipped",
@@ -482,7 +485,11 @@ class LLMProgramChatService:
                         "action": action,
                     }
                 results.append(result)
-            message.proposal_status = LLMProgramMessage.ProposalStatus.APPLIED
+            message.proposal_status = (
+                LLMProgramMessage.ProposalStatus.APPLIED
+                if applied_count > 0
+                else LLMProgramMessage.ProposalStatus.CANCELLED
+            )
             message.save(update_fields=["proposal_status"])
         return results
 
@@ -521,6 +528,8 @@ class LLMProgramChatService:
             "update_weight": "update_weight",
         }
         action_type = alias_map.get(action_type, action_type)
+        if not action_type:
+            raise LLMInvalidResponse("invalid_action_type")
         if action_type == "add_exercise":
             return self._add_exercise(action)
         if action_type == "replace_exercise":
@@ -693,6 +702,10 @@ class LLMProgramChatService:
                 "Мы обсуждаем прогресс после выполненной тренировки и возможные корректировки программы. "
                 "Всегда отвечай на русском. "
                 "Опирайся на фактические результаты тренировки, динамику по последним тренировкам и алгоритмические рекомендации. "
+                "Пиши коротко и предметно: максимум 6-8 коротких предложений в ответе, без мотивационных абзацев и повторов. "
+                "Формат ответа: 1) краткая оценка, 2) 1-3 конкретные правки, 3) что делать на следующей тренировке. "
+                "Если предлагаешь числовые правки, всегда указывай упражнение, текущие значения и предлагаемые значения. "
+                "IRR/RIR используй только для силовых упражнений с повторениями и рабочим весом; не применяй IRR к timed/static/cardio упражнениям. "
                 "Если предлагаешь изменить программу, формируй actions для подтверждения пользователем. "
                 f"Вот доступные упражнения (используй их id): {json.dumps(shortlist, ensure_ascii=False)}"
             )
@@ -708,12 +721,15 @@ class LLMProgramChatService:
                 "{\"assistant_reply\": string, \"actions\": Array<object>}. "
                 "assistant_reply — это понятный человеку ответ простым языком. "
                 "actions — только конкретные изменения для подтверждения пользователем; если изменений нет, верни пустой массив. "
+                "В каждом action обязательно передавай exercise_name на русском (человекочитаемое название упражнения). "
+                "В action передавай только параметры, которые действительно нужно изменить (не дублируй неизменные sets/reps/weight/time/rest). "
                 "Если пользователь указывает день недели (например, 'среда'), используй это как day_name. "
                 "Если такого дня в программе нет, все равно формируй действия с этим day_name — система создаст день автоматически. "
                 "Если пользователь просит помочь с выбором упражнения, обязательно предложи 2-4 варианта и коротко объясни, чем они отличаются и кому подходят. "
                 "Если пользователь просит 'как делать', дай краткую технику выполнения: исходное положение, движение, дыхание, типичные ошибки и безопасный диапазон нагрузки. "
                 "Не отказывай в таком объяснении по общим причинам, если запрос относится к обычным упражнениям из фитнес-каталога. "
                 "Если обсуждается прогресс, дай оценку по факту, выдели сильные/слабые места и предложи 1-3 приоритета на ближайшие тренировки. "
+                "Не используй IRR/RIR для timed/static/cardio движений; для них давай рекомендации по технике, темпу и объему. "
                 "Не применяй изменения самостоятельно, не отвечай служебным текстом."
             )
         else:
@@ -730,6 +746,8 @@ class LLMProgramChatService:
                 "\"time\": number|null?, \"rest\": number|null?, \"note\": string?"
                 "}]} "
                 "assistant_reply — кратко для человека (что предлагаешь, зачем). "
+                "Всегда заполняй exercise_name на русском для каждого action. "
+                "Передавай только действительно изменяемые параметры (не дублируй поля, которые должны остаться без изменений). "
                 "Используй exercise_id только из списка available_exercises; если даешь exercise_name, она должна совпадать с каталогом."
             )
         context = {
@@ -779,7 +797,7 @@ class LLMProgramChatService:
                     {
                         "id": te.id,
                         "exercise_id": te.exercise.id,
-                        "name": te.exercise.english_name or te.exercise.name_en or te.exercise.name_ru,
+                        "name": te.exercise.name_ru or te.exercise.english_name or te.exercise.name_en,
                         "is_active": te.is_active,
                         "sets": te.set_override,
                         "reps": te.rep_override,
@@ -1026,6 +1044,116 @@ class LLMProgramChatService:
         if extracted_reply:
             return {"assistant_reply": extracted_reply, "actions": []}
         return {"assistant_reply": cleaned, "actions": []}
+
+    def _normalize_actions_for_display(self, actions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        alias_map = {
+            "add_exercise_to_day": "add_exercise",
+            "add_exercise": "add_exercise",
+            "replace_exercise_in_day": "replace_exercise",
+            "replace_exercise": "replace_exercise",
+            "remove_exercise_from_day": "remove_exercise",
+            "remove_exercise": "remove_exercise",
+            "delete_exercise": "remove_exercise",
+            "update_exercise": "update_weight",
+            "update_exercise_params": "update_weight",
+            "update_weight": "update_weight",
+        }
+        normalized: List[Dict[str, Any]] = []
+        for raw_action in actions:
+            if not isinstance(raw_action, dict):
+                continue
+            action = dict(raw_action)
+            action_type = str(action.get("type") or action.get("action_type") or action.get("action") or "").strip().lower()
+            normalized_type = alias_map.get(action_type, action_type)
+            if not normalized_type and (
+                action.get("template_exercise_id")
+                or any(key in action for key in ("weight", "reps", "rep", "sets", "set", "time", "rest", "note"))
+            ):
+                normalized_type = "update_weight"
+            if not normalized_type:
+                continue
+            if normalized_type:
+                action["type"] = normalized_type
+            self._attach_localized_exercise_name(action)
+            self._attach_day_name(action)
+            self._drop_unchanged_action_fields(action)
+            if action.get("type") == "update_weight" and not self._has_effective_update_fields(action):
+                continue
+            normalized.append(action)
+        return normalized
+
+    def _attach_localized_exercise_name(self, action: Dict[str, Any]) -> None:
+        candidate_exercise = None
+        te_id = action.get("template_exercise_id") or action.get("deactivate_exercise_id")
+        if te_id:
+            template_exercise = TemplateExercise.objects.filter(
+                id=te_id,
+                template__folder=self.thread.program,
+                template__folder__user=self.thread.user,
+            ).select_related("exercise").first()
+            if template_exercise and template_exercise.exercise:
+                candidate_exercise = template_exercise.exercise
+        if candidate_exercise is None:
+            candidate_exercise = self._resolve_exercise(action)
+        if candidate_exercise is not None:
+            action["exercise_name"] = (
+                candidate_exercise.name_ru
+                or candidate_exercise.name_en
+                or candidate_exercise.english_name
+                or action.get("exercise_name")
+            )
+
+    def _attach_day_name(self, action: Dict[str, Any]) -> None:
+        day_id = action.get("day_id")
+        if not day_id or action.get("day_name"):
+            return
+        day = DayTemplate.objects.filter(
+            id=day_id,
+            folder=self.thread.program,
+            folder__user=self.thread.user,
+        ).only("name").first()
+        if day:
+            action["day_name"] = day.name
+
+    def _drop_unchanged_action_fields(self, action: Dict[str, Any]) -> None:
+        te_id = action.get("template_exercise_id") or action.get("deactivate_exercise_id")
+        if not te_id:
+            return
+        template_exercise = TemplateExercise.objects.filter(
+            id=te_id,
+            template__folder=self.thread.program,
+            template__folder__user=self.thread.user,
+        ).first()
+        if not template_exercise:
+            return
+        comparisons = (
+            ("sets", template_exercise.set_override),
+            ("set", template_exercise.set_override),
+            ("reps", template_exercise.rep_override),
+            ("rep", template_exercise.rep_override),
+            ("weight", template_exercise.weight_override),
+            ("time", template_exercise.time_override),
+            ("rest", template_exercise.rest_override),
+            ("note", template_exercise.note or ""),
+        )
+        for key, current in comparisons:
+            if key not in action:
+                continue
+            proposed = action.get(key)
+            if proposed is None:
+                continue
+            try:
+                is_equal = float(proposed) == float(current) if proposed is not None and current is not None else proposed == current
+            except (TypeError, ValueError):
+                is_equal = proposed == current
+            if is_equal:
+                action.pop(key, None)
+
+    def _has_effective_update_fields(self, action: Dict[str, Any]) -> bool:
+        return any(
+            key in action
+            for key in ("weight", "reps", "rep", "sets", "set", "time", "rest", "note")
+        )
 
     def _extract_reply_from_malformed_json(self, text: str) -> str | None:
         # Handle partial JSON like {"assistant_reply":"... without closing braces/quotes.

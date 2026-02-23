@@ -320,6 +320,136 @@ const getChatMessageContent = (msg: ChatMessage) => {
   return msg.content;
 };
 
+type ExerciseParamsMeta = {
+  sets: number | null;
+  reps: number | null;
+  weight: number | null;
+  time: number | null;
+  rest: number | null;
+};
+
+const normalizeNullableNumber = (value: unknown): number | null | undefined => {
+  if (value === null) return null;
+  if (value === undefined) return undefined;
+  const asNumber = Number(value);
+  if (Number.isNaN(asNumber)) return undefined;
+  return asNumber;
+};
+
+const getProposedParams = (action: Record<string, any>): ExerciseParamsMeta => ({
+  sets: (() => {
+    const source = action.parameters ?? action.params ?? action.changes ?? action;
+    return normalizeNullableNumber(source.sets ?? source.set_override ?? source.set) ?? null;
+  })(),
+  reps: (() => {
+    const source = action.parameters ?? action.params ?? action.changes ?? action;
+    return normalizeNullableNumber(source.reps ?? source.rep_override ?? source.rep) ?? null;
+  })(),
+  weight: (() => {
+    const source = action.parameters ?? action.params ?? action.changes ?? action;
+    return normalizeNullableNumber(source.weight ?? source.weight_override) ?? null;
+  })(),
+  time: (() => {
+    const source = action.parameters ?? action.params ?? action.changes ?? action;
+    return normalizeNullableNumber(source.time ?? source.time_override) ?? null;
+  })(),
+  rest: (() => {
+    const source = action.parameters ?? action.params ?? action.changes ?? action;
+    return normalizeNullableNumber(source.rest ?? source.rest_override) ?? null;
+  })(),
+});
+
+const formatChangeLine = (
+  label: string,
+  current: number | null | undefined,
+  proposed: number | null | undefined,
+  suffix = "",
+) => {
+  if (proposed === undefined || proposed === null) return null;
+  if (current === undefined || current === null) return `${label} → ${proposed}${suffix}`;
+  if (current === proposed) return null;
+  return `${label} ${current}${suffix} → ${proposed}${suffix}`;
+};
+
+const formatRecommendationDelta = (
+  current: ExerciseParamsMeta | undefined,
+  proposed: ExerciseParamsMeta,
+) => {
+  const lines = [
+    formatChangeLine("подходы", current?.sets, proposed.sets),
+    formatChangeLine("повторы", current?.reps, proposed.reps),
+    formatChangeLine("вес", current?.weight, proposed.weight),
+    formatChangeLine("время", current?.time, proposed.time, " сек"),
+    formatChangeLine("отдых", current?.rest, proposed.rest, " сек"),
+  ].filter(Boolean) as string[];
+  return lines.length ? lines.join(", ") : null;
+};
+
+const describeAction = (
+  action: Record<string, any>,
+  byTemplateExerciseId: Record<number, ExerciseParamsMeta>,
+  byExerciseId: Record<string, ExerciseParamsMeta>,
+  exerciseNameByTemplateExerciseId: Record<number, string>,
+  exerciseNameByExerciseId: Record<string, string>,
+) => {
+  const actionType = String(action.type ?? action.action_type ?? action.action ?? "").toLowerCase();
+  const day = action.day_name || action.day_id ? ` (${action.day_name ?? `день ${action.day_id}`})` : "";
+  const templateExerciseId = Number(action.template_exercise_id ?? action.deactivate_exercise_id);
+  const hasTemplateExerciseId = Number.isFinite(templateExerciseId);
+  const resolvedNameByTemplate = hasTemplateExerciseId
+    ? exerciseNameByTemplateExerciseId[templateExerciseId]
+    : undefined;
+  const resolvedNameByExerciseId =
+    typeof action.exercise_id === "string" ? exerciseNameByExerciseId[action.exercise_id] : undefined;
+  const exercise =
+    resolvedNameByTemplate ||
+    resolvedNameByExerciseId ||
+    action.exercise_name ||
+    "упражнение";
+  const byTemplate = Number.isFinite(templateExerciseId)
+    ? byTemplateExerciseId[templateExerciseId]
+    : undefined;
+  const byExercise =
+    typeof action.exercise_id === "string" ? byExerciseId[action.exercise_id] : undefined;
+  const currentParams = byTemplate ?? byExercise;
+  const proposedParams = getProposedParams(action);
+  const recommendationDelta = formatRecommendationDelta(currentParams, proposedParams);
+  const tail = recommendationDelta
+    ? ` • изменить: ${recommendationDelta}`
+    : actionType.includes("update") || actionType.includes("change")
+      ? " • изменений параметров не передано"
+      : "";
+
+  if (actionType.includes("replace")) {
+    const oldTemplateExerciseId = Number(action.deactivate_exercise_id);
+    const oldExercise =
+      (Number.isFinite(oldTemplateExerciseId) && exerciseNameByTemplateExerciseId[oldTemplateExerciseId]) ||
+      "текущее упражнение";
+    return `⇄ Заменить: ${oldExercise} → ${exercise}${day}${tail}`;
+  }
+  if (actionType.includes("add") || actionType.includes("create")) {
+    return `＋ Добавить: ${exercise}${day}${tail}`;
+  }
+  if (actionType.includes("remove") || actionType.includes("delete")) {
+    return `− Удалить: ${exercise}${day}${tail}`;
+  }
+  if (actionType.includes("update") || actionType.includes("change") || actionType.includes("edit")) {
+    return `✎ Изменить: ${exercise}${day}${tail}`;
+  }
+  return `✎ Изменить: ${exercise}${day}${tail}`;
+};
+
+const humanizeChatError = (raw: string) => {
+  if (!raw) return "Не удалось выполнить действие";
+  if (raw.includes("invalid_action_type")) {
+    return "Ассистент прислал изменение без типа действия. Запросите рекомендацию ещё раз.";
+  }
+  if (raw.includes("unknown_action_")) {
+    return "Ассистент прислал неподдерживаемый тип изменения. Запросите рекомендацию ещё раз.";
+  }
+  return raw;
+};
+
 export const Checklist = ({
   plan,
   refresh,
@@ -328,16 +458,68 @@ export const Checklist = ({
   refresh: () => void;
 }) => {
   const auth = useAuth();
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const vibrationSupportedRef = useRef<boolean | null>(null);
+  const ensureAudioContext = useCallback(() => {
+    if (typeof window === "undefined") return null;
+    const Ctx = window.AudioContext || (window as any).webkitAudioContext;
+    if (!Ctx) return null;
+    if (!audioContextRef.current) {
+      try {
+        audioContextRef.current = new Ctx();
+      } catch {
+        return null;
+      }
+    }
+    return audioContextRef.current;
+  }, []);
+  const unlockAudioContext = useCallback(() => {
+    const ctx = ensureAudioContext();
+    if (!ctx) return;
+    if (ctx.state === "suspended") {
+      void ctx.resume().catch(() => {
+        // Some mobile browsers block resume outside interaction.
+      });
+    }
+  }, [ensureAudioContext]);
+  const playCompletionTone = useCallback(() => {
+    const ctx = ensureAudioContext();
+    if (!ctx) return;
+    if (ctx.state !== "running") return;
+    try {
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(880, now);
+      osc.frequency.exponentialRampToValueAtTime(660, now + 0.22);
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.exponentialRampToValueAtTime(0.08, now + 0.03);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.24);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.24);
+    } catch {
+      // Ignore audio fallback errors.
+    }
+  }, [ensureAudioContext]);
   const triggerRestCompletionVibration = useCallback(() => {
     if (typeof window === "undefined") return;
     const vibrate = window.navigator?.vibrate;
-    if (typeof vibrate !== "function") return;
-    try {
-      vibrate.call(window.navigator, [200, 120, 240]);
-    } catch {
-      // Ignore unsupported environments and permission/runtime issues.
+    let vibrated = false;
+    if (typeof vibrate === "function") {
+      try {
+        vibrated = Boolean(vibrate.call(window.navigator, [200, 120, 260]));
+        vibrationSupportedRef.current = vibrated;
+      } catch {
+        vibrationSupportedRef.current = false;
+      }
     }
-  }, []);
+    if (!vibrated) {
+      playCompletionTone();
+    }
+  }, [playCompletionTone]);
   const restTimer = useRestTimer({ onComplete: triggerRestCompletionVibration });
   const executionTimer = useRestTimer();
   const {
@@ -420,6 +602,70 @@ export const Checklist = ({
         .slice(-1)[0] ?? null,
     [chatMessages],
   );
+  const exerciseParamsByTemplateExerciseId = useMemo(() => {
+    const map: Record<number, ExerciseParamsMeta> = {};
+    if (!plan) return map;
+    plan.folders.forEach((folder) => {
+      folder.templates.forEach((template) => {
+        template.exercises.forEach((exercise) => {
+          const firstSet = exercise.sets[0];
+          map[exercise.template_exercise_id] = {
+            sets: exercise.sets.length || null,
+            reps: firstSet?.default_reps ?? exercise.defaults.reps ?? null,
+            weight: firstSet?.default_weight ?? exercise.defaults.weight ?? null,
+            time: firstSet?.default_time ?? exercise.defaults.time ?? null,
+            rest: firstSet?.rest ?? exercise.defaults.rest ?? null,
+          };
+        });
+      });
+    });
+    return map;
+  }, [plan]);
+  const exerciseParamsByExerciseId = useMemo(() => {
+    const map: Record<string, ExerciseParamsMeta> = {};
+    if (!plan) return map;
+    plan.folders.forEach((folder) => {
+      folder.templates.forEach((template) => {
+        template.exercises.forEach((exercise) => {
+          const exerciseId = exercise.source?.id;
+          if (!exerciseId) return;
+          const firstSet = exercise.sets[0];
+          map[String(exerciseId)] = {
+            sets: exercise.sets.length || null,
+            reps: firstSet?.default_reps ?? exercise.defaults.reps ?? null,
+            weight: firstSet?.default_weight ?? exercise.defaults.weight ?? null,
+            time: firstSet?.default_time ?? exercise.defaults.time ?? null,
+            rest: firstSet?.rest ?? exercise.defaults.rest ?? null,
+          };
+        });
+      });
+    });
+    return map;
+  }, [plan]);
+  const exerciseNameByTemplateExerciseId = useMemo(() => {
+    const map: Record<number, string> = {};
+    if (!plan) return map;
+    plan.folders.forEach((folder) => {
+      folder.templates.forEach((template) => {
+        template.exercises.forEach((exercise) => {
+          map[exercise.template_exercise_id] = exercise.source.name;
+        });
+      });
+    });
+    return map;
+  }, [plan]);
+  const exerciseNameByExerciseId = useMemo(() => {
+    const map: Record<string, string> = {};
+    if (!plan) return map;
+    plan.folders.forEach((folder) => {
+      folder.templates.forEach((template) => {
+        template.exercises.forEach((exercise) => {
+          map[String(exercise.source.id)] = exercise.source.name;
+        });
+      });
+    });
+    return map;
+  }, [plan]);
   const {
     pendingLogs,
     pendingCount,
@@ -561,6 +807,17 @@ export const Checklist = ({
   }, [chatMessages, chatState.open]);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onFirstInteraction = () => unlockAudioContext();
+    window.addEventListener("pointerdown", onFirstInteraction, { passive: true });
+    window.addEventListener("keydown", onFirstInteraction);
+    return () => {
+      window.removeEventListener("pointerdown", onFirstInteraction);
+      window.removeEventListener("keydown", onFirstInteraction);
+    };
+  }, [unlockAudioContext]);
+
+  useEffect(() => {
     if (!plan || typeof window === "undefined") return;
     if (!timersRestored) return;
     if (!restOverlay) {
@@ -657,6 +914,7 @@ export const Checklist = ({
     template?: TemplatePayload,
     folderId?: number,
   ) => {
+    unlockAudioContext();
     const nextExists = hasUpcomingSets(exercise.template_exercise_id, set.set_index);
     const willCompleteExercise = exercise.sets.every((exerciseSet) => {
       if (exerciseSet.set_index === set.set_index) {
@@ -1256,7 +1514,7 @@ export const Checklist = ({
       await refreshChat();
     } catch (error) {
       const message = error instanceof Error ? error.message : "Не удалось открыть чат";
-      setChatError(message);
+      setChatError(humanizeChatError(message));
       setChatState({ open: true, folderId, folderName });
     } finally {
       setChatLoading(false);
@@ -1281,7 +1539,7 @@ export const Checklist = ({
       refreshChat();
     } catch (error) {
       const message = error instanceof Error ? error.message : "Не удалось отправить сообщение";
-      setChatError(message);
+      setChatError(humanizeChatError(message));
     } finally {
       setChatLoading(false);
     }
@@ -1306,7 +1564,7 @@ export const Checklist = ({
         const firstSkippedReason =
           applied.find((item) => item?.status === "skipped")?.reason ??
           "Ассистент не смог применить изменения к текущей программе.";
-        setChatError(firstSkippedReason);
+        setChatError(humanizeChatError(firstSkippedReason));
         refreshChat();
         return;
       }
@@ -1315,7 +1573,7 @@ export const Checklist = ({
       setChatState((prev) => ({ ...prev, open: false }));
     } catch (error) {
       const message = error instanceof Error ? error.message : "Не удалось применить изменения";
-      setChatError(message);
+      setChatError(humanizeChatError(message));
     } finally {
       setChatApplying(false);
     }
@@ -1334,7 +1592,7 @@ export const Checklist = ({
       refreshChat();
     } catch (error) {
       const message = error instanceof Error ? error.message : "Не удалось отменить изменения";
-      setChatError(message);
+      setChatError(humanizeChatError(message));
     } finally {
       setChatCancelling(false);
     }
@@ -1960,9 +2218,24 @@ export const Checklist = ({
                     {getChatMessageContent(msg)}
                   </p>
                   {msg.actions && Array.isArray(msg.actions) && msg.actions.length > 0 && (
-                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                      Предложено изменений: {msg.actions.length}
-                    </p>
+                    <ul className="mt-2 list-none space-y-1 text-xs text-slate-600 dark:text-slate-300">
+                      {msg.actions.slice(0, 4).map((action: Record<string, any>, index: number) => (
+                        <li key={index} className="rounded-md bg-slate-100/80 px-2 py-1 dark:bg-slate-700/50">
+                          {describeAction(
+                            action,
+                            exerciseParamsByTemplateExerciseId,
+                            exerciseParamsByExerciseId,
+                            exerciseNameByTemplateExerciseId,
+                            exerciseNameByExerciseId,
+                          )}
+                        </li>
+                      ))}
+                      {msg.actions.length > 4 && (
+                        <li className="text-[11px] text-slate-500 dark:text-slate-400">
+                          + ещё {msg.actions.length - 4}
+                        </li>
+                      )}
+                    </ul>
                   )}
                   {msg.role === "assistant" && msg.proposal_status && msg.proposal_status !== "none" && (
                     <p

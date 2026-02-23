@@ -169,6 +169,54 @@ def test_chat_parser_generates_human_reply_when_actions_without_text():
 
 
 @pytest.mark.django_db
+def test_chat_send_normalizes_action_type_and_localizes_exercise_name(monkeypatch):
+    user = User.objects.create_user(email="agent_chat_normalize@example.com", password="pass")
+    folder, te = _create_base_program(user)
+    thread = LLMProgramThread.objects.create(user=user, program=folder, title="Чат")
+    service = LLMProgramChatService(thread)
+
+    monkeypatch.setattr(
+        service,
+        "_call_llm",
+        lambda _messages: (
+            '{"assistant_reply":"Ок","actions":[{"action_type":"update_exercise_params",'
+            '"template_exercise_id":%d,"exercise_name":"Bench Press","weight":44,"reps":8,"sets":3}]}'
+            % te.id
+        ),
+    )
+
+    assistant = service.send("Сделай правки")
+    assert assistant.actions
+    action = assistant.actions[0]
+    assert action["type"] == "update_weight"
+    assert action["exercise_name"] == "Жим лежа"
+    assert action["weight"] == 44
+    assert "reps" not in action
+    assert "sets" not in action
+
+
+@pytest.mark.django_db
+def test_chat_send_drops_noop_update_actions(monkeypatch):
+    user = User.objects.create_user(email="agent_chat_noop@example.com", password="pass")
+    folder, te = _create_base_program(user)
+    thread = LLMProgramThread.objects.create(user=user, program=folder, title="Чат")
+    service = LLMProgramChatService(thread)
+
+    monkeypatch.setattr(
+        service,
+        "_call_llm",
+        lambda _messages: (
+            '{"assistant_reply":"Ок","actions":[{"type":"update_weight",'
+            '"template_exercise_id":%d,"weight":40,"reps":8,"sets":3}]}' % te.id
+        ),
+    )
+
+    assistant = service.send("Сделай правки")
+    assert assistant.actions == []
+    assert assistant.proposal_status == LLMProgramMessage.ProposalStatus.NONE
+
+
+@pytest.mark.django_db
 def test_chat_send_logs_llm_request_and_response(monkeypatch):
     user = User.objects.create_user(email="agent_log_ok@example.com", password="pass")
     folder, _ = _create_base_program(user)
@@ -244,6 +292,8 @@ def test_chat_prompt_requires_exercise_choice_and_technique_help():
     assert "предложи 2-4 варианта" in system_prompt
     assert "дай краткую технику выполнения" in system_prompt
     assert "Не отказывай в таком объяснении" in system_prompt
+    assert "обязательно передавай exercise_name" in system_prompt
+    assert "только параметры, которые действительно нужно изменить" in system_prompt
 
 
 @pytest.mark.django_db
@@ -429,6 +479,36 @@ def test_apply_actions_skips_invalid_actions_and_applies_valid_ones():
     assert TemplateExercise.objects.filter(template=day, exercise_id="plank_partial").exists()
     message.refresh_from_db()
     assert message.proposal_status == LLMProgramMessage.ProposalStatus.APPLIED
+
+
+@pytest.mark.django_db
+def test_apply_actions_marks_cancelled_when_nothing_applied():
+    user = User.objects.create_user(email="agent_noapply_cancel@example.com", password="pass")
+    folder, _te = _create_base_program(user)
+    thread = LLMProgramThread.objects.create(user=user, program=folder, title="Чат")
+    message = LLMProgramMessage.objects.create(
+        thread=thread,
+        role=LLMProgramMessage.Role.ASSISTANT,
+        content="Предложение с невалидным действием",
+        actions=[{"exercise_name": "Жим лежа", "weight": 42}],
+        proposal_status=LLMProgramMessage.ProposalStatus.PENDING,
+    )
+
+    client = APIClient()
+    client.force_authenticate(user=user)
+    response = client.post(
+        f"/api/llm-agent/threads/{thread.id}/apply/",
+        {"message_id": message.id},
+        format="json",
+    )
+
+    assert response.status_code == 200
+    applied = response.data.get("applied", [])
+    assert applied
+    assert applied[0].get("status") == "skipped"
+    assert applied[0].get("reason") in ("invalid_action_type", "unknown_action_none")
+    message.refresh_from_db()
+    assert message.proposal_status == LLMProgramMessage.ProposalStatus.CANCELLED
 
 
 @pytest.mark.django_db
@@ -761,6 +841,26 @@ def test_build_messages_includes_progress_context_for_post_workout_mode(monkeypa
     assert "\"progress_context\"" in context
     assert "\"algorithm_recommendations\"" in context
     assert "\"requested_workout_date\": \"2026-02-23\"" in context
+
+
+@pytest.mark.django_db
+def test_post_workout_prompt_enforces_concise_reply_and_irr_scope():
+    user = User.objects.create_user(email="agent_post_workout_prompt@example.com", password="pass")
+    folder, _ = _create_base_program(user)
+    thread = LLMProgramThread.objects.create(user=user, program=folder, title="Пост-трен prompt")
+    service = LLMProgramChatService(thread)
+
+    messages = service._build_messages(
+        "Оцени прогресс",
+        mode="chat",
+        chat_mode="post_workout_review",
+        workout_date=date(2026, 2, 23),
+    )
+    system_prompt = messages[0]["content"]
+
+    assert "максимум 6-8 коротких предложений" in system_prompt
+    assert "IRR/RIR используй только для силовых упражнений" in system_prompt
+    assert "обязательно передавай exercise_name" in system_prompt
 
 
 @pytest.mark.django_db
