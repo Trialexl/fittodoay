@@ -209,13 +209,13 @@ const keyForSet = (templateExerciseId: number, setIndex: number) =>
   `${templateExerciseId}-${setIndex}`;
 
 const CompletionIcon = () => (
-  <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500/15 text-[10px] font-black text-emerald-500">
+  <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500/15 text-[10px] font-black text-emerald-500 dark:bg-emerald-500/25 dark:text-emerald-300">
     ✓
   </span>
 );
 
 const CompletionMiniIcon = () => (
-  <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500/15 text-[9px] font-black text-emerald-600">
+  <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500/15 text-[9px] font-black text-emerald-600 dark:bg-emerald-500/25 dark:text-emerald-300">
     ✓
   </span>
 );
@@ -1387,7 +1387,7 @@ export const Checklist = ({
               className={clsx(
                 "rounded-2xl border p-2.5 shadow-sm transition-all duration-200 sm:p-3",
                 folderComplete
-                  ? "border-emerald-300/70 bg-emerald-50/70"
+                  ? "completed-folder-shell border-emerald-300/70 bg-emerald-50/70"
                   : "border-slate-200 bg-surface-muted",
               )}
             >
@@ -1406,7 +1406,9 @@ export const Checklist = ({
                   <span className="text-base text-slate-400">{expanded ? "▾" : "▸"}</span>
                   <div className="flex items-center gap-2">
                     {folderComplete && <CompletionIcon />}
-                    <h3 className="text-base font-semibold text-slate-900 sm:text-lg">{folder.name}</h3>
+                    <h3 className={clsx("text-base font-semibold text-slate-900 sm:text-lg", folderComplete && "completed-title")}>
+                      {folder.name}
+                    </h3>
                   </div>
                 </button>
                 <div className="flex w-full items-center justify-end gap-1.5 sm:ml-auto sm:w-auto sm:gap-2">
@@ -1414,7 +1416,7 @@ export const Checklist = ({
                     <Button
                       type="button"
                       variant="secondary"
-                      className="rounded-xl px-2.5 py-1.5 text-[10px] font-semibold tracking-wide sm:rounded-full sm:px-3 sm:py-1 sm:text-xs sm:uppercase"
+                      className="completed-action-btn rounded-xl px-2.5 py-1.5 text-[10px] font-semibold tracking-wide sm:rounded-full sm:px-3 sm:py-1 sm:text-xs sm:uppercase"
                       onClick={() => openProgressChat(folder.id, folder.name)}
                       disabled={chatLoading && chatState.folderId === folder.id}
                     >
@@ -1426,7 +1428,7 @@ export const Checklist = ({
                     <Button
                       type="button"
                       variant="secondary"
-                      className="rounded-xl px-2.5 py-1.5 text-[10px] font-semibold tracking-wide sm:rounded-full sm:px-3 sm:py-1 sm:text-xs sm:uppercase"
+                      className="completed-action-btn rounded-xl px-2.5 py-1.5 text-[10px] font-semibold tracking-wide sm:rounded-full sm:px-3 sm:py-1 sm:text-xs sm:uppercase"
                       onClick={() => handleRecommendationToggle(folder.id)}
                       disabled={recommendationsLoading && !recommendationOpen}
                     >
@@ -1490,7 +1492,7 @@ export const Checklist = ({
                           className={clsx(
                             "rounded-2xl border p-3 shadow-sm transition-all duration-200 sm:p-4",
                             templateComplete
-                              ? "border-emerald-300/70 bg-emerald-50/70"
+                              ? "completed-template-shell border-emerald-300/70 bg-emerald-50/70"
                               : "border-slate-200 bg-surface",
                           )}
                         >
@@ -1505,7 +1507,7 @@ export const Checklist = ({
                               <div className="flex flex-col">
                                 <div className="flex flex-wrap items-center gap-2">
                                   {templateComplete && <CompletionIcon />}
-                                  <h4 className="text-sm font-semibold text-slate-900 sm:text-base">
+                                  <h4 className={clsx("text-sm font-semibold text-slate-900 sm:text-base", templateComplete && "completed-title")}>
                                     {template.name}
                                   </h4>
                                   <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">
@@ -1513,7 +1515,7 @@ export const Checklist = ({
                                   </span>
                                 </div>
                                 {templateMuscles.length > 0 && (
-                                  <p className="text-[11px] text-slate-500">
+                                  <p className={clsx("text-[11px] text-slate-500", templateComplete && "completed-subtitle")}>
                                     {templateMuscles.slice(0, 4).join(" • ")}
                                     {templateMuscles.length > 4 && " …"}
                                   </p>
@@ -1552,7 +1554,7 @@ export const Checklist = ({
                             className={clsx(
                               "rounded-2xl border px-2 py-2 shadow-sm transition-all duration-200 sm:px-3 sm:py-2.5",
                               exerciseComplete
-                                ? "border-emerald-400/40 bg-emerald-500/10"
+                                ? "completed-exercise-shell border-emerald-400/40 bg-emerald-500/10"
                                 : exerciseActive
                                   ? "border-slate-200 bg-surface"
                                   : "border-dashed border-slate-300 bg-surface-muted",
@@ -1570,7 +1572,10 @@ export const Checklist = ({
                                 </span>
                                 {exerciseComplete && <CompletionIcon />}
                                 <p
-                                  className="text-sm font-semibold leading-none text-slate-900 sm:text-base"
+                                  className={clsx(
+                                    "text-sm font-semibold leading-none text-slate-900 sm:text-base",
+                                    exerciseComplete && "completed-title",
+                                  )}
                                   title={exerciseInfo}
                                 >
                                   {exercise.source.name}
@@ -1623,7 +1628,9 @@ export const Checklist = ({
                               </Link>
                             </div>
                             {exercise.note && (
-                              <p className="mt-1 text-[11px] text-slate-500">{exercise.note}</p>
+                              <p className={clsx("mt-1 text-[11px] text-slate-500", exerciseComplete && "completed-subtitle")}>
+                                {exercise.note}
+                              </p>
                             )}
                             <div
                               className={`mt-3 overflow-hidden transition-[max-height,opacity] duration-500 ease-out ${exerciseExpanded ? "max-h-[9999px] opacity-100" : "max-h-0 opacity-0"}`}
@@ -1654,14 +1661,14 @@ export const Checklist = ({
                                     className={clsx(
                                       "flex flex-wrap items-center gap-2 rounded-xl border px-3 py-1.5 text-xs transition sm:text-sm",
                                       isComplete
-                                        ? "border-emerald-400/40 bg-emerald-500/10"
+                                        ? "completed-set-shell border-emerald-400/40 bg-emerald-500/10"
                                         : "border-slate-200 bg-surface-muted",
                                       isActiveSet && "ring-1 ring-primary/60",
                                     )}
                                     >
                                       <div className="min-w-[150px] flex-1">
                                         <div className="flex flex-wrap items-center justify-between gap-2">
-                                          <p className="text-sm font-semibold text-slate-900">
+                                          <p className={clsx("text-sm font-semibold text-slate-900", isComplete && "completed-title")}>
                                             Сет {setNumber}
                                           </p>
                                         <div className="flex flex-wrap items-center gap-2">
@@ -1716,11 +1723,11 @@ export const Checklist = ({
                                           )}
                                         </div>
                                       </div>
-                                      <p className="text-[11px] text-slate-500">
+                                      <p className={clsx("text-[11px] text-slate-500", isComplete && "completed-subtitle")}>
                                         План: {formatPlanSet(exercise, set)}
                                       </p>
                                       {isComplete && log && (
-                                        <div className="text-[11px] text-emerald-600">
+                                        <div className="text-[11px] text-emerald-600 dark:text-emerald-300">
                                           <p>Факт: {formatLogValues(exercise, log)}</p>
                                           {isOfflineLog && (
                                             <p className="text-[10px] text-amber-700">Синхронизируем при подключении</p>
@@ -1750,7 +1757,7 @@ export const Checklist = ({
                           </div>
                           <div className="flex items-center gap-2">
                             {recommendationsApplied[folder.id] && (
-                              <span className="text-xs font-semibold text-emerald-600">Сохранено</span>
+                              <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-300">Сохранено</span>
                             )}
                             <Button
                               type="button"

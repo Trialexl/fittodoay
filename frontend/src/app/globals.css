@@ -258,3 +258,36 @@ body {
   color: #a7f3d0 !important;
   box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.12) inset, 0 6px 16px rgba(0, 0, 0, 0.24);
 }
+
+[data-theme="dark"] .completed-folder-shell {
+  background: rgba(15, 23, 42, 0.94) !important;
+  border-color: rgba(16, 185, 129, 0.3) !important;
+}
+
+[data-theme="dark"] .completed-template-shell {
+  background: rgba(15, 23, 42, 0.9) !important;
+  border-color: rgba(16, 185, 129, 0.26) !important;
+}
+
+[data-theme="dark"] .completed-exercise-shell {
+  background: rgba(30, 41, 59, 0.74) !important;
+  border-color: rgba(16, 185, 129, 0.24) !important;
+}
+
+[data-theme="dark"] .completed-set-shell {
+  background: rgba(30, 41, 59, 0.92) !important;
+  border-color: rgba(56, 189, 138, 0.24) !important;
+}
+
+[data-theme="dark"] .completed-title {
+  color: #f8fafc !important;
+}
+
+[data-theme="dark"] .completed-subtitle {
+  color: #94a3b8 !important;
+}
+
+[data-theme="dark"] .completed-action-btn {
+  background: rgba(30, 41, 59, 0.75) !important;
+  border-color: rgba(148, 163, 184, 0.35) !important;
+}
