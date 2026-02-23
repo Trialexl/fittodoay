@@ -1122,7 +1122,7 @@ export const Checklist = ({
                 "rounded-2xl border p-2.5 shadow-sm transition-all duration-200 sm:p-3",
                 folderComplete
                   ? "border-emerald-300/70 bg-emerald-50/70"
-                  : "border-slate-200/80 bg-surface-muted",
+                  : "border-slate-200 bg-surface-muted",
               )}
             >
               <div className="flex items-center gap-2">
@@ -1203,7 +1203,7 @@ export const Checklist = ({
                             "rounded-2xl border p-3 shadow-sm transition-all duration-200 sm:p-4",
                             templateComplete
                               ? "border-emerald-300/70 bg-emerald-50/70"
-                              : "border-slate-200/80 bg-surface",
+                              : "border-slate-200 bg-surface",
                           )}
                         >
                           <div className="flex flex-wrap items-center gap-1">
@@ -1264,9 +1264,9 @@ export const Checklist = ({
                             className={clsx(
                               "rounded-2xl border px-2 py-2 shadow-sm transition-all duration-200 sm:px-3 sm:py-2.5",
                               exerciseComplete
-                                ? "border-emerald-200 bg-emerald-50/60"
+                                ? "border-emerald-400/40 bg-emerald-500/10"
                                 : exerciseActive
-                                  ? "border-slate-200/80 bg-surface"
+                                  ? "border-slate-200 bg-surface"
                                   : "border-dashed border-slate-300 bg-surface-muted",
                             )}
                           >
@@ -1366,8 +1366,8 @@ export const Checklist = ({
                                     className={clsx(
                                       "flex flex-wrap items-center gap-2 rounded-xl border px-3 py-1.5 text-xs transition sm:text-sm",
                                       isComplete
-                                        ? "border-emerald-300/70 bg-emerald-50/80"
-                                        : "border-slate-200/80 bg-surface-muted",
+                                        ? "border-emerald-400/40 bg-emerald-500/10"
+                                        : "border-slate-200 bg-surface-muted",
                                       isActiveSet && "ring-1 ring-primary/60",
                                     )}
                                     >
@@ -1397,12 +1397,12 @@ export const Checklist = ({
                                             <button
                                               type="button"
                                               className={clsx(
-                                                "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition sm:text-sm",
+                                                "set-mark-btn inline-flex h-11 min-w-[158px] items-center justify-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold transition sm:text-sm",
                                                 actionDisabled
                                                   ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
                                                   : isTimedExercise
                                                     ? "border-primary/25 bg-primary/10 text-primary hover:bg-primary/15"
-                                                    : "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100",
+                                                    : "border-emerald-300 bg-emerald-50 text-emerald-700 hover:border-emerald-400 hover:bg-emerald-100",
                                               )}
                                               disabled={actionDisabled}
                                               onClick={() => {
