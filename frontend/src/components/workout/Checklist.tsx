@@ -14,6 +14,15 @@ import { useOfflineWorkoutQueue } from "@/hooks/useOfflineWorkoutQueue";
 import { useRestTimer } from "@/hooks/useRestTimer";
 import { API_BASE_URL, apiFetch } from "@/lib/api";
 import { useAuth } from "@/state/AuthContext";
+import {
+  CartesianGrid,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 
 type SetPayload = {
   set_index: number;
@@ -57,6 +66,31 @@ const InfoIcon = () => (
 type ExerciseImage = {
   order: number;
   path: string;
+};
+
+type InfoExerciseState = {
+  name: string;
+  text: string;
+  images: ExerciseImage[];
+  sourceId: number;
+  folderId: number;
+};
+
+type TrendSeriesPoint = { date: string; load: number };
+type TrendExercise = {
+  template_exercise_id: number;
+  exercise_name: string;
+  template_name: string;
+  series: TrendSeriesPoint[];
+};
+type TrendFolder = {
+  id: number;
+  name: string;
+  exercises: TrendExercise[];
+};
+type TrendResponse = {
+  granularity: "day" | "week";
+  folders: TrendFolder[];
 };
 
 type ExercisePayload = {
@@ -320,6 +354,24 @@ const getChatMessageContent = (msg: ChatMessage) => {
   return msg.content;
 };
 
+const normalizeExerciseName = (value: string) =>
+  value.toLowerCase().replace(/\s+/g, " ").trim();
+
+const formatTrendDateLabel = (iso: string, granularity: "day" | "week") => {
+  const [year, month, day] = iso.split("-").map(Number);
+  const start = new Date(year, month - 1, day);
+  const dd = String(start.getDate()).padStart(2, "0");
+  const mm = String(start.getMonth() + 1).padStart(2, "0");
+  if (granularity === "week") {
+    const end = new Date(start);
+    end.setDate(end.getDate() + 6);
+    const endDd = String(end.getDate()).padStart(2, "0");
+    const endMm = String(end.getMonth() + 1).padStart(2, "0");
+    return `${dd}.${mm}-${endDd}.${endMm}`;
+  }
+  return `${dd}.${mm}`;
+};
+
 type ExerciseParamsMeta = {
   sets: number | null;
   reps: number | null;
@@ -547,7 +599,8 @@ export const Checklist = ({
   const [editState, setEditState] = useState<EditState | null>(null);
   const [editForm, setEditForm] = useState({ reps: "", weight: "", time: "" });
   const [editError, setEditError] = useState<string | null>(null);
-  const [infoExercise, setInfoExercise] = useState<{ name: string; text: string; images: ExerciseImage[] } | null>(null);
+  const [infoExercise, setInfoExercise] = useState<InfoExerciseState | null>(null);
+  const [infoTab, setInfoTab] = useState<"overview" | "stats">("overview");
   const [infoImageIndex, setInfoImageIndex] = useState(0);
   const [expandedFolders, setExpandedFolders] = useState<Record<number, boolean>>({});
   const [expandedTemplates, setExpandedTemplates] = useState<Record<number, Record<number, boolean>>>({});
@@ -561,6 +614,9 @@ export const Checklist = ({
   const [recommendationsLoading, setRecommendationsLoading] = useState(false);
   useEffect(() => {
     setInfoImageIndex(0);
+  }, [infoExercise]);
+  useEffect(() => {
+    setInfoTab("overview");
   }, [infoExercise]);
   const [recommendationsSaving, setRecommendationsSaving] = useState<number | null>(null);
   const [recommendationsError, setRecommendationsError] = useState<string | null>(null);
@@ -578,6 +634,13 @@ export const Checklist = ({
   const [chatApplying, setChatApplying] = useState(false);
   const [chatCancelling, setChatCancelling] = useState(false);
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
+
+  const { data: infoTrendData, isLoading: infoTrendLoading } = useSWR(
+    auth.token && infoExercise && infoTab === "stats"
+      ? ["/api/analytics/program-trends/?range=half-year&granularity=week", auth.token]
+      : null,
+    ([url, token]) => apiFetch<TrendResponse>(url as string, { token: token as string }),
+  );
 
   const { data: chatMessages, mutate: refreshChat } = useSWR(
     auth.token && chatState.threadId
@@ -1620,6 +1683,48 @@ export const Checklist = ({
     }
   };
 
+  const infoExerciseTrend = useMemo(() => {
+    if (!infoExercise || !infoTrendData?.folders?.length) {
+      return { points: [] as Array<{ iso: string; label: string; load: number }>, sourceFolderName: "" };
+    }
+    const targetName = normalizeExerciseName(infoExercise.name);
+    const allFolders = infoTrendData.folders;
+    const preferredFolder =
+      allFolders.find((folder) => folder.id === infoExercise.folderId) ?? allFolders[0];
+    const matchingInFolder = preferredFolder.exercises.filter(
+      (exercise) => normalizeExerciseName(exercise.exercise_name) === targetName,
+    );
+    const fallbackMatches =
+      matchingInFolder.length > 0
+        ? matchingInFolder
+        : allFolders.flatMap((folder) =>
+            folder.exercises.filter(
+              (exercise) => normalizeExerciseName(exercise.exercise_name) === targetName,
+            ),
+          );
+    if (!fallbackMatches.length) {
+      return { points: [] as Array<{ iso: string; label: string; load: number }>, sourceFolderName: "" };
+    }
+    const loadByDate = new Map<string, number>();
+    fallbackMatches.forEach((exercise) => {
+      exercise.series.forEach((point) => {
+        loadByDate.set(point.date, (loadByDate.get(point.date) ?? 0) + (point.load ?? 0));
+      });
+    });
+    const granularity = infoTrendData.granularity ?? "week";
+    const points = Array.from(loadByDate.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([iso, load]) => ({
+        iso,
+        label: formatTrendDateLabel(iso, granularity),
+        load: Number(load.toFixed(1)),
+      }));
+    return {
+      points,
+      sourceFolderName: preferredFolder.name,
+    };
+  }, [infoExercise, infoTrendData]);
+
   if (!plan || !hasTemplates) {
     return (
       <div className="rounded-2xl border border-dashed border-slate-300 bg-white/60 p-6 text-center">
@@ -1876,6 +1981,8 @@ export const Checklist = ({
                                         name: exercise.source.name,
                                         text: exerciseInfo ?? "",
                                         images: exercise.source.images ?? [],
+                                        sourceId: exercise.source.id,
+                                        folderId: folder.id,
                                       });
                                     }}
                                     onKeyDown={(event) => {
@@ -1886,6 +1993,8 @@ export const Checklist = ({
                                           name: exercise.source.name,
                                           text: exerciseInfo ?? "",
                                           images: exercise.source.images ?? [],
+                                          sourceId: exercise.source.id,
+                                          folderId: folder.id,
                                         });
                                       }
                                     }}
@@ -2369,43 +2478,120 @@ export const Checklist = ({
       >
         {infoExercise && (
           <div className="space-y-4">
-            {infoExercise.text && (
-              <p className="whitespace-pre-line text-sm text-slate-600">{infoExercise.text}</p>
-            )}
-            {activeInfoImage && (
-              <div className="space-y-2">
-                <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-white">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={buildExerciseImageUrl(activeInfoImage.path)}
-                    alt={`${infoExercise.name} — шаг ${infoImageIndex + 1}`}
-                    className="h-64 w-full max-w-full bg-slate-50 object-contain"
-                  />
-                  {infoExercise.images.length > 1 && (
-                    <>
-                      <button
-                        type="button"
-                        className="absolute left-3 top-1/2 -translate-y-1/2 rounded-full bg-white/80 p-2 text-slate-600 shadow hover:bg-white"
-                        onClick={showPrevInfoImage}
-                        aria-label="Предыдущее изображение"
-                      >
-                        ‹
-                      </button>
-                      <button
-                        type="button"
-                        className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-white/80 p-2 text-slate-600 shadow hover:bg-white"
-                        onClick={showNextInfoImage}
-                        aria-label="Следующее изображение"
-                      >
-                        ›
-                      </button>
-                    </>
-                  )}
-                </div>
-                {infoExercise.images.length > 1 && (
-                  <p className="text-center text-xs text-slate-500">
-                    {infoImageIndex + 1} / {infoExercise.images.length}
+            <div className="flex items-center gap-2 rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
+              <button
+                type="button"
+                onClick={() => setInfoTab("overview")}
+                className={clsx(
+                  "flex-1 rounded-lg px-3 py-2 text-sm font-semibold transition",
+                  infoTab === "overview"
+                    ? "bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-slate-100"
+                    : "text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-slate-100",
+                )}
+              >
+                Описание
+              </button>
+              <button
+                type="button"
+                onClick={() => setInfoTab("stats")}
+                className={clsx(
+                  "flex-1 rounded-lg px-3 py-2 text-sm font-semibold transition",
+                  infoTab === "stats"
+                    ? "bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-slate-100"
+                    : "text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-slate-100",
+                )}
+              >
+                Статистика
+              </button>
+            </div>
+
+            {infoTab === "overview" ? (
+              <>
+                {infoExercise.text && (
+                  <p className="whitespace-pre-line text-sm text-slate-600 dark:text-slate-300">{infoExercise.text}</p>
+                )}
+                {activeInfoImage && (
+                  <div className="space-y-2">
+                    <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={buildExerciseImageUrl(activeInfoImage.path)}
+                        alt={`${infoExercise.name} — шаг ${infoImageIndex + 1}`}
+                        className="h-64 w-full max-w-full bg-slate-50 object-contain dark:bg-slate-900"
+                      />
+                      {infoExercise.images.length > 1 && (
+                        <>
+                          <button
+                            type="button"
+                            className="absolute left-3 top-1/2 -translate-y-1/2 rounded-full bg-white/80 p-2 text-slate-600 shadow hover:bg-white dark:bg-slate-900/80 dark:text-slate-200 dark:hover:bg-slate-900"
+                            onClick={showPrevInfoImage}
+                            aria-label="Предыдущее изображение"
+                          >
+                            ‹
+                          </button>
+                          <button
+                            type="button"
+                            className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-white/80 p-2 text-slate-600 shadow hover:bg-white dark:bg-slate-900/80 dark:text-slate-200 dark:hover:bg-slate-900"
+                            onClick={showNextInfoImage}
+                            aria-label="Следующее изображение"
+                          >
+                            ›
+                          </button>
+                        </>
+                      )}
+                    </div>
+                    {infoExercise.images.length > 1 && (
+                      <p className="text-center text-xs text-slate-500 dark:text-slate-400">
+                        {infoImageIndex + 1} / {infoExercise.images.length}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="space-y-3">
+                {infoTrendLoading ? (
+                  <p className="text-sm text-slate-500 dark:text-slate-400">Загружаем статистику...</p>
+                ) : infoExerciseTrend.points.length === 0 ? (
+                  <p className="text-sm text-slate-500 dark:text-slate-400">
+                    Пока недостаточно данных для графика прогресса по этому упражнению.
                   </p>
+                ) : (
+                  <>
+                    <div className="h-64 rounded-xl border border-slate-200 bg-white p-2 text-primary dark:border-slate-700 dark:bg-slate-900">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={infoExerciseTrend.points} margin={{ top: 12, right: 16, bottom: 4, left: 4 }}>
+                          <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.35} />
+                          <XAxis dataKey="label" minTickGap={10} tick={{ fontSize: 12 }} />
+                          <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
+                          <Tooltip
+                            content={({ active, payload, label }) => {
+                              if (!active || !payload || payload.length === 0) return null;
+                              const value = payload[0]?.value ?? 0;
+                              return (
+                                <div className="rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 shadow dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100">
+                                  <p className="font-semibold">{label}</p>
+                                  <p>Нагрузка: {Number(value).toFixed(1)}</p>
+                                </div>
+                              );
+                            }}
+                          />
+                          <Line
+                            type="monotone"
+                            dataKey="load"
+                            name="Нагрузка"
+                            stroke="currentColor"
+                            strokeWidth={2.5}
+                            dot={{ r: 3 }}
+                            activeDot={{ r: 4 }}
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      Источник: {infoExerciseTrend.sourceFolderName || "выбранная программа"}.
+                    </p>
+                  </>
                 )}
               </div>
             )}
