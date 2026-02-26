@@ -128,6 +128,11 @@ export type WorkoutPlan = {
   date: string;
   folders: { id: number; name: string; templates: TemplatePayload[] }[];
   logs: WorkoutLog[];
+  weigh_in?: {
+    date: string;
+    weight_kg: string | number | null;
+    note?: string | null;
+  };
 };
 
 type WorkoutLog = {
@@ -599,6 +604,9 @@ export const Checklist = ({
   const [editState, setEditState] = useState<EditState | null>(null);
   const [editForm, setEditForm] = useState({ reps: "", weight: "", time: "" });
   const [editError, setEditError] = useState<string | null>(null);
+  const [weighInValue, setWeighInValue] = useState("");
+  const [weighInSaving, setWeighInSaving] = useState(false);
+  const [weighInError, setWeighInError] = useState<string | null>(null);
   const [infoExercise, setInfoExercise] = useState<InfoExerciseState | null>(null);
   const [infoTab, setInfoTab] = useState<"overview" | "stats">("overview");
   const [infoImageIndex, setInfoImageIndex] = useState(0);
@@ -618,6 +626,15 @@ export const Checklist = ({
   useEffect(() => {
     setInfoTab("overview");
   }, [infoExercise]);
+  useEffect(() => {
+    const raw = plan?.weigh_in?.weight_kg;
+    if (raw === null || raw === undefined || raw === "") {
+      setWeighInValue("");
+      return;
+    }
+    const numeric = typeof raw === "number" ? raw : Number(raw);
+    setWeighInValue(Number.isFinite(numeric) ? String(numeric) : "");
+  }, [plan?.weigh_in?.weight_kg]);
   const [recommendationsSaving, setRecommendationsSaving] = useState<number | null>(null);
   const [recommendationsError, setRecommendationsError] = useState<string | null>(null);
   const [recommendationsApplied, setRecommendationsApplied] = useState<Record<number, boolean>>({});
@@ -1683,6 +1700,37 @@ export const Checklist = ({
     }
   };
 
+  const saveWeighIn = async () => {
+    if (!auth.token || !plan) return;
+    const parsed = Number.parseFloat(weighInValue.replace(",", "."));
+    if (!Number.isFinite(parsed)) {
+      setWeighInError("Введите корректный вес в килограммах");
+      return;
+    }
+    if (parsed < 20 || parsed > 400) {
+      setWeighInError("Вес должен быть в диапазоне 20-400 кг");
+      return;
+    }
+    setWeighInSaving(true);
+    setWeighInError(null);
+    try {
+      await apiFetch("/api/workouts/weigh-in/", {
+        method: "PUT",
+        token: auth.token,
+        body: JSON.stringify({
+          date: plan.date,
+          weight_kg: Number(parsed.toFixed(2)),
+        }),
+      });
+      refresh();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Не удалось сохранить вес";
+      setWeighInError(message);
+    } finally {
+      setWeighInSaving(false);
+    }
+  };
+
   const infoExerciseTrend = useMemo(() => {
     if (!infoExercise || !infoTrendData?.folders?.length) {
       return { points: [] as Array<{ iso: string; label: string; load: number }>, sourceFolderName: "" };
@@ -1760,6 +1808,44 @@ export const Checklist = ({
           )}
         </div>
       )}
+      <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-700 dark:bg-slate-900/70">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+              Взвешивание перед тренировкой
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Отдельная метрика прогресса тела, не связана с весами упражнений.
+            </p>
+          </div>
+          {plan.weigh_in?.weight_kg !== null && plan.weigh_in?.weight_kg !== undefined && (
+            <p className="text-xs font-medium text-slate-500 dark:text-slate-300">
+              Текущее: {plan.weigh_in.weight_kg} кг
+            </p>
+          )}
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <Input
+            type="number"
+            inputMode="decimal"
+            step="0.1"
+            min="20"
+            max="400"
+            value={weighInValue}
+            onChange={(event) => setWeighInValue(event.target.value)}
+            placeholder="Вес, кг"
+            className="max-w-[180px]"
+          />
+          <Button
+            type="button"
+            onClick={() => void saveWeighIn()}
+            disabled={weighInSaving || !weighInValue.trim()}
+          >
+            {weighInSaving ? "Сохраняем..." : "Сохранить вес"}
+          </Button>
+        </div>
+        {weighInError && <p className="mt-2 text-xs text-red-500">{weighInError}</p>}
+      </section>
       <div className="space-y-4 sm:space-y-5">
         {plan.folders.map((folder) => {
           const expanded = expandedFolders[folder.id] ?? true;

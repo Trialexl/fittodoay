@@ -4,10 +4,11 @@ from datetime import date, timedelta
 
 import pytest
 from django.contrib.auth import get_user_model
+from rest_framework.test import APIClient
 
-from analytics.services import aggregate_daily_loads, aggregate_exercise_loads
+from analytics.services import aggregate_body_weight, aggregate_daily_loads, aggregate_exercise_loads
 from programs.models import ProgramFolder, DayTemplate, TemplateExercise
-from workouts.models import WorkoutDay, WorkoutSetLog, Exercise_DB
+from workouts.models import WorkoutDay, WorkoutSetLog, Exercise_DB, WorkoutWeighIn
 
 User = get_user_model()
 
@@ -121,3 +122,36 @@ def test_aggregate_exercise_loads_sums_per_entry():
         end=date.today() + timedelta(days=2),
     )
     assert summary[0]["load"] == pytest.approx((70 * 8 * 2) + (75 * 6), rel=1e-3)
+
+
+@pytest.mark.django_db
+def test_aggregate_body_weight_returns_daily_series_with_nulls():
+    user = User.objects.create_user(email="weightstats@example.com", password="password")
+    start = date.today() - timedelta(days=2)
+    WorkoutWeighIn.objects.create(user=user, date=start, weight_kg="80.00")
+    WorkoutWeighIn.objects.create(user=user, date=start + timedelta(days=2), weight_kg="79.60")
+
+    series = aggregate_body_weight(user, start=start, end=start + timedelta(days=2))
+    assert [item["date"] for item in series] == [
+        start.isoformat(),
+        (start + timedelta(days=1)).isoformat(),
+        (start + timedelta(days=2)).isoformat(),
+    ]
+    assert series[0]["weight_kg"] == 80.0
+    assert series[1]["weight_kg"] is None
+    assert series[2]["weight_kg"] == 79.6
+
+
+@pytest.mark.django_db
+def test_body_weight_endpoint_returns_user_only_data():
+    user = User.objects.create_user(email="weightapi@example.com", password="password")
+    other = User.objects.create_user(email="weightapi-other@example.com", password="password")
+    today = date.today()
+    WorkoutWeighIn.objects.create(user=user, date=today, weight_kg="82.30")
+    WorkoutWeighIn.objects.create(user=other, date=today, weight_kg="99.90")
+    client = APIClient()
+    client.force_authenticate(user=user)
+
+    response = client.get(f"/api/analytics/body-weight/?start={today.isoformat()}&end={today.isoformat()}")
+    assert response.status_code == 200
+    assert response.data["items"][0]["weight_kg"] == 82.3

@@ -69,6 +69,7 @@ const WorkoutPageContent = () => {
         date: string;
         plan_snapshot: { folders: WorkoutPlan["folders"]; date: string };
         set_logs?: WorkoutPlan["logs"];
+        weigh_in?: WorkoutPlan["weigh_in"];
       }>(`/api/workouts/plan/${params}`, { token });
       const resolvedDate = data.date ?? data.plan_snapshot.date ?? query;
       const normalizedDate = normalizeIsoDate(resolvedDate);
@@ -77,6 +78,7 @@ const WorkoutPageContent = () => {
         date: normalizedDate,
         folders: data.plan_snapshot.folders,
         logs: data.set_logs ?? [],
+        weigh_in: data.weigh_in ?? { date: normalizedDate, weight_kg: null, note: "" },
       });
       setSelectedDate(normalizedDate);
     },

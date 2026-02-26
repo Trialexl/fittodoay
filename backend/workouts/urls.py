@@ -5,6 +5,7 @@ from workouts.views import (
     ApplyWorkoutRecommendationsView,
     WorkoutPlanView,
     WorkoutRecommendationsView,
+    WorkoutWeighInView,
     WorkoutSetLogViewSet,
 )
 
@@ -13,6 +14,7 @@ router.register(r"logs", WorkoutSetLogViewSet, basename="workout-log")
 
 urlpatterns = [
     path("plan/", WorkoutPlanView.as_view(), name="workout-plan"),
+    path("weigh-in/", WorkoutWeighInView.as_view(), name="workout-weigh-in"),
     path("recommendations/", WorkoutRecommendationsView.as_view(), name="workout-recommendations"),
     path(
         "recommendations/apply/",

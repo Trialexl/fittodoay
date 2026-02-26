@@ -4,11 +4,13 @@ import { apiFetch } from "@/lib/api";
 import { useAuth } from "@/state/AuthContext";
 import useSWR from "swr";
 import { useRouter } from "next/navigation";
+import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import { ProgramTrendPanel } from "@/components/analytics/ProgramTrendPanel";
 
 type DailyItem = { date: string; load: number };
 type ExerciseItem = { id: string; name: string; type: string; load: number; sets: number };
+type BodyWeightItem = { date: string; weight_kg: number | null };
 
 export const AnalyticsPanels = () => {
   const router = useRouter();
@@ -22,6 +24,11 @@ export const AnalyticsPanels = () => {
     ([url]) =>
       apiFetch<{ items: ExerciseItem[] }>(url as string, { token: token ?? undefined }),
   );
+  const { data: bodyWeight } = useSWR(
+    token ? ["/api/analytics/body-weight/", token] : null,
+    ([url]) => apiFetch<{ items: BodyWeightItem[] }>(url as string, { token: token ?? undefined }),
+  );
+  const bodyWeightSeries = (bodyWeight?.items ?? []).filter((item) => item.weight_kg !== null);
 
   return (
     <div className="space-y-6">
@@ -56,6 +63,34 @@ export const AnalyticsPanels = () => {
             </div>
           ))}
         </div>
+      </div>
+      <div className="rounded-xl border border-slate-200 bg-white p-4">
+        <h3 className="font-semibold">Вес тела</h3>
+        {bodyWeightSeries.length > 0 ? (
+          <div className="mt-3 h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={bodyWeightSeries} margin={{ top: 10, right: 16, bottom: 8, left: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="date" tick={{ fontSize: 12 }} />
+                <YAxis tick={{ fontSize: 12 }} />
+                <Tooltip
+                  formatter={(value) => [`${Number(value).toFixed(1)} кг`, "Вес"]}
+                  labelFormatter={(label) => `Дата: ${label}`}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="weight_kg"
+                  stroke="currentColor"
+                  className="text-primary"
+                  strokeWidth={2.5}
+                  dot={{ r: 3 }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        ) : (
+          <p className="mt-3 text-sm text-slate-500">Добавьте взвешивания в чеклисте тренировки.</p>
+        )}
       </div>
       <ProgramTrendPanel />
     </div>

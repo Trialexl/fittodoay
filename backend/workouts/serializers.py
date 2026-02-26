@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal
 
 from rest_framework import serializers
 
-from workouts.models import WorkoutDay, WorkoutSetLog
+from workouts.models import WorkoutDay, WorkoutSetLog, WorkoutWeighIn
 
 
 class WorkoutSetLogSerializer(serializers.ModelSerializer):
@@ -56,6 +57,29 @@ class WorkoutDaySerializer(serializers.ModelSerializer):
 
 class WorkoutPlanRequestSerializer(serializers.Serializer):
     date = serializers.DateField(required=False)
+
+    def get_date(self) -> date:
+        if not self.is_valid():
+            raise serializers.ValidationError(self.errors)
+        return self.validated_data.get("date") or date.today()
+
+
+class WorkoutWeighInSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = WorkoutWeighIn
+        fields = ["id", "date", "weight_kg", "note", "created_at", "updated_at"]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+
+class WorkoutWeighInUpsertSerializer(serializers.Serializer):
+    date = serializers.DateField(required=False)
+    weight_kg = serializers.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        min_value=Decimal("20"),
+        max_value=Decimal("400"),
+    )
+    note = serializers.CharField(required=False, allow_blank=True, max_length=255)
 
     def get_date(self) -> date:
         if not self.is_valid():

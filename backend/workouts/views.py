@@ -7,9 +7,11 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from workouts.models import WorkoutDay, WorkoutSetLog
+from workouts.models import WorkoutDay, WorkoutSetLog, WorkoutWeighIn
 from workouts.serializers import (
     RecommendationApplySerializer,
+    WorkoutWeighInSerializer,
+    WorkoutWeighInUpsertSerializer,
     WorkoutDaySerializer,
     WorkoutPlanRequestSerializer,
     WorkoutSetLogSerializer,
@@ -27,7 +29,40 @@ class WorkoutPlanView(APIView):
         target_date = serializer.get_date()
         day = generate_daily_plan(request.user, target_date=target_date)
         payload = WorkoutDaySerializer(day).data
+        weigh_in = WorkoutWeighIn.objects.filter(user=request.user, date=target_date).first()
+        payload["weigh_in"] = (
+            WorkoutWeighInSerializer(weigh_in).data
+            if weigh_in
+            else {"date": target_date.isoformat(), "weight_kg": None, "note": ""}
+        )
         return Response(payload)
+
+
+class WorkoutWeighInView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        serializer = WorkoutPlanRequestSerializer(data=request.query_params)
+        serializer.is_valid(raise_exception=True)
+        target_date = serializer.get_date()
+        weigh_in = WorkoutWeighIn.objects.filter(user=request.user, date=target_date).first()
+        if not weigh_in:
+            return Response({"date": target_date.isoformat(), "weight_kg": None, "note": ""})
+        return Response(WorkoutWeighInSerializer(weigh_in).data)
+
+    def put(self, request, *args, **kwargs):
+        serializer = WorkoutWeighInUpsertSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        target_date = serializer.get_date()
+        weigh_in, _ = WorkoutWeighIn.objects.update_or_create(
+            user=request.user,
+            date=target_date,
+            defaults={
+                "weight_kg": serializer.validated_data["weight_kg"],
+                "note": serializer.validated_data.get("note", ""),
+            },
+        )
+        return Response(WorkoutWeighInSerializer(weigh_in).data)
 
 
 class WorkoutSetLogViewSet(viewsets.ModelViewSet):

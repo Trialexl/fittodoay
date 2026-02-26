@@ -6,6 +6,7 @@ from rest_framework.views import APIView
 
 from analytics.serializers import DateRangeSerializer, TrendRangeSerializer
 from analytics.services import (
+    aggregate_body_weight,
     aggregate_daily_loads,
     aggregate_exercise_loads,
     build_ai_feed,
@@ -32,6 +33,17 @@ class ExerciseAnalyticsView(APIView):
         serializer.is_valid(raise_exception=True)
         start, end = serializer.get_range()
         payload = aggregate_exercise_loads(request.user, start, end)
+        return Response({"start": start, "end": end, "items": payload})
+
+
+class BodyWeightAnalyticsView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        serializer = DateRangeSerializer(data=request.query_params)
+        serializer.is_valid(raise_exception=True)
+        start, end = serializer.get_range()
+        payload = aggregate_body_weight(request.user, start, end)
         return Response({"start": start, "end": end, "items": payload})
 
 

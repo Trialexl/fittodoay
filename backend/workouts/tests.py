@@ -6,9 +6,10 @@ from uuid import uuid4
 
 import pytest
 from django.contrib.auth import get_user_model
+from rest_framework.test import APIClient
 
 from programs.models import DayTemplate, ProgramFolder, TemplateExercise
-from workouts.models import Exercise_DB, WorkoutSetLog
+from workouts.models import Exercise_DB, WorkoutSetLog, WorkoutWeighIn
 from workouts.recommendations import generate_recommendations_for_day
 from workouts.services import generate_daily_plan, template_matches_date
 
@@ -278,6 +279,38 @@ def test_recommendation_adjust_reps_when_plan_out_of_range():
 
     assert rec["action"] == "adjust_reps"
     assert rec["suggested_reps"] == 12
+
+
+@pytest.mark.django_db
+def test_weigh_in_upsert_and_get_for_date():
+    user = User.objects.create_user(email="weighin@example.com", password="pass")
+    client = APIClient()
+    client.force_authenticate(user=user)
+
+    response = client.put(
+        "/api/workouts/weigh-in/",
+        {"date": TEST_DATE.isoformat(), "weight_kg": "83.4"},
+        format="json",
+    )
+    assert response.status_code == 200
+    assert response.data["weight_kg"] == "83.40"
+
+    get_response = client.get(f"/api/workouts/weigh-in/?date={TEST_DATE.isoformat()}")
+    assert get_response.status_code == 200
+    assert get_response.data["weight_kg"] == "83.40"
+    assert WorkoutWeighIn.objects.filter(user=user, date=TEST_DATE).count() == 1
+
+
+@pytest.mark.django_db
+def test_workout_plan_includes_weigh_in_payload():
+    user = User.objects.create_user(email="planweigh@example.com", password="pass")
+    WorkoutWeighIn.objects.create(user=user, date=TEST_DATE, weight_kg="79.20")
+    client = APIClient()
+    client.force_authenticate(user=user)
+
+    response = client.get(f"/api/workouts/plan/?date={TEST_DATE.isoformat()}")
+    assert response.status_code == 200
+    assert response.data["weigh_in"]["weight_kg"] == "79.20"
 
 
 @pytest.mark.django_db

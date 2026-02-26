@@ -7,7 +7,7 @@ from typing import Dict, List
 from django.db.models import Prefetch
 
 from programs.models import TemplateExercise
-from workouts.models import WorkoutSetLog
+from workouts.models import WorkoutSetLog, WorkoutWeighIn
 from workouts.services import resolve_defaults
 
 TIME_COEFFICIENT = 10  # 10 секунд = 1 повтор
@@ -106,6 +106,22 @@ def aggregate_exercise_loads(user, start: date, end: date) -> List[Dict]:
         }
         for key, data in per_exercise.items()
     ]
+
+
+def aggregate_body_weight(user, start: date, end: date) -> List[Dict]:
+    weigh_ins = (
+        WorkoutWeighIn.objects.filter(user=user, date__range=(start, end))
+        .order_by("date")
+        .values("date", "weight_kg")
+    )
+    by_date = {entry["date"]: float(entry["weight_kg"]) for entry in weigh_ins}
+    result = []
+    cursor = start
+    while cursor <= end:
+        value = by_date.get(cursor)
+        result.append({"date": cursor.isoformat(), "weight_kg": round(value, 2) if value is not None else None})
+        cursor += timedelta(days=1)
+    return result
 
 
 def build_ai_feed(user, limit: int = 50) -> List[Dict]:

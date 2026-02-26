@@ -185,4 +185,18 @@ class WorkoutSetLog(TimestampedModel):
     def __str__(self):
         return f"{self.workout_day.date} Set {self.set_index}"
 
+
+class WorkoutWeighIn(TimestampedModel):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="workout_weigh_ins")
+    date = models.DateField()
+    weight_kg = models.DecimalField(max_digits=5, decimal_places=2)
+    note = models.CharField(max_length=255, blank=True, default="")
+
+    class Meta:
+        unique_together = ("user", "date")
+        ordering = ["-date", "-created_at"]
+
+    def __str__(self):
+        return f"{self.user} — {self.date} — {self.weight_kg} кг"
+
 # Create your models here.
