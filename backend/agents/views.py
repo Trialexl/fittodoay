@@ -186,7 +186,10 @@ class LLMProgramCancelView(APIView):
         serializer.is_valid(raise_exception=True)
         service = LLMProgramChatService(thread)
         try:
-            result = service.cancel_actions(serializer.validated_data["message_id"])
+            result = service.cancel_actions(
+                serializer.validated_data["message_id"],
+                serializer.validated_data.get("action_index"),
+            )
         except LLMInvalidResponse as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(result, status=status.HTTP_200_OK)

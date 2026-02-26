@@ -1598,6 +1598,28 @@ export const Checklist = ({
     }
   };
 
+  const cancelSingleChatAction = async (actionIndex: number) => {
+    if (!auth.token || !chatState.threadId || !latestPendingProposal) return;
+    setChatCancelling(true);
+    setChatError(null);
+    try {
+      await apiFetch(`/api/llm-agent/threads/${chatState.threadId}/cancel/`, {
+        method: "POST",
+        token: auth.token,
+        body: JSON.stringify({
+          message_id: latestPendingProposal.id,
+          action_index: actionIndex,
+        }),
+      });
+      refreshChat();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Не удалось отменить изменение";
+      setChatError(humanizeChatError(message));
+    } finally {
+      setChatCancelling(false);
+    }
+  };
+
   if (!plan || !hasTemplates) {
     return (
       <div className="rounded-2xl border border-dashed border-slate-300 bg-white/60 p-6 text-center">
@@ -2219,17 +2241,37 @@ export const Checklist = ({
                   </p>
                   {msg.actions && Array.isArray(msg.actions) && msg.actions.length > 0 && (
                     <ul className="mt-2 list-none space-y-1 text-xs text-slate-600 dark:text-slate-300">
-                      {msg.actions.slice(0, 4).map((action: Record<string, any>, index: number) => (
-                        <li key={index} className="rounded-md bg-slate-100/80 px-2 py-1 dark:bg-slate-700/50">
-                          {describeAction(
-                            action,
-                            exerciseParamsByTemplateExerciseId,
-                            exerciseParamsByExerciseId,
-                            exerciseNameByTemplateExerciseId,
-                            exerciseNameByExerciseId,
-                          )}
-                        </li>
-                      ))}
+                      {msg.actions.slice(0, 4).map((action: Record<string, any>, index: number) => {
+                        const isLatestPending = latestPendingProposal?.id === msg.id && msg.proposal_status === "pending";
+                        return (
+                          <li
+                            key={index}
+                            className="flex items-start justify-between gap-2 rounded-md bg-slate-100/80 px-2 py-1 dark:bg-slate-700/50"
+                          >
+                            <span>
+                              {describeAction(
+                                action,
+                                exerciseParamsByTemplateExerciseId,
+                                exerciseParamsByExerciseId,
+                                exerciseNameByTemplateExerciseId,
+                                exerciseNameByExerciseId,
+                              )}
+                            </span>
+                            {isLatestPending && (
+                              <button
+                                type="button"
+                                className="shrink-0 rounded-md px-1.5 py-0.5 text-[11px] text-slate-500 transition hover:bg-slate-200 hover:text-slate-700 disabled:opacity-50 dark:text-slate-300 dark:hover:bg-slate-600 dark:hover:text-white"
+                                onClick={() => void cancelSingleChatAction(index)}
+                                disabled={chatCancelling || chatApplying}
+                                aria-label="Отменить это изменение"
+                                title="Отменить это изменение"
+                              >
+                                ×
+                              </button>
+                            )}
+                          </li>
+                        );
+                      })}
                       {msg.actions.length > 4 && (
                         <li className="text-[11px] text-slate-500 dark:text-slate-400">
                           + ещё {msg.actions.length - 4}

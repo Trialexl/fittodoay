@@ -84,3 +84,4 @@ class LLMProgramMessageCreateSerializer(serializers.Serializer):
 
 class LLMProgramActionSerializer(serializers.Serializer):
     message_id = serializers.IntegerField(min_value=1)
+    action_index = serializers.IntegerField(min_value=0, required=False)

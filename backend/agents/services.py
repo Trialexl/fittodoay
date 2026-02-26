@@ -493,11 +493,30 @@ class LLMProgramChatService:
             message.save(update_fields=["proposal_status"])
         return results
 
-    def cancel_actions(self, message_id: int):
+    def cancel_actions(self, message_id: int, action_index: int | None = None):
         message = self._get_actionable_message(message_id)
-        message.proposal_status = LLMProgramMessage.ProposalStatus.CANCELLED
-        message.save(update_fields=["proposal_status"])
-        return {"message_id": message.id, "status": message.proposal_status}
+        actions = list(message.actions or [])
+        if action_index is None:
+            message.proposal_status = LLMProgramMessage.ProposalStatus.CANCELLED
+            message.save(update_fields=["proposal_status"])
+            return {"message_id": message.id, "status": message.proposal_status}
+
+        if action_index < 0 or action_index >= len(actions):
+            raise LLMInvalidResponse("invalid_action_index")
+
+        actions.pop(action_index)
+        message.actions = actions
+        message.proposal_status = (
+            LLMProgramMessage.ProposalStatus.PENDING
+            if actions
+            else LLMProgramMessage.ProposalStatus.CANCELLED
+        )
+        message.save(update_fields=["actions", "proposal_status"])
+        return {
+            "message_id": message.id,
+            "status": message.proposal_status,
+            "remaining_actions": len(actions),
+        }
 
     def _get_actionable_message(self, message_id: int) -> LLMProgramMessage:
         message = self.thread.messages.filter(

@@ -114,6 +114,65 @@ def test_cancel_actions_marks_proposal_cancelled():
 
 
 @pytest.mark.django_db
+def test_cancel_actions_can_remove_single_action_and_keep_pending():
+    user = User.objects.create_user(email="agent_cancel_single@example.com", password="pass")
+    folder, te = _create_base_program(user)
+    thread = LLMProgramThread.objects.create(user=user, program=folder, title="Чат")
+    message = LLMProgramMessage.objects.create(
+        thread=thread,
+        role=LLMProgramMessage.Role.ASSISTANT,
+        content="Две правки",
+        actions=[
+            {"type": "update_weight", "template_exercise_id": te.id, "weight": 42},
+            {"type": "update_weight", "template_exercise_id": te.id, "reps": 10},
+        ],
+        proposal_status=LLMProgramMessage.ProposalStatus.PENDING,
+    )
+
+    client = APIClient()
+    client.force_authenticate(user=user)
+    response = client.post(
+        f"/api/llm-agent/threads/{thread.id}/cancel/",
+        {"message_id": message.id, "action_index": 0},
+        format="json",
+    )
+
+    assert response.status_code == 200
+    message.refresh_from_db()
+    assert message.proposal_status == LLMProgramMessage.ProposalStatus.PENDING
+    assert isinstance(message.actions, list)
+    assert len(message.actions) == 1
+    assert message.actions[0].get("reps") == 10
+
+
+@pytest.mark.django_db
+def test_cancel_actions_last_single_action_sets_cancelled():
+    user = User.objects.create_user(email="agent_cancel_last@example.com", password="pass")
+    folder, te = _create_base_program(user)
+    thread = LLMProgramThread.objects.create(user=user, program=folder, title="Чат")
+    message = LLMProgramMessage.objects.create(
+        thread=thread,
+        role=LLMProgramMessage.Role.ASSISTANT,
+        content="Одна правка",
+        actions=[{"type": "update_weight", "template_exercise_id": te.id, "weight": 42}],
+        proposal_status=LLMProgramMessage.ProposalStatus.PENDING,
+    )
+
+    client = APIClient()
+    client.force_authenticate(user=user)
+    response = client.post(
+        f"/api/llm-agent/threads/{thread.id}/cancel/",
+        {"message_id": message.id, "action_index": 0},
+        format="json",
+    )
+
+    assert response.status_code == 200
+    message.refresh_from_db()
+    assert message.proposal_status == LLMProgramMessage.ProposalStatus.CANCELLED
+    assert message.actions == []
+
+
+@pytest.mark.django_db
 def test_apply_rejects_non_pending_proposal():
     user = User.objects.create_user(email="agent_reject@example.com", password="pass")
     folder, te = _create_base_program(user)
