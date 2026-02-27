@@ -97,6 +97,16 @@ const WorkoutPageContent = () => {
     }
   }, [loading, user, router]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const orientationApi = window.screen?.orientation;
+    if (!orientationApi || typeof orientationApi.lock !== "function") return;
+
+    orientationApi.lock("portrait").catch(() => {
+      // Browser may require fullscreen or not support orientation lock on this platform.
+    });
+  }, []);
+
   const totalSets = useMemo(() => {
     if (!plan) return 0;
     return plan.folders.reduce(
@@ -146,7 +156,7 @@ const WorkoutPageContent = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 overflow-x-hidden">
       <header className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="space-y-1">

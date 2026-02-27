@@ -1761,6 +1761,7 @@ export const Checklist = ({
     });
     const granularity = infoTrendData.granularity ?? "week";
     const points = Array.from(loadByDate.entries())
+      .filter(([, load]) => load > 0)
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([iso, load]) => ({
         iso,
@@ -1814,9 +1815,6 @@ export const Checklist = ({
             <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
               Взвешивание перед тренировкой
             </h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              Отдельная метрика прогресса тела, не связана с весами упражнений.
-            </p>
           </div>
           {plan.weigh_in?.weight_kg !== null && plan.weigh_in?.weight_kg !== undefined && (
             <p className="text-xs font-medium text-slate-500 dark:text-slate-300">
