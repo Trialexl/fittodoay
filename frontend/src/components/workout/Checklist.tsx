@@ -12,7 +12,7 @@ import { RestTimerOverlay } from "@/components/workout/RestTimerOverlay";
 import { ExecutionTimerOverlay } from "@/components/workout/ExecutionTimerOverlay";
 import { useOfflineWorkoutQueue } from "@/hooks/useOfflineWorkoutQueue";
 import { useRestTimer } from "@/hooks/useRestTimer";
-import { API_BASE_URL, apiFetch } from "@/lib/api";
+import { API_BASE_URL, ApiError, apiFetch } from "@/lib/api";
 import { useAuth } from "@/state/AuthContext";
 import {
   CartesianGrid,
@@ -225,6 +225,37 @@ type ApplyActionsResponse = {
 
 const REST_OVERLAY_STORAGE_KEY = "fittodoay:workout:rest-overlay:v1";
 const EXEC_OVERLAY_STORAGE_KEY = "fittodoay:workout:exec-overlay:v1";
+const SHOW_LEGACY_RECOMMENDATIONS = false;
+const OFFLINE_WEIGH_IN_STORAGE_KEY = "fittodoay:workout:offline-weigh-ins:v1";
+
+type OfflineWeighInEntry = {
+  date: string;
+  weight_kg: number;
+  note?: string | null;
+  created_at: string;
+};
+
+const readOfflineWeighIns = (): OfflineWeighInEntry[] => {
+  if (typeof window === "undefined") return [];
+  const raw = window.localStorage.getItem(OFFLINE_WEIGH_IN_STORAGE_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as OfflineWeighInEntry[]) : [];
+  } catch {
+    return [];
+  }
+};
+
+const writeOfflineWeighIns = (entries: OfflineWeighInEntry[]) => {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(OFFLINE_WEIGH_IN_STORAGE_KEY, JSON.stringify(entries));
+};
+
+const enqueueOfflineWeighIn = (entry: OfflineWeighInEntry) => {
+  const rest = readOfflineWeighIns().filter((item) => item.date !== entry.date);
+  writeOfflineWeighIns([...rest, entry]);
+};
 
 const parseTargetMuscles = (value?: string | null) =>
   value
@@ -271,6 +302,36 @@ const SendIcon = () => (
     strokeLinejoin="round"
   >
     <path d="M3 10 17 3l-4 14-3-5-7-2Z" />
+  </svg>
+);
+
+const StatsIcon = ({ className }: { className?: string }) => (
+  <svg
+    viewBox="0 0 20 20"
+    className={clsx("h-4 w-4", className)}
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.8}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M4 15.5V9.5M10 15.5V6.5M16 15.5V3.5" />
+  </svg>
+);
+
+const AiSparkIcon = ({ className }: { className?: string }) => (
+  <svg
+    viewBox="0 0 20 20"
+    className={clsx("h-3.5 w-3.5", className)}
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.8}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M10 2.5 11.6 6.4 15.5 8 11.6 9.6 10 13.5 8.4 9.6 4.5 8 8.4 6.4 10 2.5Z" />
   </svg>
 );
 
@@ -654,7 +715,7 @@ export const Checklist = ({
 
   const { data: infoTrendData, isLoading: infoTrendLoading } = useSWR(
     auth.token && infoExercise && infoTab === "stats"
-      ? ["/api/analytics/program-trends/?range=half-year&granularity=week", auth.token]
+      ? ["/api/analytics/program-trends/?range=half-year&granularity=day", auth.token]
       : null,
     ([url, token]) => apiFetch<TrendResponse>(url as string, { token: token as string }),
   );
@@ -1566,7 +1627,7 @@ export const Checklist = ({
     }
   };
 
-  const openProgressChat = async (folderId: number, folderName: string) => {
+  const openProgressChat = async (folderId: number, folderName: string, isFolderComplete: boolean) => {
     if (!auth.token) return;
     setChatError(null);
     setChatLoading(true);
@@ -1581,12 +1642,14 @@ export const Checklist = ({
       });
       setChatState({ open: true, folderId, folderName, threadId: thread.id });
       setChatInput("");
+      const autoPrompt = isFolderComplete
+        ? "Сделай короткий экспертный разбор завершенной тренировки. Дай 1-3 неочевидных вывода по прогрессу на основе текущего дня и последних тренировок по программе, выдели рискованные места и предложи точечные правки по весам/повторам/упражнениям."
+        : "Сделай короткий экспертный разбор текущего прогресса (тренировка еще не завершена). Оцени выполненную часть, укажи 1-3 неочевидных риска/возможности и предложи точечные правки по весам, повторам или упражнениям на оставшуюся часть тренировки.";
       await apiFetch(`/api/llm-agent/threads/${thread.id}/messages/`, {
         method: "POST",
         token: auth.token,
         body: JSON.stringify({
-          message:
-            "Сделай краткий разбор моего прогресса за эту тренировку: оцени выполнение, выдели сильные/слабые места и предложи 1-3 конкретные правки по весам/повторам или упражнениям.",
+          message: autoPrompt,
           mode: "post_workout_review",
           workout_date: plan?.date,
         }),
@@ -1700,6 +1763,48 @@ export const Checklist = ({
     }
   };
 
+  const syncOfflineWeighIns = useCallback(async () => {
+    if (!auth.token) return;
+    const queue = readOfflineWeighIns();
+    if (!queue.length) return;
+    const failed: OfflineWeighInEntry[] = [];
+    for (const item of queue) {
+      try {
+        await apiFetch("/api/workouts/weigh-in/", {
+          method: "PUT",
+          token: auth.token,
+          body: JSON.stringify({
+            date: item.date,
+            weight_kg: Number(item.weight_kg.toFixed(2)),
+            note: item.note ?? "",
+          }),
+        });
+      } catch (error) {
+        if (error instanceof ApiError) {
+          if (error.status >= 500) {
+            failed.push(item);
+          }
+          continue;
+        }
+        failed.push(item);
+        break;
+      }
+    }
+    writeOfflineWeighIns(failed);
+  }, [auth.token]);
+
+  useEffect(() => {
+    if (!auth.token) return;
+    void syncOfflineWeighIns();
+    const handleOnline = () => {
+      void syncOfflineWeighIns();
+    };
+    window.addEventListener("online", handleOnline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+    };
+  }, [auth.token, syncOfflineWeighIns]);
+
   const saveWeighIn = async () => {
     if (!auth.token || !plan) return;
     const parsed = Number.parseFloat(weighInValue.replace(",", "."));
@@ -1723,9 +1828,20 @@ export const Checklist = ({
         }),
       });
       refresh();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Не удалось сохранить вес";
-      setWeighInError(message);
+    } catch (error: any) {
+      const isNetworkFailure = !(error instanceof ApiError);
+      if (isNetworkFailure) {
+        enqueueOfflineWeighIn({
+          date: plan.date,
+          weight_kg: Number(parsed.toFixed(2)),
+          note: null,
+          created_at: new Date().toISOString(),
+        });
+        setWeighInError("Нет сети: вес сохранен локально и отправится при подключении.");
+      } else {
+        const message = error instanceof Error ? error.message : "Не удалось сохранить вес";
+        setWeighInError(message);
+      }
     } finally {
       setWeighInSaving(false);
     }
@@ -1813,7 +1929,10 @@ export const Checklist = ({
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-              Взвешивание перед тренировкой
+              <span className="inline-flex items-center gap-1.5">
+                <StatsIcon className="text-primary" />
+                Взвешивание перед тренировкой
+              </span>
             </h3>
           </div>
           {plan.weigh_in?.weight_kg !== null && plan.weigh_in?.weight_kg !== undefined && (
@@ -1881,19 +2000,19 @@ export const Checklist = ({
                   </div>
                 </button>
                 <div className="flex w-full items-center justify-end gap-1.5 sm:ml-auto sm:w-auto sm:gap-2">
-                  {folderComplete && (
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      className="completed-action-btn rounded-xl px-2.5 py-1.5 text-[10px] font-semibold tracking-wide sm:rounded-full sm:px-3 sm:py-1 sm:text-xs sm:uppercase"
-                      onClick={() => openProgressChat(folder.id, folder.name)}
-                      disabled={chatLoading && chatState.folderId === folder.id}
-                    >
-                      <span className="sm:hidden">Прогресс</span>
-                      <span className="hidden sm:inline">Обсудить прогресс</span>
-                    </Button>
-                  )}
-                  {folderComplete && (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="completed-action-btn rounded-xl px-2.5 py-1.5 text-[10px] font-semibold tracking-wide sm:rounded-full sm:px-3 sm:py-1 sm:text-xs sm:uppercase"
+                    onClick={() => openProgressChat(folder.id, folder.name, folderComplete)}
+                    disabled={chatLoading && chatState.folderId === folder.id}
+                  >
+                    <span className="inline-flex items-center gap-1">
+                      <AiSparkIcon />
+                      <span>AI</span>
+                    </span>
+                  </Button>
+                  {folderComplete && SHOW_LEGACY_RECOMMENDATIONS && (
                     <Button
                       type="button"
                       variant="secondary"
@@ -2221,7 +2340,7 @@ export const Checklist = ({
                         </article>
                       );
                     })}
-                    {folderComplete && recommendationOpen && (
+                    {folderComplete && recommendationOpen && SHOW_LEGACY_RECOMMENDATIONS && (
                       <div className="rounded-2xl border border-slate-300 bg-white/80 p-3 shadow-sm sm:p-4">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <div>
@@ -2434,7 +2553,7 @@ export const Checklist = ({
                   </p>
                   {msg.actions && Array.isArray(msg.actions) && msg.actions.length > 0 && (
                     <ul className="mt-2 list-none space-y-1 text-xs text-slate-600 dark:text-slate-300">
-                      {msg.actions.slice(0, 4).map((action: Record<string, any>, index: number) => {
+                      {msg.actions.map((action: Record<string, any>, index: number) => {
                         const isLatestPending = latestPendingProposal?.id === msg.id && msg.proposal_status === "pending";
                         return (
                           <li
@@ -2465,11 +2584,6 @@ export const Checklist = ({
                           </li>
                         );
                       })}
-                      {msg.actions.length > 4 && (
-                        <li className="text-[11px] text-slate-500 dark:text-slate-400">
-                          + ещё {msg.actions.length - 4}
-                        </li>
-                      )}
                     </ul>
                   )}
                   {msg.role === "assistant" && msg.proposal_status && msg.proposal_status !== "none" && (
@@ -2585,7 +2699,10 @@ export const Checklist = ({
                     : "text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-slate-100",
                 )}
               >
-                Статистика
+                <span className="inline-flex items-center justify-center gap-1.5">
+                  <StatsIcon className={infoTab === "stats" ? "text-primary" : ""} />
+                  Статистика
+                </span>
               </button>
             </div>
 

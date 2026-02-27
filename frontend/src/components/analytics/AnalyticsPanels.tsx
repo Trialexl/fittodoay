@@ -64,8 +64,8 @@ export const AnalyticsPanels = () => {
           ))}
         </div>
       </div>
-      <div className="rounded-xl border border-slate-200 bg-white p-4">
-        <h3 className="font-semibold">Вес тела</h3>
+      <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900/70">
+        <h3 className="font-semibold text-slate-900 dark:text-slate-100">Вес тела</h3>
         {bodyWeightSeries.length > 0 ? (
           <div className="mt-3 h-64">
             <ResponsiveContainer width="100%" height="100%">
@@ -88,9 +88,14 @@ export const AnalyticsPanels = () => {
               </LineChart>
             </ResponsiveContainer>
           </div>
+          
         ) : (
-          <p className="mt-3 text-sm text-slate-500">Добавьте взвешивания в чеклисте тренировки.</p>
+          <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">Добавьте взвешивания в чеклисте тренировки.</p>
         )}
+        <p className="mt-3 inline-flex items-center gap-2 text-xs font-medium text-slate-600 dark:text-slate-300">
+          <span className="inline-block h-2.5 w-2.5 rounded-full bg-primary" />
+          Вес тела (кг)
+        </p>
       </div>
       <ProgramTrendPanel />
     </div>
