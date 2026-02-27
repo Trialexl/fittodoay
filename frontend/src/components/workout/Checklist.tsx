@@ -600,45 +600,58 @@ export const Checklist = ({
       });
     }
   }, [ensureAudioContext]);
-  const playCompletionTone = useCallback(() => {
+  const playCompletionTone = useCallback((variant: "single" | "double" = "single") => {
     const ctx = ensureAudioContext();
     if (!ctx) return;
     if (ctx.state !== "running") return;
     try {
       const now = ctx.currentTime;
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = "sine";
-      osc.frequency.setValueAtTime(880, now);
-      osc.frequency.exponentialRampToValueAtTime(660, now + 0.22);
-      gain.gain.setValueAtTime(0.0001, now);
-      gain.gain.exponentialRampToValueAtTime(0.08, now + 0.03);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.24);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start(now);
-      osc.stop(now + 0.24);
+      const emitBeep = (startAt: number, fromHz: number, toHz: number, duration = 0.22) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(fromHz, startAt);
+        osc.frequency.exponentialRampToValueAtTime(toHz, startAt + duration);
+        gain.gain.setValueAtTime(0.0001, startAt);
+        gain.gain.exponentialRampToValueAtTime(0.08, startAt + 0.03);
+        gain.gain.exponentialRampToValueAtTime(0.0001, startAt + duration);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(startAt);
+        osc.stop(startAt + duration);
+      };
+      emitBeep(now, 900, 680);
+      if (variant === "double") {
+        emitBeep(now + 0.28, 1040, 760, 0.2);
+      }
     } catch {
       // Ignore audio fallback errors.
     }
   }, [ensureAudioContext]);
-  const triggerRestCompletionVibration = useCallback(() => {
+  const triggerRestCompletionSignal = useCallback(() => {
     if (typeof window === "undefined") return;
+    unlockAudioContext();
+    playCompletionTone("double");
     const vibrate = window.navigator?.vibrate;
-    let vibrated = false;
     if (typeof vibrate === "function") {
       try {
-        vibrated = Boolean(vibrate.call(window.navigator, [200, 120, 260]));
+        const vibrated = Boolean(vibrate.call(window.navigator, [120, 80, 180, 80, 240]));
         vibrationSupportedRef.current = vibrated;
+        if (vibrated) {
+          window.setTimeout(() => {
+            try {
+              vibrate.call(window.navigator, 120);
+            } catch {
+              // noop
+            }
+          }, 480);
+        }
       } catch {
         vibrationSupportedRef.current = false;
       }
     }
-    if (!vibrated) {
-      playCompletionTone();
-    }
-  }, [playCompletionTone]);
-  const restTimer = useRestTimer({ onComplete: triggerRestCompletionVibration });
+  }, [playCompletionTone, unlockAudioContext]);
+  const restTimer = useRestTimer({ onComplete: triggerRestCompletionSignal });
   const executionTimer = useRestTimer();
   const {
     start: startRestTimer,
