@@ -25,11 +25,52 @@ const accentOptions = [
   { value: "#ef4444", label: "Красный" },
 ];
 
+const MenuIcon = ({ name }: { name: "programs" | "workout" | "analytics" | "assistant" | "appearance" }) => {
+  if (name === "programs") {
+    return (
+      <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8} aria-hidden="true">
+        <path d="M2.5 6.5h5l1.2 1.5H17a1 1 0 0 1 1 1v6.5a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V7.5a1 1 0 0 1 1-1Z" />
+      </svg>
+    );
+  }
+  if (name === "workout") {
+    return (
+      <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8} aria-hidden="true">
+        <path d="M4 10.5 8.2 14.5 16 6.5" />
+      </svg>
+    );
+  }
+  if (name === "analytics") {
+    return (
+      <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8} aria-hidden="true">
+        <path d="M3 15.5h14M5 13l3-3 2 2 5-6" />
+      </svg>
+    );
+  }
+  if (name === "assistant") {
+    return (
+      <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8} aria-hidden="true">
+        <rect x="4" y="6" width="12" height="10" rx="2" />
+        <path d="M10 3.5v2M7.5 10h.01M12.5 10h.01M7.5 13h5" />
+      </svg>
+    );
+  }
+  return (
+    <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8} aria-hidden="true">
+      <path d="M10 3.5a6.5 6.5 0 1 0 0 13h1a1.5 1.5 0 1 0 0-3h-1.2a1.8 1.8 0 1 1 0-3.6h.7A2.5 2.5 0 1 0 10 3.5Z" />
+      <circle cx="6.6" cy="8" r=".7" fill="currentColor" stroke="none" />
+      <circle cx="9.2" cy="6.8" r=".7" fill="currentColor" stroke="none" />
+      <circle cx="12.1" cy="7.2" r=".7" fill="currentColor" stroke="none" />
+    </svg>
+  );
+};
+
 export const AppHeader = () => {
   const pathname = usePathname();
   const { user, logout } = useAuth();
   const { theme, setTheme, accentColor, setAccentColor, saving: savingTheme } = useTheme();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [menuView, setMenuView] = useState<"main" | "appearance">("main");
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [feedbackMessage, setFeedbackMessage] = useState("");
   const [feedbackError, setFeedbackError] = useState<string | null>(null);
@@ -51,6 +92,7 @@ export const AppHeader = () => {
 
   useEffect(() => {
     setMenuOpen(false);
+    setMenuView("main");
   }, [pathname]);
 
   if (shouldHideHeader) {
@@ -99,7 +141,13 @@ export const AppHeader = () => {
             <button
               type="button"
               className="flex items-center gap-2 rounded-full border border-slate-200 bg-surface px-4 py-2 text-sm font-medium text-slate-600 shadow-sm transition hover:border-primary hover:text-primary"
-              onClick={() => setMenuOpen((prev) => !prev)}
+              onClick={() =>
+                setMenuOpen((prev) => {
+                  const next = !prev;
+                  if (next) setMenuView("main");
+                  return next;
+                })
+              }
               aria-haspopup="true"
               aria-expanded={menuOpen}
             >
@@ -123,19 +171,48 @@ export const AppHeader = () => {
             </button>
             {menuOpen && (
               <div className="absolute right-0 top-full mt-3 w-[22rem] rounded-2xl border border-border bg-surface/95 p-4 text-sm shadow-xl">
-                <nav className="flex flex-col gap-2 text-slate-700">
-                  {links.map((link) => (
-                    <Link
-                      key={link.href}
-                      href={link.href}
-                      className="rounded-lg px-2 py-1 transition hover:bg-primary/10 hover:text-primary"
+                {menuView === "main" ? (
+                  <>
+                    <nav className="flex flex-col gap-2 text-slate-700">
+                      {links.map((link) => (
+                        <Link
+                          key={link.href}
+                          href={link.href}
+                          className="flex items-center gap-2 rounded-lg px-2 py-1 transition hover:bg-primary/10 hover:text-primary"
+                        >
+                          <MenuIcon
+                            name={
+                              link.href === "/programs"
+                                ? "programs"
+                                : link.href === "/workout"
+                                  ? "workout"
+                                  : link.href === "/analytics"
+                                    ? "analytics"
+                                    : "assistant"
+                            }
+                          />
+                          <span>{link.label}</span>
+                        </Link>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => setMenuView("appearance")}
+                        className="flex items-center gap-2 rounded-lg px-2 py-1 text-left transition hover:bg-primary/10 hover:text-primary"
+                      >
+                        <MenuIcon name="appearance" />
+                        <span>Оформление</span>
+                      </button>
+                    </nav>
+                  </>
+                ) : (
+                  <div className="flex flex-col gap-3 text-slate-600">
+                    <button
+                      type="button"
+                      onClick={() => setMenuView("main")}
+                      className="inline-flex items-center gap-2 self-start rounded-lg px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
                     >
-                      {link.label}
-                    </Link>
-                  ))}
-                </nav>
-                <div className="mt-4 flex flex-col gap-3 border-t border-slate-100 pt-3 text-slate-600">
-                  <div className="flex flex-col gap-2">
+                      Назад
+                    </button>
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-xs uppercase tracking-wide text-slate-400">Тема</span>
                       <div className="flex rounded-full border border-slate-200 bg-slate-50 p-1">
@@ -148,7 +225,7 @@ export const AppHeader = () => {
                               : "text-slate-600 hover:text-primary"
                           }`}
                         >
-                          ☀️ Светлая
+                          Светлая
                         </button>
                         <button
                           type="button"
@@ -159,7 +236,7 @@ export const AppHeader = () => {
                               : "text-slate-600 hover:text-primary"
                           }`}
                         >
-                          🌙 Тёмная
+                          Тёмная
                         </button>
                       </div>
                     </div>
@@ -203,7 +280,7 @@ export const AppHeader = () => {
                       </div>
                     </div>
                   </div>
-                </div>
+                )}
                 <div className="mt-4 flex flex-col gap-2 border-t border-slate-100 pt-3 text-slate-600">
                   <Button variant="secondary" className="w-full justify-center" onClick={openFeedback}>
                     Чего не хватает?
