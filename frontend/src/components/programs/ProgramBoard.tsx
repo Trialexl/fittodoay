@@ -607,8 +607,10 @@ const FolderCallout = ({
             onClick={onOpenChat}
             className="inline-flex shrink-0 whitespace-nowrap px-3 py-2 text-sm"
           >
-            <span className="sm:hidden">Обсудить</span>
-            <span className="hidden sm:inline">Обсудить с ассистентом</span>
+            <span className="inline-flex items-center gap-1">
+              <AiSparkIcon />
+              <span>AI</span>
+            </span>
           </Button>
           <IconButton
             label="Новый шаблон"
@@ -925,6 +927,21 @@ const SendIcon = () => (
     strokeLinejoin="round"
   >
     <path d="M3 10 17 3l-4 14-3-5-7-2Z" />
+  </svg>
+);
+
+const AiSparkIcon = ({ className }: { className?: string }) => (
+  <svg
+    viewBox="0 0 20 20"
+    xmlns="http://www.w3.org/2000/svg"
+    className={clsx("h-3.5 w-3.5", className)}
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.8}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M10 2.5 11.6 6.4 15.5 8 11.6 9.6 10 13.5 8.4 9.6 4.5 8 8.4 6.4 10 2.5Z" />
   </svg>
 );
 
