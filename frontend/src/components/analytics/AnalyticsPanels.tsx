@@ -24,6 +24,26 @@ type ChatMessage = {
   proposal_status?: "none" | "pending" | "applied" | "cancelled";
 };
 
+const BodyWeightTooltip = ({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: Array<{ value?: number }>;
+  label?: string;
+}) => {
+  if (!active || !payload || payload.length === 0) return null;
+  const value = payload[0]?.value;
+  if (value === null || value === undefined) return null;
+  return (
+    <div className="rounded-lg border border-slate-600 bg-slate-900/95 px-3 py-2 text-xs text-slate-100 shadow-lg">
+      <p className="font-semibold text-slate-100">Дата: {label}</p>
+      <p className="mt-1 text-slate-200">Вес: {Number(value).toFixed(1)} кг</p>
+    </div>
+  );
+};
+
 const AiSparkIcon = ({ className }: { className?: string }) => (
   <svg
     viewBox="0 0 20 20"
@@ -72,6 +92,8 @@ export const AnalyticsPanels = () => {
     ([url]) => apiFetch<ChatMessage[]>(url as string, { token: token ?? undefined }),
   );
   const bodyWeightSeries = (bodyWeight?.items ?? []).filter((item) => item.weight_kg !== null);
+  const dailyTopFive = (daily?.items ?? []).slice(0, 5);
+  const exercisesTopFive = (exercises?.items ?? []).slice(0, 5);
   const activeFolder = useMemo(() => {
     if (!folders?.length) return null;
     return folders.find((folder) => folder.is_active) ?? folders[0];
@@ -211,7 +233,7 @@ export const AnalyticsPanels = () => {
       <div className="rounded-xl border border-slate-200 bg-white p-4">
         <h3 className="font-semibold">Нагрузка по дням</h3>
         <div className="mt-3 flex flex-wrap gap-2">
-          {daily?.items.map((item) => (
+          {dailyTopFive.map((item) => (
             <button
               key={item.date}
               type="button"
@@ -227,7 +249,7 @@ export const AnalyticsPanels = () => {
       <div className="rounded-xl border border-slate-200 bg-white p-4">
         <h3 className="font-semibold">Топ упражнений</h3>
         <div className="mt-3 divide-y text-sm">
-          {exercises?.items.map((item) => (
+          {exercisesTopFive.map((item) => (
             <div key={item.id} className="flex items-center justify-between py-2">
               <div>
                 <p className="font-medium">{item.name}</p>
@@ -240,7 +262,10 @@ export const AnalyticsPanels = () => {
           ))}
         </div>
       </div>
-      <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900/70">
+      <div
+        id="body-weight"
+        className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900/70"
+      >
         <h3 className="font-semibold text-slate-900 dark:text-slate-100">Вес тела</h3>
         {bodyWeightSeries.length > 0 ? (
           <div className="mt-3 h-64">
@@ -249,10 +274,7 @@ export const AnalyticsPanels = () => {
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="date" tick={{ fontSize: 12 }} />
                 <YAxis tick={{ fontSize: 12 }} />
-                <Tooltip
-                  formatter={(value) => [`${Number(value).toFixed(1)} кг`, "Вес"]}
-                  labelFormatter={(label) => `Дата: ${label}`}
-                />
+                <Tooltip content={<BodyWeightTooltip />} />
                 <Line
                   type="monotone"
                   dataKey="weight_kg"

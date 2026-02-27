@@ -99,7 +99,9 @@ const WorkoutPageContent = () => {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const orientationApi = window.screen?.orientation;
+    const orientationApi = window.screen?.orientation as
+      | (ScreenOrientation & { lock?: (orientation: string) => Promise<void> })
+      | undefined;
     if (!orientationApi || typeof orientationApi.lock !== "function") return;
 
     orientationApi.lock("portrait").catch(() => {

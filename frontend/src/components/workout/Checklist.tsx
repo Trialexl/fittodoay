@@ -422,6 +422,8 @@ const getChatMessageContent = (msg: ChatMessage) => {
 
 const normalizeExerciseName = (value: string) =>
   value.toLowerCase().replace(/\s+/g, " ").trim();
+const normalizeDayName = (value: string) =>
+  value.toLowerCase().replace(/\s+/g, " ").trim();
 
 const formatTrendDateLabel = (iso: string, granularity: "day" | "week") => {
   const [year, month, day] = iso.split("-").map(Number);
@@ -509,6 +511,7 @@ const describeAction = (
   byExerciseId: Record<string, ExerciseParamsMeta>,
   exerciseNameByTemplateExerciseId: Record<number, string>,
   exerciseNameByExerciseId: Record<string, string>,
+  paramsByExerciseAndDay: Record<string, ExerciseParamsMeta>,
 ) => {
   const actionType = String(action.type ?? action.action_type ?? action.action ?? "").toLowerCase();
   const day = action.day_name || action.day_id ? ` (${action.day_name ?? `день ${action.day_id}`})` : "";
@@ -529,7 +532,25 @@ const describeAction = (
     : undefined;
   const byExercise =
     typeof action.exercise_id === "string" ? byExerciseId[action.exercise_id] : undefined;
-  const currentParams = byTemplate ?? byExercise;
+  const actionExerciseName =
+    typeof action.exercise_name === "string"
+      ? action.exercise_name
+      : typeof action.exercise_id === "string"
+        ? exerciseNameByExerciseId[action.exercise_id]
+        : undefined;
+  const actionDayName = typeof action.day_name === "string" ? action.day_name : undefined;
+  const keyByNameAndDay =
+    actionExerciseName && actionDayName
+      ? `${normalizeExerciseName(actionExerciseName)}::${normalizeDayName(actionDayName)}`
+      : "";
+  const keyByNameOnly = actionExerciseName
+    ? `${normalizeExerciseName(actionExerciseName)}::`
+    : "";
+  const currentParams =
+    byTemplate ??
+    byExercise ??
+    (keyByNameAndDay ? paramsByExerciseAndDay[keyByNameAndDay] : undefined) ??
+    (keyByNameOnly ? paramsByExerciseAndDay[keyByNameOnly] : undefined);
   const proposedParams = getProposedParams(action);
   const recommendationDelta = formatRecommendationDelta(currentParams, proposedParams);
   const tail = recommendationDelta
@@ -640,7 +661,7 @@ export const Checklist = ({
         if (vibrated) {
           window.setTimeout(() => {
             try {
-              vibrate.call(window.navigator, 120);
+              vibrate.call(window.navigator, [120]);
             } catch {
               // noop
             }
@@ -815,6 +836,31 @@ export const Checklist = ({
       folder.templates.forEach((template) => {
         template.exercises.forEach((exercise) => {
           map[String(exercise.source.id)] = exercise.source.name;
+        });
+      });
+    });
+    return map;
+  }, [plan]);
+  const exerciseParamsByNameAndDay = useMemo(() => {
+    const map: Record<string, ExerciseParamsMeta> = {};
+    if (!plan) return map;
+    plan.folders.forEach((folder) => {
+      folder.templates.forEach((template) => {
+        const normalizedTemplateName = normalizeDayName(template.name);
+        template.exercises.forEach((exercise) => {
+          const firstSet = exercise.sets[0];
+          const params: ExerciseParamsMeta = {
+            sets: exercise.sets.length || null,
+            reps: firstSet?.default_reps ?? exercise.defaults.reps ?? null,
+            weight: firstSet?.default_weight ?? exercise.defaults.weight ?? null,
+            time: firstSet?.default_time ?? exercise.defaults.time ?? null,
+            rest: firstSet?.rest ?? exercise.defaults.rest ?? null,
+          };
+          const nameKey = normalizeExerciseName(exercise.source.name);
+          map[`${nameKey}::${normalizedTemplateName}`] = params;
+          if (!map[`${nameKey}::`]) {
+            map[`${nameKey}::`] = params;
+          }
         });
       });
     });
@@ -1943,7 +1989,14 @@ export const Checklist = ({
           <div>
             <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
               <span className="inline-flex items-center gap-1.5">
-                <StatsIcon className="text-primary" />
+                <Link
+                  href="/analytics#body-weight"
+                  className="inline-flex h-6 w-6 items-center justify-center rounded-md text-primary transition hover:bg-primary/10"
+                  aria-label="Открыть статистику веса"
+                  title="Открыть статистику веса"
+                >
+                  <StatsIcon className="text-primary" />
+                </Link>
                 Взвешивание перед тренировкой
               </span>
             </h3>
@@ -1954,22 +2007,25 @@ export const Checklist = ({
             </p>
           )}
         </div>
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <Input
-            type="number"
-            inputMode="decimal"
-            step="0.1"
-            min="20"
-            max="400"
-            value={weighInValue}
-            onChange={(event) => setWeighInValue(event.target.value)}
-            placeholder="Вес, кг"
-            className="max-w-[180px]"
-          />
+        <div className="mt-3 flex flex-wrap items-end gap-2">
+          <label className="w-full max-w-[180px] text-sm">
+            <input
+              type="number"
+              inputMode="decimal"
+              step="0.1"
+              min="20"
+              max="400"
+              value={weighInValue}
+              onChange={(event) => setWeighInValue(event.target.value)}
+              placeholder="Вес, кг"
+              className="form-field h-[46px]"
+            />
+          </label>
           <Button
             type="button"
             onClick={() => void saveWeighIn()}
             disabled={weighInSaving || !weighInValue.trim()}
+            className="h-[46px] px-8"
           >
             {weighInSaving ? "Сохраняем..." : "Сохранить вес"}
           </Button>
@@ -2580,6 +2636,7 @@ export const Checklist = ({
                                 exerciseParamsByExerciseId,
                                 exerciseNameByTemplateExerciseId,
                                 exerciseNameByExerciseId,
+                                exerciseParamsByNameAndDay,
                               )}
                             </span>
                             {isLatestPending && (

@@ -170,7 +170,10 @@ export const AppHeader = () => {
               <span className="text-base">{menuOpen ? "▴" : "▾"}</span>
             </button>
             {menuOpen && (
-              <div className="absolute right-0 top-full mt-3 w-[22rem] rounded-2xl border border-border bg-surface/95 p-4 text-sm shadow-xl">
+              <div
+                className="absolute right-0 top-full mt-3 w-[22rem] rounded-2xl border border-border bg-surface/95 p-4 text-sm shadow-xl"
+                onClick={(event) => event.stopPropagation()}
+              >
                 {menuView === "main" ? (
                   <>
                     <nav className="flex flex-col gap-2 text-slate-700">
@@ -196,7 +199,11 @@ export const AppHeader = () => {
                       ))}
                       <button
                         type="button"
-                        onClick={() => setMenuView("appearance")}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          setMenuView("appearance");
+                        }}
                         className="flex items-center gap-2 rounded-lg px-2 py-1 text-left transition hover:bg-primary/10 hover:text-primary"
                       >
                         <MenuIcon name="appearance" />
