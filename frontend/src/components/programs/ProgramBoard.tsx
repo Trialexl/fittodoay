@@ -1,6 +1,6 @@
 "use client";
 
-import { ComponentProps, ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { ComponentProps, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
 import {
   DndContext,
@@ -210,11 +210,18 @@ export const ProgramBoard = ({ initialFocus }: ProgramBoardProps = {}) => {
     [chatMessages],
   );
 
+  const scrollChatToBottom = useCallback(() => {
+    const container = chatScrollRef.current;
+    if (!container) return;
+    requestAnimationFrame(() => {
+      container.scrollTop = container.scrollHeight;
+    });
+  }, []);
+
   useEffect(() => {
     if (!chatState.open) return;
-    if (!chatScrollRef.current) return;
-    chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
-  }, [chatMessages, chatState.open]);
+    scrollChatToBottom();
+  }, [chatMessages, chatState.open, chatLoading, scrollChatToBottom]);
 
   const reorderExercises = async (templateId: number, exerciseIds: number[]) => {
     if (!token) return;
@@ -271,6 +278,7 @@ export const ProgramBoard = ({ initialFocus }: ProgramBoardProps = {}) => {
     if (!token) return;
     setChatError(null);
     setChatLoading(true);
+    scrollChatToBottom();
     try {
       const thread = await apiFetch<{ id: number; title: string }>(`/api/llm-agent/threads/`, {
         method: "POST",
@@ -279,10 +287,11 @@ export const ProgramBoard = ({ initialFocus }: ProgramBoardProps = {}) => {
       });
       setChatState({ open: true, folder, threadId: thread.id });
       setChatInput("");
-      refreshChat();
+      await refreshChat();
+      scrollChatToBottom();
     } catch (error) {
       const message = error instanceof Error ? error.message : "Не удалось открыть чат";
-      setChatError(message);
+      setChatError(humanizeChatError(message));
       setChatState((prev) => ({ ...prev, open: true, folder }));
     } finally {
       setChatLoading(false);
@@ -293,6 +302,7 @@ export const ProgramBoard = ({ initialFocus }: ProgramBoardProps = {}) => {
     if (!token || !chatState.threadId || !chatInput.trim()) return;
     setChatLoading(true);
     setChatError(null);
+    scrollChatToBottom();
     try {
       await apiFetch(`/api/llm-agent/threads/${chatState.threadId}/messages/`, {
         method: "POST",
@@ -300,10 +310,11 @@ export const ProgramBoard = ({ initialFocus }: ProgramBoardProps = {}) => {
         token,
       });
       setChatInput("");
-      refreshChat();
+      await refreshChat();
+      scrollChatToBottom();
     } catch (error) {
       const message = error instanceof Error ? error.message : "Не удалось отправить сообщение";
-      setChatError(message);
+      setChatError(humanizeChatError(message));
     } finally {
       setChatLoading(false);
     }
@@ -328,7 +339,7 @@ export const ProgramBoard = ({ initialFocus }: ProgramBoardProps = {}) => {
         const firstSkippedReason =
           applied.find((item) => item?.status === "skipped")?.reason ??
           "Ассистент не смог применить изменения к текущей программе.";
-        setChatError(firstSkippedReason);
+        setChatError(humanizeChatError(firstSkippedReason));
         refreshChat();
         return;
       }
@@ -337,7 +348,7 @@ export const ProgramBoard = ({ initialFocus }: ProgramBoardProps = {}) => {
       setChatState((prev) => ({ ...prev, open: false }));
     } catch (error) {
       const message = error instanceof Error ? error.message : "Не удалось применить изменения";
-      setChatError(message);
+      setChatError(humanizeChatError(message));
     } finally {
       setApplying(false);
     }
@@ -356,7 +367,7 @@ export const ProgramBoard = ({ initialFocus }: ProgramBoardProps = {}) => {
       refreshChat();
     } catch (error) {
       const message = error instanceof Error ? error.message : "Не удалось отменить изменения";
-      setChatError(message);
+      setChatError(humanizeChatError(message));
     } finally {
       setCancelling(false);
     }
@@ -449,24 +460,24 @@ export const ProgramBoard = ({ initialFocus }: ProgramBoardProps = {}) => {
         <div className="flex h-full min-h-0 flex-col">
           <div
             ref={chatScrollRef}
-            className="min-h-0 flex-1 overflow-y-auto rounded-2xl border border-slate-200 bg-gradient-to-b from-slate-50 to-slate-100/80 p-3"
+            className="min-h-0 flex-1 overflow-y-auto rounded-2xl border border-slate-200 bg-gradient-to-b from-slate-50 to-slate-100/80 p-3 dark:border-slate-700 dark:from-slate-900/80 dark:to-slate-950/80"
           >
             {chatMessages?.length ? (
               chatMessages.map((msg) => (
                 <div
                   key={msg.id}
-                  className="mb-3 rounded-xl border border-slate-200/70 bg-white/80 p-2.5 shadow-[0_1px_8px_rgba(15,23,42,0.05)] transition-transform duration-200 ease-out"
+                  className="mb-3 rounded-xl border border-slate-200/70 bg-white/80 p-2.5 shadow-[0_1px_8px_rgba(15,23,42,0.05)] transition-transform duration-200 ease-out dark:border-slate-700 dark:bg-slate-800/80"
                 >
-                  <p className="text-xs uppercase tracking-wide text-slate-400">
+                  <p className="text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500">
                     {msg.role === "assistant" ? "Ассистент" : "Вы"}
                   </p>
-                  <p className="whitespace-pre-line text-sm text-slate-800">
+                  <p className="whitespace-pre-line text-sm text-slate-800 dark:text-slate-100">
                     {getChatMessageContent(msg)}
                   </p>
                   {msg.actions && Array.isArray(msg.actions) && msg.actions.length > 0 && (
-                    <ul className="mt-1 space-y-1 text-xs text-slate-600">
+                    <ul className="mt-1 space-y-1 text-xs text-slate-600 dark:text-slate-300">
                       {msg.actions.map((action: any, index: number) => (
-                        <li key={index} className="rounded bg-white px-2 py-1 shadow-sm">
+                        <li key={index} className="rounded bg-white px-2 py-1 shadow-sm dark:bg-slate-700/60">
                           <span className="font-semibold">{action.type}</span>
                           {action.exercise_id ? ` • упражнение ${action.exercise_id}` : ""}
                           {action.day_id ? ` • день ${action.day_id}` : ""}
@@ -486,19 +497,19 @@ export const ProgramBoard = ({ initialFocus }: ProgramBoardProps = {}) => {
                 </div>
               ))
             ) : (
-              <p className="text-sm text-slate-500">Напишите, что хотите поменять в программе.</p>
+              <p className="text-sm text-slate-500 dark:text-slate-400">Напишите, что хотите поменять в программе.</p>
             )}
           </div>
-          <div className="sticky bottom-0 mt-3 border-t border-slate-200/80 bg-white/95 pt-2 backdrop-blur">
+          <div className="sticky bottom-0 mt-3 border-t border-slate-200/80 bg-white/95 pt-2 backdrop-blur dark:border-slate-700 dark:bg-slate-900/95">
             {chatError && <p className="mb-2 text-sm text-red-500">{chatError}</p>}
             {latestPendingProposal && (
-              <div className="mb-2 flex items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
-                <p className="text-xs text-amber-700">Есть неподтвержденные изменения.</p>
+              <div className="mb-2 flex items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 dark:border-amber-500/40 dark:bg-amber-500/10">
+                <p className="text-xs text-amber-700 dark:text-amber-300">Есть неподтвержденные изменения.</p>
                 <button
                   type="button"
                   onClick={cancelChatActions}
                   disabled={applying || cancelling}
-                  className="text-xs font-medium text-amber-800 underline-offset-2 transition hover:underline disabled:opacity-50"
+                  className="text-xs font-medium text-amber-800 underline-offset-2 transition hover:underline disabled:opacity-50 dark:text-amber-200"
                 >
                   {cancelling ? "Отмена..." : "Отменить"}
                 </button>
@@ -514,7 +525,7 @@ export const ProgramBoard = ({ initialFocus }: ProgramBoardProps = {}) => {
                   if (chatLoading || !chatInput.trim()) return;
                   void sendChatMessage();
                 }}
-                className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2.5 pr-14 text-base text-slate-800 outline-none ring-primary/40 transition placeholder:text-slate-400 focus:ring sm:text-sm"
+                className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2.5 pr-14 text-base text-slate-800 outline-none ring-primary/40 transition placeholder:text-slate-400 focus:ring sm:text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500"
                 placeholder="Например: хочу заменить жим лежа на отжимания и уменьшить вес в среду"
               />
               <button
@@ -1738,24 +1749,40 @@ const getChatMessageContent = (msg: ChatMessage) => {
   return "Не удалось корректно отобразить ответ ассистента. Попробуйте переформулировать запрос.";
 };
 
+const humanizeChatError = (message: string) => {
+  const normalized = (message || "").toLowerCase();
+  if (
+    normalized.includes("add_exercise requires valid day_id/day_name and exercise_id/exercise_name")
+  ) {
+    return "Не удалось применить добавление: ассистент не указал корректный день или упражнение. Уточните день и название упражнения.";
+  }
+  if (normalized.includes("assistant_unavailable")) {
+    return "Ассистент временно недоступен. Повторите попытку чуть позже.";
+  }
+  if (normalized.includes("unknown_action_")) {
+    return "Ассистент вернул неподдерживаемое действие. Уточните запрос и попробуйте снова.";
+  }
+  return message;
+};
+
 const getProposalStatusMeta = (status: NonNullable<ChatMessage["proposal_status"]>) => {
   if (status === "pending") {
     return {
       label: "Ожидает подтверждения",
-      className: "bg-amber-100 text-amber-800",
+      className: "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-200",
       icon: <StatusDot className="text-amber-500" />,
     };
   }
   if (status === "applied") {
     return {
       label: "Применено",
-      className: "bg-emerald-100 text-emerald-800",
+      className: "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-200",
       icon: <StatusCheck className="text-emerald-500" />,
     };
   }
   return {
     label: "Отменено",
-    className: "bg-slate-200 text-slate-700",
+    className: "bg-slate-200 text-slate-700 dark:bg-slate-700/60 dark:text-slate-200",
     icon: <StatusClose className="text-slate-500" />,
   };
 };

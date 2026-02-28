@@ -385,6 +385,31 @@ class LLMProgramChatService:
         "вс": (6, "Воскресенье"),
         "sunday": (6, "Воскресенье"),
     }
+    DAY_ORDINAL_ALIASES = {
+        "первый": 1,
+        "первая": 1,
+        "first": 1,
+        "второй": 2,
+        "вторая": 2,
+        "second": 2,
+        "третий": 3,
+        "третья": 3,
+        "third": 3,
+        "четвертый": 4,
+        "четвёртый": 4,
+        "четвертая": 4,
+        "четвёртая": 4,
+        "fourth": 4,
+        "пятый": 5,
+        "пятая": 5,
+        "fifth": 5,
+        "шестой": 6,
+        "шестая": 6,
+        "sixth": 6,
+        "седьмой": 7,
+        "седьмая": 7,
+        "seventh": 7,
+    }
 
     def __init__(self, thread: LLMProgramThread):
         self.thread = thread
@@ -537,6 +562,8 @@ class LLMProgramChatService:
         alias_map = {
             "add_exercise_to_day": "add_exercise",
             "add_exercise": "add_exercise",
+            "create_exercise": "add_exercise",
+            "create_exercise_in_day": "add_exercise",
             "replace_exercise_in_day": "replace_exercise",
             "replace_exercise": "replace_exercise",
             "remove_exercise_from_day": "remove_exercise",
@@ -1068,6 +1095,8 @@ class LLMProgramChatService:
         alias_map = {
             "add_exercise_to_day": "add_exercise",
             "add_exercise": "add_exercise",
+            "create_exercise": "add_exercise",
+            "create_exercise_in_day": "add_exercise",
             "replace_exercise_in_day": "replace_exercise",
             "replace_exercise": "replace_exercise",
             "remove_exercise_from_day": "remove_exercise",
@@ -1233,6 +1262,11 @@ class LLMProgramChatService:
                 if by_weekday:
                     return by_weekday
                 return self._create_weekday_day(weekday_index, weekday_label)
+            ordinal_index = self._extract_day_order_index(day_name)
+            if ordinal_index is not None:
+                by_order = self._find_day_by_order_index(ordinal_index)
+                if by_order:
+                    return by_order
         if fallback_from_te:
             te = TemplateExercise.objects.filter(
                 id=fallback_from_te,
@@ -1270,6 +1304,9 @@ class LLMProgramChatService:
             ).first()
             if by_name:
                 return by_name
+            by_tokens_from_id = self._resolve_exercise_by_tokens(str(exercise_id))
+            if by_tokens_from_id:
+                return by_tokens_from_id
         name = action.get("exercise_name") or action.get("name")
         if name:
             exact = Exercise_DB.objects.filter(
@@ -1286,6 +1323,9 @@ class LLMProgramChatService:
             ).first()
             if relaxed:
                 return relaxed
+            by_tokens_from_name = self._resolve_exercise_by_tokens(str(name))
+            if by_tokens_from_name:
+                return by_tokens_from_name
         if exercise_id:
             relaxed_from_id = Exercise_DB.objects.filter(
                 models.Q(name_ru__icontains=str(exercise_id).replace("_", " "))
@@ -1295,6 +1335,34 @@ class LLMProgramChatService:
             if relaxed_from_id:
                 return relaxed_from_id
         return None
+
+    def _resolve_exercise_by_tokens(self, raw: str) -> Exercise_DB | None:
+        tokens = [
+            token
+            for token in re.split(r"[^a-zA-Zа-яА-ЯёЁ0-9]+", (raw or "").lower())
+            if token and len(token) > 1
+        ]
+        if not tokens:
+            return None
+        score = None
+        for token in tokens:
+            token_match = models.Case(
+                models.When(
+                    models.Q(name_ru__icontains=token)
+                    | models.Q(name_en__icontains=token)
+                    | models.Q(id__icontains=token),
+                    then=models.Value(1),
+                ),
+                default=models.Value(0),
+                output_field=models.IntegerField(),
+            )
+            score = token_match if score is None else score + token_match
+        query = (
+            Exercise_DB.objects.annotate(match_score=score)
+            .filter(match_score__gt=0)
+            .order_by("-match_score", "id")
+        )
+        return query.first()
 
     def _extract_weekday(self, text: str) -> tuple[int, str] | None:
         normalized = re.sub(r"[^a-zA-Zа-яА-ЯёЁ0-9]+", " ", text).strip().lower()
@@ -1320,6 +1388,35 @@ class LLMProgramChatService:
             if weekday_index in normalized_days:
                 return template
         return None
+
+    def _extract_day_order_index(self, text: str) -> int | None:
+        normalized = re.sub(r"[^a-zA-Zа-яА-ЯёЁ0-9]+", " ", (text or "")).strip().lower()
+        if not normalized:
+            return None
+        direct_number = re.search(r"\b(\d{1,2})\b", normalized)
+        if direct_number:
+            value = int(direct_number.group(1))
+            if value > 0:
+                return value - 1
+        for token in normalized.split():
+            mapped = self.DAY_ORDINAL_ALIASES.get(token)
+            if mapped:
+                return mapped - 1
+        return None
+
+    def _find_day_by_order_index(self, order_index: int) -> DayTemplate | None:
+        if order_index < 0:
+            return None
+        days = list(
+            DayTemplate.objects.filter(
+                folder=self.thread.program,
+                folder__user=self.thread.user,
+            )
+            .order_by("sort_order", "id")
+        )
+        if order_index >= len(days):
+            return None
+        return days[order_index]
 
     def _create_weekday_day(self, weekday_index: int, weekday_label: str) -> DayTemplate:
         base_name = f"День ({weekday_label})"

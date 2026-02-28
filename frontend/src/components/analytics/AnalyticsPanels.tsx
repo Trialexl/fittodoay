@@ -4,7 +4,7 @@ import { apiFetch } from "@/lib/api";
 import { useAuth } from "@/state/AuthContext";
 import useSWR from "swr";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import clsx from "clsx";
 import { Button } from "@/components/ui/Button";
@@ -69,6 +69,7 @@ export const AnalyticsPanels = () => {
   const [chatError, setChatError] = useState<string | null>(null);
   const [chatApplying, setChatApplying] = useState(false);
   const [chatCancelling, setChatCancelling] = useState(false);
+  const chatScrollRef = useRef<HTMLDivElement | null>(null);
 
   const { data: daily } = useSWR(
     token ? ["/api/analytics/days/", token] : null,
@@ -92,8 +93,22 @@ export const AnalyticsPanels = () => {
     ([url]) => apiFetch<ChatMessage[]>(url as string, { token: token ?? undefined }),
   );
   const bodyWeightSeries = (bodyWeight?.items ?? []).filter((item) => item.weight_kg !== null);
-  const dailyTopFive = (daily?.items ?? []).slice(0, 5);
-  const exercisesTopFive = (exercises?.items ?? []).slice(0, 5);
+  const dailyTopFive = useMemo(
+    () =>
+      [...(daily?.items ?? [])]
+        .filter((item) => Number(item.load) > 0)
+        .sort((left, right) => Number(right.load) - Number(left.load))
+        .slice(0, 5),
+    [daily?.items],
+  );
+  const exercisesTopFive = useMemo(
+    () =>
+      [...(exercises?.items ?? [])]
+        .filter((item) => Number(item.load) > 0)
+        .sort((left, right) => Number(right.load) - Number(left.load))
+        .slice(0, 5),
+    [exercises?.items],
+  );
   const activeFolder = useMemo(() => {
     if (!folders?.length) return null;
     return folders.find((folder) => folder.is_active) ?? folders[0];
@@ -112,6 +127,19 @@ export const AnalyticsPanels = () => {
     [chatMessages],
   );
 
+  const scrollChatToBottom = useCallback(() => {
+    const container = chatScrollRef.current;
+    if (!container) return;
+    requestAnimationFrame(() => {
+      container.scrollTop = container.scrollHeight;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!chatOpen) return;
+    scrollChatToBottom();
+  }, [chatOpen, chatMessages, chatLoading, scrollChatToBottom]);
+
   const openAnalyticsAi = async () => {
     if (!token || !activeFolder) {
       setChatError("Нет активной программы для AI-анализа.");
@@ -121,6 +149,7 @@ export const AnalyticsPanels = () => {
     setChatOpen(true);
     setChatError(null);
     setChatLoading(true);
+    scrollChatToBottom();
     try {
       const thread = await apiFetch<{ id: number; title: string }>(`/api/llm-agent/threads/`, {
         method: "POST",
@@ -148,6 +177,7 @@ export const AnalyticsPanels = () => {
         }),
       });
       await refreshChat();
+      scrollChatToBottom();
     } catch (error) {
       const message = error instanceof Error ? error.message : "Не удалось открыть AI-чат статистики";
       setChatError(message);
@@ -160,6 +190,7 @@ export const AnalyticsPanels = () => {
     if (!token || !chatThreadId || !chatInput.trim()) return;
     setChatLoading(true);
     setChatError(null);
+    scrollChatToBottom();
     try {
       await apiFetch(`/api/llm-agent/threads/${chatThreadId}/messages/`, {
         method: "POST",
@@ -171,6 +202,7 @@ export const AnalyticsPanels = () => {
       });
       setChatInput("");
       await refreshChat();
+      scrollChatToBottom();
     } catch (error) {
       const message = error instanceof Error ? error.message : "Не удалось отправить сообщение";
       setChatError(message);
@@ -232,19 +264,23 @@ export const AnalyticsPanels = () => {
       </div>
       <div className="rounded-xl border border-slate-200 bg-white p-4">
         <h3 className="font-semibold">Нагрузка по дням</h3>
-        <div className="mt-3 flex flex-wrap gap-2">
-          {dailyTopFive.map((item) => (
-            <button
-              key={item.date}
-              type="button"
-              onClick={() => router.push(`/workout?date=${item.date}`)}
-              className="flex min-w-[120px] flex-col rounded bg-slate-50 p-3 text-left text-sm transition hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-primary/40"
-            >
-              <span className="text-slate-500">{item.date}</span>
-              <span className="text-lg font-semibold">{item.load}</span>
-            </button>
-          ))}
-        </div>
+        {dailyTopFive.length > 0 ? (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {dailyTopFive.map((item) => (
+              <button
+                key={item.date}
+                type="button"
+                onClick={() => router.push(`/workout?date=${item.date}`)}
+                className="flex min-w-[120px] flex-col rounded bg-slate-50 p-3 text-left text-sm transition hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-primary/40"
+              >
+                <span className="text-slate-500">{item.date}</span>
+                <span className="text-lg font-semibold">{item.load}</span>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-3 text-sm text-slate-500">Нет дней с ненулевой нагрузкой за выбранный период.</p>
+        )}
       </div>
       <div className="rounded-xl border border-slate-200 bg-white p-4">
         <h3 className="font-semibold">Топ упражнений</h3>
@@ -254,7 +290,7 @@ export const AnalyticsPanels = () => {
               <div>
                 <p className="font-medium">{item.name}</p>
                 <p className="text-xs text-slate-500">
-                  {item.type === "system" ? "Системное" : "Кастомное"} • сетов: {item.sets}
+                  {item.type === "system" ? "Системное" : "Кастомное"} • тоннаж: {item.load} • сетов: {item.sets}
                 </p>
               </div>
               <span className="text-base font-semibold">{item.load}</span>
@@ -320,7 +356,10 @@ export const AnalyticsPanels = () => {
         }
       >
         <div className="flex h-full min-h-0 flex-col">
-          <div className="min-h-0 flex-1 overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-900/60">
+          <div
+            ref={chatScrollRef}
+            className="min-h-0 flex-1 overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-900/60"
+          >
             {chatMessages?.length ? (
               chatMessages.map((msg) => (
                 <div

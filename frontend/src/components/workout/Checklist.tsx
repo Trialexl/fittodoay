@@ -335,6 +335,22 @@ const AiSparkIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
+const SaveApplyIcon = ({ className }: { className?: string }) => (
+  <svg
+    viewBox="0 0 20 20"
+    xmlns="http://www.w3.org/2000/svg"
+    className={clsx("h-4 w-4", className)}
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.9}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M4 10.5 8.2 14.5 16 6.5" />
+  </svg>
+);
+
 const StatusDot = ({ className }: { className?: string }) => (
   <svg viewBox="0 0 20 20" className={clsx("h-3.5 w-3.5", className)} fill="currentColor" aria-hidden="true">
     <circle cx="10" cy="10" r="4.5" />
@@ -1001,10 +1017,18 @@ export const Checklist = ({
     setTimersRestored(false);
   }, [plan?.date]);
 
+  const scrollChatToBottom = useCallback(() => {
+    const container = chatScrollRef.current;
+    if (!container) return;
+    requestAnimationFrame(() => {
+      container.scrollTop = container.scrollHeight;
+    });
+  }, []);
+
   useEffect(() => {
-    if (!chatState.open || !chatScrollRef.current) return;
-    chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
-  }, [chatMessages, chatState.open]);
+    if (!chatState.open) return;
+    scrollChatToBottom();
+  }, [chatMessages, chatState.open, chatLoading, scrollChatToBottom]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1690,6 +1714,7 @@ export const Checklist = ({
     if (!auth.token) return;
     setChatError(null);
     setChatLoading(true);
+    scrollChatToBottom();
     try {
       const thread = await apiFetch<{ id: number; title: string }>(`/api/llm-agent/threads/`, {
         method: "POST",
@@ -1714,6 +1739,7 @@ export const Checklist = ({
         }),
       });
       await refreshChat();
+      scrollChatToBottom();
     } catch (error) {
       const message = error instanceof Error ? error.message : "Не удалось открыть чат";
       setChatError(humanizeChatError(message));
@@ -1727,6 +1753,7 @@ export const Checklist = ({
     if (!auth.token || !chatState.threadId || !chatInput.trim()) return;
     setChatLoading(true);
     setChatError(null);
+    scrollChatToBottom();
     try {
       await apiFetch(`/api/llm-agent/threads/${chatState.threadId}/messages/`, {
         method: "POST",
@@ -1738,7 +1765,8 @@ export const Checklist = ({
         }),
       });
       setChatInput("");
-      refreshChat();
+      await refreshChat();
+      scrollChatToBottom();
     } catch (error) {
       const message = error instanceof Error ? error.message : "Не удалось отправить сообщение";
       setChatError(humanizeChatError(message));
@@ -1827,6 +1855,7 @@ export const Checklist = ({
     const queue = readOfflineWeighIns();
     if (!queue.length) return;
     const failed: OfflineWeighInEntry[] = [];
+    let syncedAny = false;
     for (const item of queue) {
       try {
         await apiFetch("/api/workouts/weigh-in/", {
@@ -1838,6 +1867,7 @@ export const Checklist = ({
             note: item.note ?? "",
           }),
         });
+        syncedAny = true;
       } catch (error) {
         if (error instanceof ApiError) {
           if (error.status >= 500) {
@@ -1850,7 +1880,15 @@ export const Checklist = ({
       }
     }
     writeOfflineWeighIns(failed);
-  }, [auth.token]);
+    if (syncedAny) {
+      setWeighInError((prev) =>
+        prev && prev.startsWith("Нет сети:")
+          ? null
+          : prev,
+      );
+      refresh();
+    }
+  }, [auth.token, refresh]);
 
   useEffect(() => {
     if (!auth.token) return;
@@ -1858,9 +1896,17 @@ export const Checklist = ({
     const handleOnline = () => {
       void syncOfflineWeighIns();
     };
+    const handleVisibilityOrFocus = () => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+      void syncOfflineWeighIns();
+    };
     window.addEventListener("online", handleOnline);
+    window.addEventListener("focus", handleVisibilityOrFocus);
+    document.addEventListener("visibilitychange", handleVisibilityOrFocus);
     return () => {
       window.removeEventListener("online", handleOnline);
+      window.removeEventListener("focus", handleVisibilityOrFocus);
+      document.removeEventListener("visibilitychange", handleVisibilityOrFocus);
     };
   }, [auth.token, syncOfflineWeighIns]);
 
@@ -2008,7 +2054,7 @@ export const Checklist = ({
           )}
         </div>
         <div className="mt-3 flex flex-wrap items-end gap-2">
-          <label className="w-full max-w-[180px] text-sm">
+          <label className="w-[120px] text-sm">
             <input
               type="number"
               inputMode="decimal"
@@ -2025,12 +2071,20 @@ export const Checklist = ({
             type="button"
             onClick={() => void saveWeighIn()}
             disabled={weighInSaving || !weighInValue.trim()}
-            className="h-[46px] px-8"
+            className="h-[46px] w-[46px] px-0"
+            aria-label="Сохранить вес"
+            title="Сохранить вес"
           >
-            {weighInSaving ? "Сохраняем..." : "Сохранить вес"}
+            {weighInSaving ? "…" : <SaveApplyIcon />}
           </Button>
         </div>
-        {weighInError && <p className="mt-2 text-xs text-red-500">{weighInError}</p>}
+        {weighInError && weighInError.startsWith("Нет сети:") ? (
+          <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50/80 px-3 py-2 text-xs text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
+            {weighInError}
+          </div>
+        ) : weighInError ? (
+          <p className="mt-2 text-xs text-red-500">{weighInError}</p>
+        ) : null}
       </section>
       <div className="space-y-4 sm:space-y-5">
         {plan.folders.map((folder) => {
