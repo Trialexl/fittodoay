@@ -276,6 +276,26 @@ def test_chat_send_drops_noop_update_actions(monkeypatch):
 
 
 @pytest.mark.django_db
+def test_chat_send_drops_update_without_target_fields(monkeypatch):
+    user = User.objects.create_user(email="agent_chat_update_no_target@example.com", password="pass")
+    folder, _te = _create_base_program(user)
+    thread = LLMProgramThread.objects.create(user=user, program=folder, title="Чат")
+    service = LLMProgramChatService(thread)
+
+    monkeypatch.setattr(
+        service,
+        "_call_llm",
+        lambda _messages: (
+            '{"assistant_reply":"Добавлю в пятницу","actions":[{"type":"update_weight","reps":10,"sets":3}]}'
+        ),
+    )
+
+    assistant = service.send("Добавь в пятницу подтягивания на гравитроне")
+    assert assistant.actions == []
+    assert assistant.proposal_status == LLMProgramMessage.ProposalStatus.NONE
+
+
+@pytest.mark.django_db
 def test_chat_send_logs_llm_request_and_response(monkeypatch):
     user = User.objects.create_user(email="agent_log_ok@example.com", password="pass")
     folder, _ = _create_base_program(user)

@@ -1756,6 +1756,9 @@ const humanizeChatError = (message: string) => {
   ) {
     return "Не удалось применить добавление: ассистент не указал корректный день или упражнение. Уточните день и название упражнения.";
   }
+  if (normalized.includes("invalid_update_weight_action")) {
+    return "Не удалось применить изменение: ассистент не указал, какое именно упражнение нужно менять.";
+  }
   if (normalized.includes("assistant_unavailable")) {
     return "Ассистент временно недоступен. Повторите попытку чуть позже.";
   }

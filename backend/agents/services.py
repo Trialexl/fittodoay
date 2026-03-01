@@ -1125,8 +1125,11 @@ class LLMProgramChatService:
             self._attach_localized_exercise_name(action)
             self._attach_day_name(action)
             self._drop_unchanged_action_fields(action)
-            if action.get("type") == "update_weight" and not self._has_effective_update_fields(action):
-                continue
+            if action.get("type") == "update_weight":
+                if not self._has_update_target_fields(action):
+                    continue
+                if not self._has_effective_update_fields(action):
+                    continue
             normalized.append(action)
         return normalized
 
@@ -1201,6 +1204,21 @@ class LLMProgramChatService:
         return any(
             key in action
             for key in ("weight", "reps", "rep", "sets", "set", "time", "rest", "note")
+        )
+
+    def _has_update_target_fields(self, action: Dict[str, Any]) -> bool:
+        return any(
+            action.get(key)
+            for key in (
+                "template_exercise_id",
+                "deactivate_exercise_id",
+                "exercise_id",
+                "exercise_name",
+                "name",
+                "day_id",
+                "day_name",
+                "day",
+            )
         )
 
     def _extract_reply_from_malformed_json(self, text: str) -> str | None:

@@ -596,6 +596,12 @@ const describeAction = (
 
 const humanizeChatError = (raw: string) => {
   if (!raw) return "Не удалось выполнить действие";
+  if (raw.includes("invalid_update_weight_action")) {
+    return "Не удалось применить изменение: ассистент не указал, какое упражнение нужно изменить.";
+  }
+  if (raw.includes("add_exercise requires valid day_id/day_name and exercise_id/exercise_name")) {
+    return "Не удалось применить добавление: ассистент не указал корректный день или упражнение.";
+  }
   if (raw.includes("invalid_action_type")) {
     return "Ассистент прислал изменение без типа действия. Запросите рекомендацию ещё раз.";
   }
