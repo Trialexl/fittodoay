@@ -37,9 +37,20 @@ const BodyWeightTooltip = ({
   const value = payload[0]?.value;
   if (value === null || value === undefined) return null;
   return (
-    <div className="rounded-lg border border-slate-600 bg-slate-900/95 px-3 py-2 text-xs text-slate-100 shadow-lg">
-      <p className="font-semibold text-slate-100">Дата: {label}</p>
-      <p className="mt-1 text-slate-200">Вес: {Number(value).toFixed(1)} кг</p>
+    <div
+      className="rounded-xl px-3 py-2 text-xs shadow-xl"
+      style={{
+        background: "rgba(7, 17, 44, 0.96)",
+        border: "1px solid rgba(148, 163, 184, 0.45)",
+        color: "#e2e8f0",
+      }}
+    >
+      <p className="font-semibold" style={{ color: "#f8fafc" }}>
+        Дата: {label}
+      </p>
+      <p className="mt-1" style={{ color: "#cbd5e1" }}>
+        Вес: {Number(value).toFixed(1)} кг
+      </p>
     </div>
   );
 };
