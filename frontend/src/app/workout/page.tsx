@@ -46,11 +46,21 @@ const WorkoutPageContent = () => {
     return new Date(year, month - 1, day);
   }, [calendarCursor]);
 
-  const monthStartIso = useMemo(() => formatISODate(new Date(cursorDateObj.getFullYear(), cursorDateObj.getMonth(), 1)), [cursorDateObj]);
-  const monthEndIso = useMemo(() => formatISODate(new Date(cursorDateObj.getFullYear(), cursorDateObj.getMonth() + 1, 0)), [cursorDateObj]);
+  const calendarRangeStartIso = useMemo(() => {
+    const startOfMonth = new Date(cursorDateObj.getFullYear(), cursorDateObj.getMonth(), 1);
+    const weekOffset = (startOfMonth.getDay() + 6) % 7;
+    const gridStart = new Date(startOfMonth);
+    gridStart.setDate(startOfMonth.getDate() - weekOffset);
+    return formatISODate(gridStart);
+  }, [cursorDateObj]);
+  const calendarRangeEndIso = useMemo(() => {
+    const start = new Date(calendarRangeStartIso);
+    start.setDate(start.getDate() + 41);
+    return formatISODate(start);
+  }, [calendarRangeStartIso]);
 
   const { data: dailyLoads } = useSWR(
-    token ? ["daily-loads", monthStartIso, monthEndIso, token] : null,
+    token ? ["daily-loads", calendarRangeStartIso, calendarRangeEndIso, token] : null,
     ([, start, end, auth]) =>
       apiFetch<{ items: { date: string; load: number }[] }>(
         `/api/analytics/days/?start=${start}&end=${end}`,

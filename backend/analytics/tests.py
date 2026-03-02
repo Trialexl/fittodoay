@@ -155,3 +155,22 @@ def test_body_weight_endpoint_returns_user_only_data():
     response = client.get(f"/api/analytics/body-weight/?start={today.isoformat()}&end={today.isoformat()}")
     assert response.status_code == 200
     assert response.data["items"][0]["weight_kg"] == 82.3
+
+
+@pytest.mark.django_db
+def test_body_weight_endpoint_defaults_start_to_first_weigh_in():
+    user = User.objects.create_user(email="weightapi-start@example.com", password="password")
+    client = APIClient()
+    client.force_authenticate(user=user)
+    first = date.today() - timedelta(days=20)
+    last = date.today() - timedelta(days=2)
+    WorkoutWeighIn.objects.create(user=user, date=first, weight_kg="84.10")
+    WorkoutWeighIn.objects.create(user=user, date=last, weight_kg="82.50")
+
+    response = client.get("/api/analytics/body-weight/")
+
+    assert response.status_code == 200
+    assert response.data["start"] == first.isoformat()
+    assert response.data["end"] == date.today().isoformat()
+    assert response.data["items"][0]["date"] == first.isoformat()
+    assert response.data["items"][-1]["date"] == date.today().isoformat()

@@ -12,6 +12,7 @@ from analytics.services import (
     build_ai_feed,
     build_program_trends,
 )
+from workouts.models import WorkoutWeighIn
 
 
 class DailyAnalyticsView(APIView):
@@ -43,6 +44,15 @@ class BodyWeightAnalyticsView(APIView):
         serializer = DateRangeSerializer(data=request.query_params)
         serializer.is_valid(raise_exception=True)
         start, end = serializer.get_range()
+        if "start" not in request.query_params:
+            first_weigh_in_date = (
+                WorkoutWeighIn.objects.filter(user=request.user)
+                .order_by("date")
+                .values_list("date", flat=True)
+                .first()
+            )
+            if first_weigh_in_date:
+                start = first_weigh_in_date
         payload = aggregate_body_weight(request.user, start, end)
         return Response({"start": start, "end": end, "items": payload})
 
