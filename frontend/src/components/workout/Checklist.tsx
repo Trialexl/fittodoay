@@ -621,6 +621,29 @@ export const Checklist = ({
   const auth = useAuth();
   const audioContextRef = useRef<AudioContext | null>(null);
   const vibrationSupportedRef = useRef<boolean | null>(null);
+  const notificationRequestedRef = useRef(false);
+  const restStartNotificationKeyRef = useRef<string | null>(null);
+  const ensureNotificationPermission = useCallback(() => {
+    if (typeof window === "undefined" || !("Notification" in window)) return;
+    if (window.Notification.permission !== "default") return;
+    if (notificationRequestedRef.current) return;
+    notificationRequestedRef.current = true;
+    void window.Notification.requestPermission().catch(() => {
+      // Ignore permission errors on unsupported browsers/platforms.
+    });
+  }, []);
+  const showSystemNotification = useCallback(
+    (title: string, body: string, tag?: string) => {
+      if (typeof window === "undefined" || !("Notification" in window)) return;
+      if (window.Notification.permission !== "granted") return;
+      try {
+        new window.Notification(title, { body, tag });
+      } catch {
+        // Ignore runtime errors (e.g. blocked by browser policy).
+      }
+    },
+    [],
+  );
   const ensureAudioContext = useCallback(() => {
     if (typeof window === "undefined") return null;
     const Ctx = window.AudioContext || (window as any).webkitAudioContext;
@@ -675,6 +698,7 @@ export const Checklist = ({
     if (typeof window === "undefined") return;
     unlockAudioContext();
     playCompletionTone("double");
+    showSystemNotification("Отдых завершен", "Можно выполнять следующий подход.");
     const vibrate = window.navigator?.vibrate;
     if (typeof vibrate === "function") {
       try {
@@ -693,7 +717,7 @@ export const Checklist = ({
         vibrationSupportedRef.current = false;
       }
     }
-  }, [playCompletionTone, unlockAudioContext]);
+  }, [playCompletionTone, showSystemNotification, unlockAudioContext]);
   const restTimer = useRestTimer({ onComplete: triggerRestCompletionSignal });
   const executionTimer = useRestTimer();
   const {
@@ -768,6 +792,22 @@ export const Checklist = ({
   const [chatApplying, setChatApplying] = useState(false);
   const [chatCancelling, setChatCancelling] = useState(false);
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!restOverlay) {
+      restStartNotificationKeyRef.current = null;
+      return;
+    }
+    if (restOverlay.rest <= 0) return;
+    const key = `${plan?.id ?? "unknown"}-${restOverlay.templateExerciseId}-${restOverlay.setIndex}`;
+    if (restStartNotificationKeyRef.current === key) return;
+    restStartNotificationKeyRef.current = key;
+    showSystemNotification(
+      "Отдых начат",
+      `${restOverlay.exerciseName}: осталось ${restOverlay.rest} сек.`,
+      `rest-start-${key}`,
+    );
+  }, [plan?.id, restOverlay, showSystemNotification]);
 
   const { data: infoTrendData, isLoading: infoTrendLoading } = useSWR(
     auth.token && infoExercise && infoTab === "stats"
@@ -1145,6 +1185,7 @@ export const Checklist = ({
     folderId?: number,
   ) => {
     unlockAudioContext();
+    ensureNotificationPermission();
     const nextExists = hasUpcomingSets(exercise.template_exercise_id, set.set_index);
     const willCompleteExercise = exercise.sets.every((exerciseSet) => {
       if (exerciseSet.set_index === set.set_index) {
