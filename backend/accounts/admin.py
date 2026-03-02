@@ -45,7 +45,7 @@ class UserProfileAdmin(admin.ModelAdmin):
 
 @admin.register(UserFeedback)
 class UserFeedbackAdmin(admin.ModelAdmin):
-    list_display = ("id", "user", "created_at")
+    list_display = ("id", "user", "message", "created_at")
     search_fields = ("user__email", "message")
     readonly_fields = ("created_at",)
 
