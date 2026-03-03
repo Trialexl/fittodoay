@@ -12,8 +12,10 @@ services:
       DJANGO_DB_PASSWORD: ${DJANGO_DB_PASSWORD:-fittodoey}
       DJANGO_DB_HOST: db
       DJANGO_DB_PORT: 5432
+      DJANGO_MUSIC_ROOT: /music
     volumes:
       - backend_data:/data
+      - ./music:/music:ro
     ports:
       - "8000:8000"
     depends_on:

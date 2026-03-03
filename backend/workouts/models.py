@@ -1,10 +1,29 @@
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 from django.conf import settings
+from django.core.files.storage import FileSystemStorage
+from django.core.validators import FileExtensionValidator
 from django.db import models
 from pgvector.django import VectorField
 
 User = settings.AUTH_USER_MODEL
+ALLOWED_MUSIC_EXTENSIONS = ["mp3", "wav", "ogg", "m4a", "aac", "webm"]
+
+
+class MusicStorage(FileSystemStorage):
+    @property
+    def base_location(self):
+        return str(Path(settings.MUSIC_ROOT))
+
+    @property
+    def location(self):
+        return os.path.abspath(self.base_location)
+
+
+music_storage = MusicStorage()
 
 
 class TimestampedModel(models.Model):
@@ -198,5 +217,52 @@ class WorkoutWeighIn(TimestampedModel):
 
     def __str__(self):
         return f"{self.user} — {self.date} — {self.weight_kg} кг"
+
+
+class WorkoutMusicTrack(TimestampedModel):
+    owner = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="music_tracks",
+        null=True,
+        blank=True,
+        help_text="Пусто = системный трек для всех пользователей",
+    )
+    title = models.CharField(max_length=120, blank=True)
+    file = models.FileField(
+        upload_to="",
+        storage=music_storage,
+        validators=[FileExtensionValidator(allowed_extensions=ALLOWED_MUSIC_EXTENSIONS)],
+        unique=True,
+    )
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        verbose_name = "Музыкальный трек"
+        verbose_name_plural = "Музыкальные треки"
+        ordering = ["title", "file", "-created_at"]
+
+    def __str__(self):
+        return self.display_name
+
+    @property
+    def display_name(self):
+        if self.title:
+            return self.title
+        return Path(self.file.name).stem.replace("_", " ")
+
+    def save(self, *args, **kwargs):
+        if self.file and not self.title:
+            self.title = Path(self.file.name).stem.replace("_", " ")
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        stored_file = self.file
+        super().delete(*args, **kwargs)
+        if stored_file:
+            try:
+                stored_file.delete(save=False)
+            except Exception:
+                pass
 
 # Create your models here.

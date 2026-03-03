@@ -219,6 +219,14 @@ type ChatMessage = {
   proposal_status?: "none" | "pending" | "applied" | "cancelled";
 };
 
+type MusicTrack = {
+  id: number;
+  name: string;
+  filename: string;
+  is_mine?: boolean;
+  url: string;
+};
+
 type ApplyActionsResponse = {
   applied: Array<Record<string, any>>;
 };
@@ -348,6 +356,43 @@ const SaveApplyIcon = ({ className }: { className?: string }) => (
     aria-hidden="true"
   >
     <path d="M4 10.5 8.2 14.5 16 6.5" />
+  </svg>
+);
+
+const PlayIcon = ({ className }: { className?: string }) => (
+  <svg
+    viewBox="0 0 20 20"
+    className={clsx("h-4 w-4", className)}
+    fill="currentColor"
+    aria-hidden="true"
+  >
+    <path d="M6 4.8c0-.8.9-1.3 1.6-.9l7 4.2a1 1 0 0 1 0 1.8l-7 4.2A1 1 0 0 1 6 13.2V4.8Z" />
+  </svg>
+);
+
+const PauseIcon = ({ className }: { className?: string }) => (
+  <svg
+    viewBox="0 0 20 20"
+    className={clsx("h-4 w-4", className)}
+    fill="currentColor"
+    aria-hidden="true"
+  >
+    <path d="M6 4.5h3v11H6zM11 4.5h3v11h-3z" />
+  </svg>
+);
+
+const NextIcon = ({ className }: { className?: string }) => (
+  <svg
+    viewBox="0 0 20 20"
+    className={clsx("h-4 w-4", className)}
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.8}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M4.5 5.5 11.5 10l-7 4.5v-9ZM13.5 5.5v9" />
   </svg>
 );
 
@@ -620,6 +665,8 @@ export const Checklist = ({
 }) => {
   const auth = useAuth();
   const audioContextRef = useRef<AudioContext | null>(null);
+  const musicAudioRef = useRef<HTMLAudioElement | null>(null);
+  const musicUploadInputRef = useRef<HTMLInputElement | null>(null);
   const vibrationSupportedRef = useRef<boolean | null>(null);
   const notificationRequestedRef = useRef(false);
   const restStartNotificationKeyRef = useRef<string | null>(null);
@@ -791,6 +838,10 @@ export const Checklist = ({
   const [chatLoading, setChatLoading] = useState(false);
   const [chatApplying, setChatApplying] = useState(false);
   const [chatCancelling, setChatCancelling] = useState(false);
+  const [musicTrackIndex, setMusicTrackIndex] = useState(0);
+  const [musicPlaying, setMusicPlaying] = useState(false);
+  const [musicUploading, setMusicUploading] = useState(false);
+  const [musicError, setMusicError] = useState<string | null>(null);
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -824,6 +875,118 @@ export const Checklist = ({
       apiFetch<ChatMessage[]>(url, {
         token: token as string,
       }),
+  );
+  const { data: musicTracksData, mutate: refreshMusicTracks } = useSWR(
+    auth.token ? ["/api/workouts/music/tracks/", auth.token] : null,
+    ([url, token]) =>
+      apiFetch<{ items: MusicTrack[] }>(url as string, {
+        token: token as string,
+      }),
+  );
+  const musicTracks = musicTracksData?.items ?? [];
+  const currentMusicTrack = musicTracks[musicTrackIndex] ?? null;
+
+  useEffect(() => {
+    if (musicTrackIndex < musicTracks.length) return;
+    setMusicTrackIndex(0);
+  }, [musicTrackIndex, musicTracks.length]);
+
+  const playMusicTrack = useCallback(async () => {
+    const audio = musicAudioRef.current;
+    if (!audio || !currentMusicTrack) return;
+    unlockAudioContext();
+    if (audio.src !== currentMusicTrack.url) {
+      audio.src = currentMusicTrack.url;
+    }
+    try {
+      await audio.play();
+      setMusicPlaying(true);
+      setMusicError(null);
+    } catch {
+      setMusicPlaying(false);
+      setMusicError("Нажмите «Play», чтобы разрешить воспроизведение.");
+    }
+  }, [currentMusicTrack, unlockAudioContext]);
+
+  const pauseMusicTrack = useCallback(() => {
+    const audio = musicAudioRef.current;
+    if (!audio) return;
+    audio.pause();
+    setMusicPlaying(false);
+  }, []);
+
+  const playNextTrack = useCallback(() => {
+    if (!musicTracks.length) return;
+    setMusicTrackIndex((prev) => (prev + 1) % musicTracks.length);
+  }, [musicTracks.length]);
+
+  const uploadMusicTrack = useCallback(
+    async (file: File) => {
+      if (!auth.token) return;
+      setMusicUploading(true);
+      setMusicError(null);
+      try {
+        const form = new FormData();
+        form.append("file", file);
+        form.append("title", file.name.replace(/\.[^/.]+$/, ""));
+        await apiFetch<{ id: number }>("/api/workouts/music/tracks/upload/", {
+          method: "POST",
+          token: auth.token,
+          body: form,
+        });
+        await refreshMusicTracks();
+        if (!musicPlaying) {
+          setMusicTrackIndex(0);
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Не удалось загрузить трек";
+        setMusicError(message);
+      } finally {
+        setMusicUploading(false);
+      }
+    },
+    [auth.token, musicPlaying, refreshMusicTracks],
+  );
+
+  useEffect(() => {
+    if (!musicTracks.length) {
+      pauseMusicTrack();
+      return;
+    }
+    if (!musicPlaying) return;
+    void playMusicTrack();
+  }, [musicPlaying, musicTrackIndex, musicTracks.length, playMusicTrack, pauseMusicTrack]);
+
+  useEffect(() => {
+    const audio = musicAudioRef.current;
+    if (!audio) return;
+    const handleEnded = () => {
+      if (!musicTracks.length) {
+        setMusicPlaying(false);
+        return;
+      }
+      setMusicTrackIndex((prev) => (prev + 1) % musicTracks.length);
+    };
+    const handleError = () => {
+      setMusicError("Не удалось воспроизвести трек.");
+      setMusicPlaying(false);
+    };
+    audio.addEventListener("ended", handleEnded);
+    audio.addEventListener("error", handleError);
+    return () => {
+      audio.removeEventListener("ended", handleEnded);
+      audio.removeEventListener("error", handleError);
+    };
+  }, [musicTracks.length]);
+
+  useEffect(
+    () => () => {
+      const audio = musicAudioRef.current;
+      if (!audio) return;
+      audio.pause();
+      audio.src = "";
+    },
+    [],
   );
 
   const latestPendingProposal = useMemo(
@@ -2132,6 +2295,70 @@ export const Checklist = ({
         ) : weighInError ? (
           <p className="mt-2 text-xs text-red-500">{weighInError}</p>
         ) : null}
+        <div className="mt-3 rounded-xl border border-slate-200/80 bg-slate-50/70 p-2.5 dark:border-slate-700 dark:bg-slate-800/40">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                if (!musicTracks.length) return;
+                if (musicPlaying) {
+                  pauseMusicTrack();
+                } else {
+                  void playMusicTrack();
+                }
+              }}
+              disabled={!musicTracks.length}
+              className="h-9 min-w-[92px] px-3"
+              title={musicPlaying ? "Пауза" : "Воспроизвести"}
+              aria-label={musicPlaying ? "Пауза" : "Воспроизвести"}
+            >
+              {musicPlaying ? <PauseIcon /> : <PlayIcon />}
+              {musicPlaying ? "Pause" : "Play"}
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={playNextTrack}
+              disabled={musicTracks.length < 2}
+              className="h-9 px-3"
+              title="Следующий трек"
+              aria-label="Следующий трек"
+            >
+              <NextIcon />
+              Next
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => musicUploadInputRef.current?.click()}
+              disabled={musicUploading}
+              className="h-9 px-3"
+              title="Загрузить трек"
+              aria-label="Загрузить трек"
+            >
+              {musicUploading ? "..." : "Upload"}
+            </Button>
+            <p className="min-w-0 flex-1 truncate text-sm text-slate-600 dark:text-slate-200">
+              {currentMusicTrack ? `Сейчас: ${currentMusicTrack.name}` : "Музыка: загрузите трек кнопкой Upload"}
+            </p>
+          </div>
+          {musicError ? <p className="mt-2 text-xs text-amber-600 dark:text-amber-300">{musicError}</p> : null}
+        </div>
+        <input
+          ref={musicUploadInputRef}
+          type="file"
+          accept=".mp3,.wav,.ogg,.m4a,.aac,.webm,audio/*"
+          className="hidden"
+          onChange={(event) => {
+            const selected = event.target.files?.[0];
+            if (selected) {
+              void uploadMusicTrack(selected);
+            }
+            event.currentTarget.value = "";
+          }}
+        />
+        <audio ref={musicAudioRef} preload="metadata" />
       </section>
       <div className="space-y-4 sm:space-y-5">
         {plan.folders.map((folder) => {

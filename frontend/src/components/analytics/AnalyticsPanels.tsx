@@ -104,6 +104,22 @@ export const AnalyticsPanels = () => {
     ([url]) => apiFetch<ChatMessage[]>(url as string, { token: token ?? undefined }),
   );
   const bodyWeightSeries = (bodyWeight?.items ?? []).filter((item) => item.weight_kg !== null);
+  const bodyWeightAxisDomain = useMemo<[number, number] | null>(() => {
+    if (!bodyWeightSeries.length) return null;
+    const values = bodyWeightSeries
+      .map((item) => Number(item.weight_kg))
+      .filter((value) => Number.isFinite(value));
+    if (!values.length) return null;
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    if (min === max) {
+      const pad = Math.max(1, Number((min * 0.02).toFixed(1)));
+      return [Number((min - pad).toFixed(1)), Number((max + pad).toFixed(1))];
+    }
+    const spread = max - min;
+    const pad = Math.max(0.5, Number((spread * 0.15).toFixed(1)));
+    return [Number((min - pad).toFixed(1)), Number((max + pad).toFixed(1))];
+  }, [bodyWeightSeries]);
   const dailyTopFive = useMemo(
     () =>
       [...(daily?.items ?? [])]
@@ -320,7 +336,11 @@ export const AnalyticsPanels = () => {
               <LineChart data={bodyWeightSeries} margin={{ top: 10, right: 16, bottom: 8, left: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="date" tick={{ fontSize: 12 }} />
-                <YAxis tick={{ fontSize: 12 }} />
+                <YAxis
+                  tick={{ fontSize: 12 }}
+                  domain={bodyWeightAxisDomain ?? ["auto", "auto"]}
+                  allowDataOverflow
+                />
                 <Tooltip content={<BodyWeightTooltip />} />
                 <Line
                   type="monotone"

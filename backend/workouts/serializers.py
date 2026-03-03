@@ -5,7 +5,7 @@ from decimal import Decimal
 
 from rest_framework import serializers
 
-from workouts.models import WorkoutDay, WorkoutSetLog, WorkoutWeighIn
+from workouts.models import WorkoutDay, WorkoutMusicTrack, WorkoutSetLog, WorkoutWeighIn
 
 
 class WorkoutSetLogSerializer(serializers.ModelSerializer):
@@ -103,3 +103,16 @@ class RecommendationItemSerializer(serializers.Serializer):
 class RecommendationApplySerializer(serializers.Serializer):
     date = serializers.DateField(required=False)
     items = RecommendationItemSerializer(many=True)
+
+
+class WorkoutMusicTrackUploadSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = WorkoutMusicTrack
+        fields = ["id", "title", "file", "is_active", "created_at", "updated_at"]
+        read_only_fields = ["id", "created_at", "updated_at", "is_active"]
+
+    def validate_file(self, value):
+        max_size = 20 * 1024 * 1024
+        if value.size > max_size:
+            raise serializers.ValidationError("Файл слишком большой (максимум 20MB).")
+        return value
