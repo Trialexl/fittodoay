@@ -3,6 +3,7 @@ from rest_framework.routers import DefaultRouter
 
 from workouts.views import (
     ApplyWorkoutRecommendationsView,
+    WorkoutMusicTrackDetailView,
     WorkoutPlanView,
     WorkoutRecommendationsView,
     WorkoutMusicTrackFileView,
@@ -20,6 +21,7 @@ urlpatterns = [
     path("weigh-in/", WorkoutWeighInView.as_view(), name="workout-weigh-in"),
     path("music/tracks/", WorkoutMusicTracksView.as_view(), name="workout-music-tracks"),
     path("music/tracks/upload/", WorkoutMusicTrackUploadView.as_view(), name="workout-music-track-upload"),
+    path("music/tracks/<int:track_id>/", WorkoutMusicTrackDetailView.as_view(), name="workout-music-track-detail"),
     path("music/tracks/<int:track_id>/file/", WorkoutMusicTrackFileView.as_view(), name="workout-music-track-file"),
     path("recommendations/", WorkoutRecommendationsView.as_view(), name="workout-recommendations"),
     path(

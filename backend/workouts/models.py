@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from uuid import uuid4
 
 from django.conf import settings
 from django.core.files.storage import FileSystemStorage
 from django.core.validators import FileExtensionValidator
 from django.db import models
+from django.utils.text import slugify
 from pgvector.django import VectorField
 
 User = settings.AUTH_USER_MODEL
@@ -24,6 +26,15 @@ class MusicStorage(FileSystemStorage):
 
 
 music_storage = MusicStorage()
+
+
+def music_upload_to(instance: "WorkoutMusicTrack", filename: str) -> str:
+    source = Path(filename)
+    ext = source.suffix.lower()
+    stem = slugify(source.stem) or "track"
+    suffix = uuid4().hex[:8]
+    owner_folder = f"user_{instance.owner_id}" if instance.owner_id else "system"
+    return f"{owner_folder}/{stem}-{suffix}{ext}"
 
 
 class TimestampedModel(models.Model):
@@ -228,12 +239,12 @@ class WorkoutMusicTrack(TimestampedModel):
         blank=True,
         help_text="Пусто = системный трек для всех пользователей",
     )
+    artist = models.CharField(max_length=120, blank=True, default="")
     title = models.CharField(max_length=120, blank=True)
     file = models.FileField(
-        upload_to="",
+        upload_to=music_upload_to,
         storage=music_storage,
         validators=[FileExtensionValidator(allowed_extensions=ALLOWED_MUSIC_EXTENSIONS)],
-        unique=True,
     )
     is_active = models.BooleanField(default=True)
 
@@ -247,6 +258,10 @@ class WorkoutMusicTrack(TimestampedModel):
 
     @property
     def display_name(self):
+        if self.artist and self.title:
+            return f"{self.artist} — {self.title}"
+        if self.artist:
+            return self.artist
         if self.title:
             return self.title
         return Path(self.file.name).stem.replace("_", " ")

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import clsx from "clsx";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import useSWR from "swr";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -222,6 +222,8 @@ type ChatMessage = {
 type MusicTrack = {
   id: number;
   name: string;
+  title?: string;
+  artist?: string;
   filename: string;
   is_mine?: boolean;
   url: string;
@@ -235,12 +237,57 @@ const REST_OVERLAY_STORAGE_KEY = "fittodoay:workout:rest-overlay:v1";
 const EXEC_OVERLAY_STORAGE_KEY = "fittodoay:workout:exec-overlay:v1";
 const SHOW_LEGACY_RECOMMENDATIONS = false;
 const OFFLINE_WEIGH_IN_STORAGE_KEY = "fittodoay:workout:offline-weigh-ins:v1";
+const MUSIC_PLAYER_STATE_STORAGE_KEY = "fittodoay:workout:music-player:v1";
+const MUSIC_QUEUE_STORAGE_KEY = "fittodoay:workout:music-queue:v1";
 
 type OfflineWeighInEntry = {
   date: string;
   weight_kg: number;
   note?: string | null;
   created_at: string;
+};
+
+type PersistedMusicState = {
+  trackId?: number;
+  time?: number;
+};
+
+type PersistedMusicQueue = {
+  queue: number[];
+};
+
+type MusicUploadStatus = "queued" | "uploading" | "done" | "error";
+
+type MusicUploadTask = {
+  id: string;
+  name: string;
+  status: MusicUploadStatus;
+  message?: string;
+};
+
+type FileSystemEntryLike = {
+  isFile: boolean;
+  isDirectory: boolean;
+  name: string;
+};
+
+type FileSystemFileEntryLike = FileSystemEntryLike & {
+  file: (callback: (file: File) => void, errorCallback?: (error: unknown) => void) => void;
+};
+
+type FileSystemDirectoryReaderLike = {
+  readEntries: (
+    successCallback: (entries: FileSystemEntryLike[]) => void,
+    errorCallback?: (error: unknown) => void,
+  ) => void;
+};
+
+type FileSystemDirectoryEntryLike = FileSystemEntryLike & {
+  createReader: () => FileSystemDirectoryReaderLike;
+};
+
+type DataTransferItemWithEntry = DataTransferItem & {
+  webkitGetAsEntry?: () => FileSystemEntryLike | null;
 };
 
 const readOfflineWeighIns = (): OfflineWeighInEntry[] => {
@@ -265,6 +312,43 @@ const enqueueOfflineWeighIn = (entry: OfflineWeighInEntry) => {
   writeOfflineWeighIns([...rest, entry]);
 };
 
+const readPersistedMusicState = (): PersistedMusicState => {
+  if (typeof window === "undefined") return {};
+  const raw = window.localStorage.getItem(MUSIC_PLAYER_STATE_STORAGE_KEY);
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw) as PersistedMusicState;
+    return {
+      trackId: Number.isFinite(Number(parsed.trackId)) ? Number(parsed.trackId) : undefined,
+      time: Number.isFinite(Number(parsed.time)) ? Number(parsed.time) : undefined,
+    };
+  } catch {
+    return {};
+  }
+};
+
+const writePersistedMusicState = (state: PersistedMusicState) => {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(MUSIC_PLAYER_STATE_STORAGE_KEY, JSON.stringify(state));
+};
+
+const readPersistedMusicQueue = (): number[] => {
+  if (typeof window === "undefined") return [];
+  const raw = window.localStorage.getItem(MUSIC_QUEUE_STORAGE_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as PersistedMusicQueue;
+    return Array.isArray(parsed.queue) ? parsed.queue.filter((id) => Number.isInteger(id)) : [];
+  } catch {
+    return [];
+  }
+};
+
+const writePersistedMusicQueue = (queue: number[]) => {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(MUSIC_QUEUE_STORAGE_KEY, JSON.stringify({ queue }));
+};
+
 const parseTargetMuscles = (value?: string | null) =>
   value
     ?.split(/[\/,]/)
@@ -281,6 +365,87 @@ const buildExerciseImageUrl = (path: string) => {
     .map((segment) => encodeURIComponent(segment))
     .join("/");
   return `${STATIC_BASE_URL}/static/${encodedPath}`;
+};
+const buildMusicTrackUrl = (path: string, token?: string | null) => {
+  const raw = path.startsWith("http://") || path.startsWith("https://")
+    ? path
+    : `${STATIC_BASE_URL}${path.startsWith("/") ? path : `/${path}`}`;
+  if (!token) return raw;
+  const url = new URL(raw, STATIC_BASE_URL);
+  url.searchParams.set("token", token);
+  return url.toString();
+};
+
+const formatAudioTime = (seconds: number) => {
+  if (!Number.isFinite(seconds) || seconds <= 0) return "0:00";
+  const total = Math.floor(seconds);
+  const mins = Math.floor(total / 60);
+  const secs = total % 60;
+  return `${mins}:${String(secs).padStart(2, "0")}`;
+};
+
+const isAllowedAudioFile = (file: File) => {
+  const name = file.name.toLowerCase();
+  return /\.(mp3|wav|ogg|m4a|aac|webm)$/.test(name);
+};
+
+const readFileFromEntry = (entry: FileSystemFileEntryLike): Promise<File> =>
+  new Promise((resolve, reject) => {
+    entry.file(resolve, reject);
+  });
+
+const readDirectoryEntries = (directory: FileSystemDirectoryEntryLike): Promise<FileSystemEntryLike[]> =>
+  new Promise((resolve, reject) => {
+    const reader = directory.createReader();
+    const allEntries: FileSystemEntryLike[] = [];
+    const readChunk = () => {
+      reader.readEntries(
+        (entries) => {
+          if (!entries.length) {
+            resolve(allEntries);
+            return;
+          }
+          allEntries.push(...entries);
+          readChunk();
+        },
+        (error) => reject(error),
+      );
+    };
+    readChunk();
+  });
+
+const collectFilesFromEntry = async (entry: FileSystemEntryLike): Promise<File[]> => {
+  if (entry.isFile) {
+    try {
+      const file = await readFileFromEntry(entry as FileSystemFileEntryLike);
+      return [file];
+    } catch {
+      return [];
+    }
+  }
+  if (!entry.isDirectory) return [];
+  try {
+    const children = await readDirectoryEntries(entry as FileSystemDirectoryEntryLike);
+    const nested = await Promise.all(children.map((child) => collectFilesFromEntry(child)));
+    return nested.flat();
+  } catch {
+    return [];
+  }
+};
+
+const collectDroppedFiles = async (event: DragEvent<HTMLElement>): Promise<File[]> => {
+  const items = Array.from(event.dataTransfer.items ?? []) as DataTransferItemWithEntry[];
+  if (!items.length) {
+    return Array.from(event.dataTransfer.files ?? []);
+  }
+  const entries = items
+    .map((item) => item.webkitGetAsEntry?.())
+    .filter(Boolean) as FileSystemEntryLike[];
+  if (!entries.length) {
+    return Array.from(event.dataTransfer.files ?? []);
+  }
+  const nested = await Promise.all(entries.map((entry) => collectFilesFromEntry(entry)));
+  return nested.flat();
 };
 
 const keyForSet = (templateExerciseId: number, setIndex: number) =>
@@ -393,6 +558,21 @@ const NextIcon = ({ className }: { className?: string }) => (
     aria-hidden="true"
   >
     <path d="M4.5 5.5 11.5 10l-7 4.5v-9ZM13.5 5.5v9" />
+  </svg>
+);
+
+const PlaylistIcon = ({ className }: { className?: string }) => (
+  <svg
+    viewBox="0 0 20 20"
+    className={clsx("h-4 w-4", className)}
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.8}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M4 6h9M4 10h9M4 14h6M15 5v8m0 0-2-2m2 2 2-2" />
   </svg>
 );
 
@@ -667,6 +847,13 @@ export const Checklist = ({
   const audioContextRef = useRef<AudioContext | null>(null);
   const musicAudioRef = useRef<HTMLAudioElement | null>(null);
   const musicUploadInputRef = useRef<HTMLInputElement | null>(null);
+  const musicUploadFolderInputRef = useRef<HTMLInputElement | null>(null);
+  const musicUploadQueueRef = useRef<Array<{ id: string; file: File }>>([]);
+  const musicUploadWorkerRef = useRef(false);
+  const musicQueueRef = useRef<number[]>([]);
+  const musicTrackUrlRef = useRef<string>("");
+  const musicLoadingTrackUrlRef = useRef<string>("");
+  const musicFailedTrackIdsRef = useRef<Set<number>>(new Set());
   const vibrationSupportedRef = useRef<boolean | null>(null);
   const notificationRequestedRef = useRef(false);
   const restStartNotificationKeyRef = useRef<string | null>(null);
@@ -841,6 +1028,14 @@ export const Checklist = ({
   const [musicTrackIndex, setMusicTrackIndex] = useState(0);
   const [musicPlaying, setMusicPlaying] = useState(false);
   const [musicUploading, setMusicUploading] = useState(false);
+  const [musicQueue, setMusicQueue] = useState<number[]>([]);
+  const [musicDeletingTrackId, setMusicDeletingTrackId] = useState<number | null>(null);
+  const [musicPlaylistOpen, setMusicPlaylistOpen] = useState(false);
+  const [musicCurrentTime, setMusicCurrentTime] = useState(0);
+  const [musicDuration, setMusicDuration] = useState(0);
+  const [musicSeeking, setMusicSeeking] = useState(false);
+  const [musicDropActive, setMusicDropActive] = useState(false);
+  const [musicUploadTasks, setMusicUploadTasks] = useState<MusicUploadTask[]>([]);
   const [musicError, setMusicError] = useState<string | null>(null);
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -882,21 +1077,94 @@ export const Checklist = ({
       apiFetch<{ items: MusicTrack[] }>(url as string, {
         token: token as string,
       }),
+    {
+      revalidateOnFocus: false,
+      revalidateOnReconnect: false,
+      keepPreviousData: true,
+      dedupingInterval: 60_000,
+    },
   );
-  const musicTracks = musicTracksData?.items ?? [];
+  const musicTracks = useMemo(() => musicTracksData?.items ?? [], [musicTracksData?.items]);
+  const musicTracksSignature = useMemo(() => musicTracks.map((track) => track.id).join(","), [musicTracks]);
   const currentMusicTrack = musicTracks[musicTrackIndex] ?? null;
+
+  useEffect(() => {
+    const initialQueue = readPersistedMusicQueue();
+    musicQueueRef.current = initialQueue;
+    setMusicQueue(initialQueue);
+  }, []);
+
+  useEffect(() => {
+    musicQueueRef.current = musicQueue;
+  }, [musicQueue]);
+
+  useEffect(() => {
+    const allowedIds = new Set(musicTracks.map((track) => track.id));
+    setMusicQueue((prev) => {
+      const filtered = prev.filter((id) => allowedIds.has(id));
+      if (filtered.length === prev.length) return prev;
+      musicQueueRef.current = filtered;
+      writePersistedMusicQueue(filtered);
+      return filtered;
+    });
+  }, [musicTracksSignature, musicTracks]);
+
+  useEffect(() => {
+    if (!musicTracks.length) return;
+    const persisted = readPersistedMusicState();
+    if (!persisted.trackId) return;
+    const idx = musicTracks.findIndex((track) => track.id === persisted.trackId);
+    if (idx < 0) return;
+    setMusicTrackIndex((prev) => (prev === idx ? prev : idx));
+  }, [musicTracksSignature, musicTracks]);
 
   useEffect(() => {
     if (musicTrackIndex < musicTracks.length) return;
     setMusicTrackIndex(0);
   }, [musicTrackIndex, musicTracks.length]);
 
+  useEffect(() => {
+    setMusicCurrentTime(0);
+    setMusicDuration(0);
+    musicLoadingTrackUrlRef.current = "";
+    if (currentMusicTrack) {
+      const persisted = readPersistedMusicState();
+      writePersistedMusicState({
+        trackId: currentMusicTrack.id,
+        time: persisted.trackId === currentMusicTrack.id ? persisted.time ?? 0 : 0,
+      });
+    }
+  }, [currentMusicTrack]);
+
+  useEffect(() => {
+    musicFailedTrackIdsRef.current.clear();
+  }, [musicTracksSignature]);
+
+  const resetAudioSource = useCallback(() => {
+    const audio = musicAudioRef.current;
+    if (!audio) return;
+    audio.pause();
+    audio.removeAttribute("src");
+    audio.load();
+    musicTrackUrlRef.current = "";
+    musicLoadingTrackUrlRef.current = "";
+  }, []);
+
   const playMusicTrack = useCallback(async () => {
     const audio = musicAudioRef.current;
     if (!audio || !currentMusicTrack) return;
     unlockAudioContext();
-    if (audio.src !== currentMusicTrack.url) {
-      audio.src = currentMusicTrack.url;
+    const trackUrl = buildMusicTrackUrl(currentMusicTrack.url, auth.token);
+    const sourceChanged = musicTrackUrlRef.current !== trackUrl;
+    if (sourceChanged) {
+      audio.pause();
+      audio.src = trackUrl;
+      musicTrackUrlRef.current = trackUrl;
+      musicLoadingTrackUrlRef.current = trackUrl;
+    } else if (musicLoadingTrackUrlRef.current === trackUrl) {
+      return;
+    } else if (!audio.paused) {
+      return;
     }
     try {
       await audio.play();
@@ -906,7 +1174,7 @@ export const Checklist = ({
       setMusicPlaying(false);
       setMusicError("Нажмите «Play», чтобы разрешить воспроизведение.");
     }
-  }, [currentMusicTrack, unlockAudioContext]);
+  }, [auth.token, currentMusicTrack, unlockAudioContext]);
 
   const pauseMusicTrack = useCallback(() => {
     const audio = musicAudioRef.current;
@@ -915,37 +1183,222 @@ export const Checklist = ({
     setMusicPlaying(false);
   }, []);
 
-  const playNextTrack = useCallback(() => {
-    if (!musicTracks.length) return;
-    setMusicTrackIndex((prev) => (prev + 1) % musicTracks.length);
-  }, [musicTracks.length]);
+  const queueTrackNext = useCallback(
+    (trackId: number) => {
+      if (!musicTracks.some((track) => track.id === trackId)) return;
+      setMusicQueue((prev) => {
+        const nextQueue = [trackId, ...prev.filter((id) => id !== trackId)];
+        musicQueueRef.current = nextQueue;
+        writePersistedMusicQueue(nextQueue);
+        return nextQueue;
+      });
+    },
+    [musicTracks],
+  );
 
-  const uploadMusicTrack = useCallback(
-    async (file: File) => {
-      if (!auth.token) return;
-      setMusicUploading(true);
+  const queueTrackLater = useCallback(
+    (trackId: number) => {
+      if (!musicTracks.some((track) => track.id === trackId)) return;
+      setMusicQueue((prev) => {
+        if (prev.includes(trackId)) return prev;
+        const nextQueue = [...prev, trackId];
+        musicQueueRef.current = nextQueue;
+        writePersistedMusicQueue(nextQueue);
+        return nextQueue;
+      });
+    },
+    [musicTracks],
+  );
+
+  const clearMusicQueue = useCallback(() => {
+    musicQueueRef.current = [];
+    writePersistedMusicQueue([]);
+    setMusicQueue([]);
+  }, []);
+
+  const popQueuedTrackId = useCallback(() => {
+    const queue = musicQueueRef.current;
+    if (!queue.length) return null;
+    const [nextId, ...rest] = queue;
+    musicQueueRef.current = rest;
+    writePersistedMusicQueue(rest);
+    setMusicQueue(rest);
+    return nextId;
+  }, []);
+
+  const pickNextTrackIndex = useCallback(() => {
+    if (!musicTracks.length) return null;
+    while (musicQueueRef.current.length) {
+      const nextId = popQueuedTrackId();
+      if (nextId === null) break;
+      const queuedIdx = musicTracks.findIndex((track) => track.id === nextId);
+      if (queuedIdx >= 0) return queuedIdx;
+    }
+    return (musicTrackIndex + 1) % musicTracks.length;
+  }, [musicTrackIndex, musicTracks, popQueuedTrackId]);
+
+  const playNextTrack = useCallback(() => {
+    const nextIdx = pickNextTrackIndex();
+    if (nextIdx === null) return;
+    setMusicPlaying(true);
+    setMusicTrackIndex(nextIdx);
+  }, [pickNextTrackIndex]);
+
+  const selectMusicTrack = useCallback(
+    (index: number, options?: { play?: boolean; close?: boolean }) => {
+      if (!musicTracks.length || index < 0 || index >= musicTracks.length) return;
+      musicFailedTrackIdsRef.current.clear();
+      setMusicTrackIndex(index);
+      if (options?.play) {
+        setMusicPlaying(true);
+      }
+      if (options?.close ?? true) setMusicPlaylistOpen(false);
+    },
+    [musicTracks.length],
+  );
+
+  const handleMusicSeekChange = useCallback((nextValue: number) => {
+    setMusicCurrentTime(nextValue);
+  }, []);
+
+  const applyMusicSeek = useCallback(() => {
+    const audio = musicAudioRef.current;
+    if (!audio) return;
+    audio.currentTime = musicCurrentTime;
+    if (currentMusicTrack) {
+      writePersistedMusicState({ trackId: currentMusicTrack.id, time: musicCurrentTime });
+    }
+    setMusicSeeking(false);
+  }, [currentMusicTrack, musicCurrentTime]);
+
+  const processMusicUploadQueue = useCallback(async () => {
+    if (!auth.token) return;
+    if (musicUploadWorkerRef.current) return;
+    if (!musicUploadQueueRef.current.length) return;
+    musicUploadWorkerRef.current = true;
+    setMusicUploading(true);
+    setMusicError(null);
+    try {
+      while (musicUploadQueueRef.current.length) {
+        const batch = musicUploadQueueRef.current.splice(0, 5);
+        setMusicUploadTasks((prev) =>
+          prev.map((item) =>
+            batch.some((queued) => queued.id === item.id) ? { ...item, status: "uploading", message: undefined } : item,
+          ),
+        );
+        const form = new FormData();
+        batch.forEach((item) => {
+          form.append("files", item.file);
+        });
+        try {
+          const response = await apiFetch<{ items: MusicTrack[] }>("/api/workouts/music/tracks/upload/", {
+            method: "POST",
+            token: auth.token,
+            body: form,
+          });
+          const createdCount = Array.isArray(response.items) ? response.items.length : 0;
+          setMusicUploadTasks((prev) =>
+            prev.map((item) =>
+              batch.some((queued) => queued.id === item.id)
+                ? { ...item, status: "done", message: createdCount ? "Загружен" : "Пропущен" }
+                : item,
+            ),
+          );
+          await refreshMusicTracks();
+          if (!musicPlaying && musicTracks.length === 0) {
+            setMusicTrackIndex(0);
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Не удалось загрузить треки";
+          setMusicError(message);
+          setMusicUploadTasks((prev) =>
+            prev.map((item) =>
+              batch.some((queued) => queued.id === item.id) ? { ...item, status: "error", message } : item,
+            ),
+          );
+        }
+      }
+    } finally {
+      setMusicUploading(false);
+      musicUploadWorkerRef.current = false;
+    }
+  }, [auth.token, musicPlaying, musicTracks.length, refreshMusicTracks]);
+
+  const enqueueMusicUploads = useCallback(
+    (files: File[]) => {
+      const allowed = files.filter((file) => isAllowedAudioFile(file));
+      if (!allowed.length) {
+        setMusicError("Поддерживаются только аудио-файлы: mp3, wav, ogg, m4a, aac, webm.");
+        return;
+      }
+      const queued = allowed.map((file) => ({ id: crypto.randomUUID(), file }));
+      musicUploadQueueRef.current.push(...queued);
+      setMusicUploadTasks((prev) => [
+        ...prev,
+        ...queued.map((item) => ({
+          id: item.id,
+          name: item.file.webkitRelativePath || item.file.name,
+          status: "queued" as MusicUploadStatus,
+        })),
+      ]);
+      void processMusicUploadQueue();
+    },
+    [processMusicUploadQueue],
+  );
+
+  const handleMusicFilesSelected = useCallback(
+    (fileList: FileList | null) => {
+      if (!fileList?.length) return;
+      enqueueMusicUploads(Array.from(fileList));
+    },
+    [enqueueMusicUploads],
+  );
+
+  const handleMusicDrop = useCallback(
+    async (event: DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+      setMusicDropActive(false);
+      const files = await collectDroppedFiles(event);
+      if (!files.length) return;
+      enqueueMusicUploads(files);
+    },
+    [enqueueMusicUploads],
+  );
+
+  const clearFinishedMusicUploads = useCallback(() => {
+    setMusicUploadTasks((prev) => prev.filter((task) => task.status === "queued" || task.status === "uploading"));
+  }, []);
+
+  const deleteMusicTrack = useCallback(
+    async (track: MusicTrack) => {
+      if (!auth.token || !track.is_mine) return;
+      setMusicDeletingTrackId(track.id);
       setMusicError(null);
       try {
-        const form = new FormData();
-        form.append("file", file);
-        form.append("title", file.name.replace(/\.[^/.]+$/, ""));
-        await apiFetch<{ id: number }>("/api/workouts/music/tracks/upload/", {
-          method: "POST",
+        await apiFetch(`/api/workouts/music/tracks/${track.id}/`, {
+          method: "DELETE",
           token: auth.token,
-          body: form,
         });
-        await refreshMusicTracks();
-        if (!musicPlaying) {
-          setMusicTrackIndex(0);
+        setMusicQueue((prev) => {
+          const nextQueue = prev.filter((id) => id !== track.id);
+          musicQueueRef.current = nextQueue;
+          writePersistedMusicQueue(nextQueue);
+          return nextQueue;
+        });
+        if (currentMusicTrack?.id === track.id) {
+          resetAudioSource();
+          setMusicPlaying(false);
         }
+        await refreshMusicTracks();
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Не удалось загрузить трек";
+        const message = error instanceof Error ? error.message : "Не удалось удалить трек";
         setMusicError(message);
       } finally {
-        setMusicUploading(false);
+        setMusicDeletingTrackId(null);
       }
     },
-    [auth.token, musicPlaying, refreshMusicTracks],
+    [auth.token, currentMusicTrack?.id, refreshMusicTracks, resetAudioSource],
   );
 
   useEffect(() => {
@@ -957,36 +1410,96 @@ export const Checklist = ({
     void playMusicTrack();
   }, [musicPlaying, musicTrackIndex, musicTracks.length, playMusicTrack, pauseMusicTrack]);
 
+  const skipToNextTrack = useCallback(() => {
+    const nextIdx = pickNextTrackIndex();
+    if (nextIdx === null) {
+      setMusicPlaying(false);
+      return;
+    }
+    setMusicTrackIndex(nextIdx);
+  }, [pickNextTrackIndex]);
+
   useEffect(() => {
     const audio = musicAudioRef.current;
     if (!audio) return;
+    const handleLoadedMeta = () => {
+      const duration = Number.isFinite(audio.duration) ? audio.duration : 0;
+      setMusicDuration(duration);
+      musicLoadingTrackUrlRef.current = "";
+      const persisted = readPersistedMusicState();
+      if (!currentMusicTrack || persisted.trackId !== currentMusicTrack.id) return;
+      const safeTime = Math.min(Math.max(persisted.time ?? 0, 0), Math.max(duration - 1, 0));
+      if (safeTime > 0) {
+        audio.currentTime = safeTime;
+        setMusicCurrentTime(safeTime);
+      }
+    };
+    const handleTimeUpdate = () => {
+      if (musicSeeking) return;
+      const now = Number.isFinite(audio.currentTime) ? audio.currentTime : 0;
+      setMusicCurrentTime(now);
+      if (currentMusicTrack) {
+        writePersistedMusicState({ trackId: currentMusicTrack.id, time: now });
+      }
+    };
+    const handlePause = () => setMusicPlaying(false);
+    const handlePlay = () => setMusicPlaying(true);
     const handleEnded = () => {
       if (!musicTracks.length) {
         setMusicPlaying(false);
         return;
       }
-      setMusicTrackIndex((prev) => (prev + 1) % musicTracks.length);
+      if (currentMusicTrack) {
+        writePersistedMusicState({ trackId: currentMusicTrack.id, time: 0 });
+      }
+      setMusicCurrentTime(0);
+      skipToNextTrack();
     };
     const handleError = () => {
-      setMusicError("Не удалось воспроизвести трек.");
+      resetAudioSource();
+      if (!currentMusicTrack) {
+        setMusicError("Не удалось воспроизвести трек.");
+        setMusicPlaying(false);
+        return;
+      }
+      musicFailedTrackIdsRef.current.add(currentMusicTrack.id);
+      setMusicError(`Не удалось воспроизвести: ${currentMusicTrack.name}. Нажмите Next для следующего трека.`);
       setMusicPlaying(false);
     };
+    const handleAbort = () => {
+      musicLoadingTrackUrlRef.current = "";
+    };
+    const handleStalled = () => {
+      resetAudioSource();
+      if (!currentMusicTrack) return;
+      setMusicError(`Трек ${currentMusicTrack.name} загружается слишком долго. Нажмите Next или выберите другой трек.`);
+      setMusicPlaying(false);
+    };
+    audio.addEventListener("loadedmetadata", handleLoadedMeta);
+    audio.addEventListener("timeupdate", handleTimeUpdate);
+    audio.addEventListener("pause", handlePause);
+    audio.addEventListener("play", handlePlay);
     audio.addEventListener("ended", handleEnded);
     audio.addEventListener("error", handleError);
+    audio.addEventListener("abort", handleAbort);
+    audio.addEventListener("stalled", handleStalled);
     return () => {
+      audio.removeEventListener("loadedmetadata", handleLoadedMeta);
+      audio.removeEventListener("timeupdate", handleTimeUpdate);
+      audio.removeEventListener("pause", handlePause);
+      audio.removeEventListener("play", handlePlay);
       audio.removeEventListener("ended", handleEnded);
       audio.removeEventListener("error", handleError);
+      audio.removeEventListener("abort", handleAbort);
+      audio.removeEventListener("stalled", handleStalled);
     };
-  }, [musicTracks.length]);
+  }, [currentMusicTrack, musicSeeking, musicTracks.length, resetAudioSource, skipToNextTrack]);
 
   useEffect(
     () => () => {
-      const audio = musicAudioRef.current;
-      if (!audio) return;
-      audio.pause();
-      audio.src = "";
+      resetAudioSource();
     },
-    [],
+    [resetAudioSource],
   );
 
   const latestPendingProposal = useMemo(
@@ -2295,6 +2808,10 @@ export const Checklist = ({
         ) : weighInError ? (
           <p className="mt-2 text-xs text-red-500">{weighInError}</p>
         ) : null}
+        <audio ref={musicAudioRef} preload="metadata" />
+      </section>
+      <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-700 dark:bg-slate-900/70">
+        <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Музыка</h3>
         <div className="mt-3 rounded-xl border border-slate-200/80 bg-slate-50/70 p-2.5 dark:border-slate-700 dark:bg-slate-800/40">
           <div className="flex flex-wrap items-center gap-2">
             <Button
@@ -2331,34 +2848,48 @@ export const Checklist = ({
             <Button
               type="button"
               variant="secondary"
-              onClick={() => musicUploadInputRef.current?.click()}
-              disabled={musicUploading}
+              onClick={() => setMusicPlaylistOpen(true)}
               className="h-9 px-3"
-              title="Загрузить трек"
-              aria-label="Загрузить трек"
+              title="Открыть плейлист"
+              aria-label="Открыть плейлист"
             >
-              {musicUploading ? "..." : "Upload"}
+              <PlaylistIcon />
+              Playlist
             </Button>
-            <p className="min-w-0 flex-1 truncate text-sm text-slate-600 dark:text-slate-200">
-              {currentMusicTrack ? `Сейчас: ${currentMusicTrack.name}` : "Музыка: загрузите трек кнопкой Upload"}
-            </p>
+          </div>
+          <p className="mt-2 min-w-0 text-sm text-slate-600 dark:text-slate-200">
+            {currentMusicTrack ? `Сейчас: ${currentMusicTrack.name}` : "Музыка: откройте плейлист и загрузите треки"}
+          </p>
+          <div className="mt-2">
+            <input
+              type="range"
+              min={0}
+              max={Math.max(musicDuration, 1)}
+              step={1}
+              value={Math.min(musicCurrentTime, Math.max(musicDuration, 1))}
+              onChange={(event) => {
+                setMusicSeeking(true);
+                handleMusicSeekChange(Number(event.target.value));
+              }}
+              onMouseUp={applyMusicSeek}
+              onTouchEnd={applyMusicSeek}
+              onBlur={applyMusicSeek}
+              onKeyUp={(event) => {
+                if (event.key === "ArrowLeft" || event.key === "ArrowRight" || event.key === "Home" || event.key === "End") {
+                  applyMusicSeek();
+                }
+              }}
+              disabled={!currentMusicTrack}
+              className="h-2 w-full cursor-pointer accent-primary disabled:cursor-not-allowed"
+              aria-label="Перемотка трека"
+            />
+            <div className="mt-1 flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-300">
+              <span>{formatAudioTime(musicCurrentTime)}</span>
+              <span>{formatAudioTime(musicDuration)}</span>
+            </div>
           </div>
           {musicError ? <p className="mt-2 text-xs text-amber-600 dark:text-amber-300">{musicError}</p> : null}
         </div>
-        <input
-          ref={musicUploadInputRef}
-          type="file"
-          accept=".mp3,.wav,.ogg,.m4a,.aac,.webm,audio/*"
-          className="hidden"
-          onChange={(event) => {
-            const selected = event.target.files?.[0];
-            if (selected) {
-              void uploadMusicTrack(selected);
-            }
-            event.currentTarget.value = "";
-          }}
-        />
-        <audio ref={musicAudioRef} preload="metadata" />
       </section>
       <div className="space-y-4 sm:space-y-5">
         {plan.folders.map((folder) => {
@@ -2908,6 +3439,233 @@ export const Checklist = ({
           );
         })}
       </div>
+
+      <Modal
+        open={musicPlaylistOpen}
+        onClose={() => setMusicPlaylistOpen(false)}
+        title="Плейлист"
+        className="h-[92vh] sm:h-[94vh] sm:max-w-[96vw]"
+        mobileSheet
+      >
+        <div className="flex h-full min-h-0 flex-col">
+          <input
+            ref={musicUploadInputRef}
+            type="file"
+            accept=".mp3,.wav,.ogg,.m4a,.aac,.webm,audio/*"
+            multiple
+            className="hidden"
+            onChange={(event) => {
+              handleMusicFilesSelected(event.target.files);
+              event.currentTarget.value = "";
+            }}
+          />
+          <input
+            ref={musicUploadFolderInputRef}
+            type="file"
+            multiple
+            className="hidden"
+            onChange={(event) => {
+              handleMusicFilesSelected(event.target.files);
+              event.currentTarget.value = "";
+            }}
+            {...({ webkitdirectory: "true", directory: "true" } as Record<string, string>)}
+          />
+          <div
+            className={clsx(
+              "mb-3 rounded-xl border border-dashed px-3 py-3 transition",
+              musicDropActive
+                ? "border-primary bg-primary/10"
+                : "border-slate-300 bg-slate-50 dark:border-slate-600 dark:bg-slate-800/60",
+            )}
+            onDragEnter={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              setMusicDropActive(true);
+            }}
+            onDragOver={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              setMusicDropActive(true);
+            }}
+            onDragLeave={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              const nextTarget = event.relatedTarget as Node | null;
+              if (nextTarget && event.currentTarget.contains(nextTarget)) return;
+              setMusicDropActive(false);
+            }}
+            onDrop={(event) => {
+              void handleMusicDrop(event);
+            }}
+          >
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => musicUploadInputRef.current?.click()}
+                className="h-8 px-3"
+                disabled={musicUploading}
+              >
+                Upload files
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => musicUploadFolderInputRef.current?.click()}
+                className="h-8 px-3"
+                disabled={musicUploading}
+              >
+                Upload folder
+              </Button>
+              <span className="text-xs text-slate-500 dark:text-slate-300">
+                {musicUploading ? "Идёт фоновая загрузка..." : "Перетащите файлы или папку сюда"}
+              </span>
+            </div>
+            {musicUploadTasks.length ? (
+              <div className="mt-2 max-h-24 space-y-1 overflow-y-auto pr-1">
+                {musicUploadTasks.slice(-5).map((task) => (
+                  <div
+                    key={task.id}
+                    className="flex items-center justify-between rounded-lg bg-white/80 px-2 py-1 text-xs dark:bg-slate-900/50"
+                  >
+                    <span className="truncate pr-2">{task.name}</span>
+                    <span
+                      className={clsx(
+                        "shrink-0 font-semibold",
+                        task.status === "queued" && "text-slate-500 dark:text-slate-300",
+                        task.status === "uploading" && "text-amber-600 dark:text-amber-300",
+                        task.status === "done" && "text-emerald-600 dark:text-emerald-300",
+                        task.status === "error" && "text-red-600 dark:text-red-300",
+                      )}
+                    >
+                      {task.status === "queued" && "В очереди"}
+                      {task.status === "uploading" && "Загрузка"}
+                      {task.status === "done" && "Готово"}
+                      {task.status === "error" && "Ошибка"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            {musicUploadTasks.some((task) => task.status === "done" || task.status === "error") ? (
+              <div className="mt-2 flex justify-end">
+                <button
+                  type="button"
+                  onClick={clearFinishedMusicUploads}
+                  className="text-xs font-medium text-slate-500 hover:text-primary dark:text-slate-300"
+                >
+                  Очистить завершённые
+                </button>
+              </div>
+            ) : null}
+          </div>
+          <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
+            {musicQueue.length ? (
+              <div className="rounded-xl border border-amber-400/40 bg-amber-500/10 px-3 py-2">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs font-semibold text-amber-300">Очередь ({musicQueue.length})</p>
+                  <button
+                    type="button"
+                    onClick={clearMusicQueue}
+                    className="text-[11px] font-medium text-amber-200 hover:text-amber-100"
+                  >
+                    Очистить
+                  </button>
+                </div>
+                <div className="mt-1 flex flex-wrap gap-1.5">
+                  {musicQueue.slice(0, 6).map((queuedId) => {
+                    const queuedTrack = musicTracks.find((track) => track.id === queuedId);
+                    if (!queuedTrack) return null;
+                    return (
+                      <span
+                        key={`queue-${queuedId}`}
+                        className="rounded-md bg-amber-500/20 px-2 py-1 text-[11px] text-amber-100"
+                      >
+                        {queuedTrack.name}
+                      </span>
+                    );
+                  })}
+                  {musicQueue.length > 6 ? (
+                    <span className="rounded-md bg-amber-500/20 px-2 py-1 text-[11px] text-amber-100">
+                      +{musicQueue.length - 6}
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+            {musicTracks.length ? (
+              musicTracks.map((track, index) => {
+                const active = index === musicTrackIndex;
+                const inQueue = musicQueue.includes(track.id);
+                return (
+                  <div
+                    key={track.id}
+                    className={clsx(
+                      "rounded-xl border px-3 py-2 transition",
+                      active
+                        ? "border-primary/40 bg-primary/10"
+                        : "border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800",
+                    )}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <button
+                        type="button"
+                        onClick={() => selectMusicTrack(index, { play: false })}
+                        className="min-w-0 flex-1 text-left"
+                      >
+                        <p className={clsx("truncate text-sm font-medium", active ? "text-primary" : "text-slate-700 dark:text-slate-200")}>
+                          {track.name}
+                        </p>
+                        <p className="truncate text-[11px] text-slate-400">
+                          {track.artist ? `${track.artist}${track.title ? " — " : ""}` : ""}
+                          {track.title ?? ""}
+                        </p>
+                      </button>
+                      {active && <span className="text-xs font-semibold text-primary">Сейчас</span>}
+                      {inQueue && !active ? <span className="text-[11px] text-amber-300">В очереди</span> : null}
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => selectMusicTrack(index, { play: true })}
+                        className="rounded-md border border-slate-500/40 px-2 py-1 text-[11px] text-slate-200 hover:border-primary/60 hover:text-primary"
+                      >
+                        Play now
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => queueTrackNext(track.id)}
+                        className="rounded-md border border-slate-500/40 px-2 py-1 text-[11px] text-slate-200 hover:border-primary/60 hover:text-primary"
+                      >
+                        Play next
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => queueTrackLater(track.id)}
+                        className="rounded-md border border-slate-500/40 px-2 py-1 text-[11px] text-slate-200 hover:border-primary/60 hover:text-primary"
+                      >
+                        Queue
+                      </button>
+                      {track.is_mine ? (
+                        <button
+                          type="button"
+                          onClick={() => void deleteMusicTrack(track)}
+                          disabled={musicDeletingTrackId === track.id}
+                          className="rounded-md border border-red-400/40 px-2 py-1 text-[11px] text-red-300 hover:bg-red-500/10 disabled:opacity-50"
+                        >
+                          {musicDeletingTrackId === track.id ? "Удаление..." : "Удалить"}
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                );
+              })
+            ) : (
+              <p className="text-sm text-slate-500 dark:text-slate-300">Треки пока не загружены.</p>
+            )}
+          </div>
+        </div>
+      </Modal>
 
       <Modal
         open={chatState.open}

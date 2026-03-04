@@ -8,6 +8,7 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
+from rest_framework.authtoken.models import Token
 from rest_framework.test import APIClient
 
 from programs.models import DayTemplate, ProgramFolder, TemplateExercise
@@ -436,14 +437,132 @@ def test_music_upload_endpoint_creates_user_track(tmp_path):
         response = client.post(
             "/api/workouts/music/tracks/upload/",
             {
-                "title": "Мой трек",
                 "file": SimpleUploadedFile("mine.mp3", b"fake-mp3", content_type="audio/mpeg"),
             },
             format="multipart",
         )
 
     assert response.status_code == 201
-    created = WorkoutMusicTrack.objects.get(id=response.data["id"])
+    assert len(response.data["items"]) == 1
+    created_item = response.data["items"][0]
+    created = WorkoutMusicTrack.objects.get(id=created_item["id"])
     assert created.owner_id == user.id
-    assert created.title == "Мой трек"
-    assert response.data["is_mine"] is True
+    assert created.title == "mine"
+    assert created_item["is_mine"] is True
+    assert created.file.name.startswith(f"user_{user.id}/mine-")
+
+
+@pytest.mark.django_db
+def test_music_upload_endpoint_accepts_multiple_files(tmp_path):
+    user = User.objects.create_user(email="musicmulti@example.com", password="pass")
+    client = APIClient()
+    client.force_authenticate(user=user)
+
+    with override_settings(MUSIC_ROOT=tmp_path):
+        response = client.post(
+            "/api/workouts/music/tracks/upload/",
+            {
+                "files": [
+                    SimpleUploadedFile("warmup.mp3", b"fake-mp3", content_type="audio/mpeg"),
+                    SimpleUploadedFile("rest.mp3", b"fake-mp3", content_type="audio/mpeg"),
+                ],
+            },
+            format="multipart",
+        )
+
+    assert response.status_code == 201
+    assert len(response.data["items"]) == 2
+    ids = [item["id"] for item in response.data["items"]]
+    tracks = list(WorkoutMusicTrack.objects.filter(id__in=ids).order_by("id"))
+    assert len(tracks) == 2
+    assert all(track.owner_id == user.id for track in tracks)
+    assert all(track.file.name.startswith(f"user_{user.id}/") for track in tracks)
+
+
+@pytest.mark.django_db
+def test_music_upload_endpoint_extracts_artist_and_title_from_id3v1(tmp_path):
+    user = User.objects.create_user(email="musicmeta@example.com", password="pass")
+    client = APIClient()
+    client.force_authenticate(user=user)
+
+    artist = "Artist Name".ljust(30, "\x00").encode("latin-1")
+    title = "Track Title".ljust(30, "\x00").encode("latin-1")
+    payload = b"\x00" * 256 + b"TAG" + title + artist + (b"\x00" * 65)
+
+    with override_settings(MUSIC_ROOT=tmp_path):
+        response = client.post(
+            "/api/workouts/music/tracks/upload/",
+            {
+                "file": SimpleUploadedFile("meta.mp3", payload, content_type="audio/mpeg"),
+            },
+            format="multipart",
+        )
+
+    assert response.status_code == 201
+    created_item = response.data["items"][0]
+    assert created_item["artist"] == "Artist Name"
+    assert created_item["title"] == "Track Title"
+    assert created_item["name"] == "Artist Name — Track Title"
+
+
+@pytest.mark.django_db
+def test_music_track_delete_endpoint_removes_own_track_and_file(tmp_path):
+    user = User.objects.create_user(email="musicdelete@example.com", password="pass")
+    client = APIClient()
+    client.force_authenticate(user=user)
+    with override_settings(MUSIC_ROOT=tmp_path):
+        track = WorkoutMusicTrack.objects.create(
+            title="Delete me",
+            is_active=True,
+            owner=user,
+            file=SimpleUploadedFile("delete.mp3", b"fake-mp3", content_type="audio/mpeg"),
+        )
+        stored_path = tmp_path / track.file.name
+        assert stored_path.exists()
+        response = client.delete(f"/api/workouts/music/tracks/{track.id}/")
+
+    assert response.status_code == 204
+    assert not WorkoutMusicTrack.objects.filter(id=track.id).exists()
+    assert not stored_path.exists()
+
+
+@pytest.mark.django_db
+def test_music_track_delete_endpoint_forbidden_for_foreign_and_system_track(tmp_path):
+    user = User.objects.create_user(email="musicdeleteowner@example.com", password="pass")
+    other = User.objects.create_user(email="musicdeleteother@example.com", password="pass")
+    client = APIClient()
+    client.force_authenticate(user=user)
+    with override_settings(MUSIC_ROOT=tmp_path):
+        foreign = WorkoutMusicTrack.objects.create(
+            title="Foreign",
+            is_active=True,
+            owner=other,
+            file=SimpleUploadedFile("foreign.mp3", b"fake-mp3", content_type="audio/mpeg"),
+        )
+        system = WorkoutMusicTrack.objects.create(
+            title="System",
+            is_active=True,
+            owner=None,
+            file=SimpleUploadedFile("system.mp3", b"fake-mp3", content_type="audio/mpeg"),
+        )
+        foreign_resp = client.delete(f"/api/workouts/music/tracks/{foreign.id}/")
+        system_resp = client.delete(f"/api/workouts/music/tracks/{system.id}/")
+
+    assert foreign_resp.status_code == 404
+    assert system_resp.status_code == 404
+
+
+@pytest.mark.django_db
+def test_music_track_file_endpoint_allows_token_query_auth(tmp_path):
+    user = User.objects.create_user(email="musicquerytoken@example.com", password="pass")
+    token = Token.objects.create(user=user)
+    client = APIClient()
+    with override_settings(MUSIC_ROOT=tmp_path):
+        track = WorkoutMusicTrack.objects.create(
+            title="Query token",
+            is_active=True,
+            owner=user,
+            file=SimpleUploadedFile("query.mp3", b"fake-mp3", content_type="audio/mpeg"),
+        )
+        response = client.get(f"/api/workouts/music/tracks/{track.id}/file/?token={token.key}")
+    assert response.status_code == 200
