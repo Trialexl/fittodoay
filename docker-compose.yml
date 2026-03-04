@@ -15,7 +15,7 @@ services:
       DJANGO_MUSIC_ROOT: /music
     volumes:
       - backend_data:/data
-      - ./music:/music:ro
+      - ./music:/music
     ports:
       - "8000:8000"
     depends_on:

@@ -29,6 +29,10 @@ package-lock.json
 # Logs
 *.log
 
+# Runtime music files (uploaded/generated locally)
+music/*
+!music/.gitkeep
+
 # Obsidian
 .obsidian/
 .obsidian-workspace
