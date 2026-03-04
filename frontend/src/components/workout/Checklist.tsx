@@ -384,6 +384,16 @@ const formatAudioTime = (seconds: number) => {
   return `${mins}:${String(secs).padStart(2, "0")}`;
 };
 
+const createClientId = () => {
+  if (typeof globalThis !== "undefined") {
+    const randomUUID = (globalThis.crypto as Crypto | undefined)?.randomUUID;
+    if (typeof randomUUID === "function") {
+      return randomUUID.call(globalThis.crypto);
+    }
+  }
+  return `id-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+};
+
 const isAllowedAudioFile = (file: File) => {
   const name = file.name.toLowerCase();
   return /\.(mp3|wav|ogg|m4a|aac|webm)$/.test(name);
@@ -1331,7 +1341,7 @@ export const Checklist = ({
         setMusicError("Поддерживаются только аудио-файлы: mp3, wav, ogg, m4a, aac, webm.");
         return;
       }
-      const queued = allowed.map((file) => ({ id: crypto.randomUUID(), file }));
+      const queued = allowed.map((file) => ({ id: createClientId(), file }));
       musicUploadQueueRef.current.push(...queued);
       setMusicUploadTasks((prev) => [
         ...prev,
