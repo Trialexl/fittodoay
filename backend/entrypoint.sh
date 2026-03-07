@@ -51,4 +51,22 @@ if [ "$(echo "$IMPORT_EXERCISES_ON_START" | tr '[:upper:]' '[:lower:]')" = "true
   python manage.py import_exercise_db --truncate
 fi
 
+if [ "$1" = "gunicorn" ]; then
+  shift
+  GUNICORN_WORKERS="${GUNICORN_WORKERS:-1}"
+  GUNICORN_THREADS="${GUNICORN_THREADS:-2}"
+  GUNICORN_TIMEOUT="${GUNICORN_TIMEOUT:-180}"
+  GUNICORN_GRACEFUL_TIMEOUT="${GUNICORN_GRACEFUL_TIMEOUT:-30}"
+  GUNICORN_KEEPALIVE="${GUNICORN_KEEPALIVE:-5}"
+
+  exec gunicorn "$@" \
+    --workers "$GUNICORN_WORKERS" \
+    --threads "$GUNICORN_THREADS" \
+    --timeout "$GUNICORN_TIMEOUT" \
+    --graceful-timeout "$GUNICORN_GRACEFUL_TIMEOUT" \
+    --keep-alive "$GUNICORN_KEEPALIVE" \
+    --access-logfile - \
+    --error-logfile -
+fi
+
 exec "$@"
