@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Tuple
 
 from django.http import FileResponse, Http404
-from django.db.models import Q
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework import permissions, viewsets
 from rest_framework.authtoken.models import Token
@@ -233,9 +232,7 @@ class WorkoutMusicTracksView(APIView):
                 "is_mine": track.owner_id == request.user.id,
                 "url": f"/api/workouts/music/tracks/{track.id}/file/",
             }
-            for track in WorkoutMusicTrack.objects.filter(is_active=True)
-            .filter(Q(owner=request.user) | Q(owner__isnull=True))
-            .order_by("-owner_id", "title", "id")
+            for track in WorkoutMusicTrack.objects.filter(is_active=True).order_by("title", "id")
         ]
         return Response({"items": items})
 
@@ -307,8 +304,6 @@ class WorkoutMusicTrackFileView(APIView):
         try:
             track = WorkoutMusicTrack.objects.get(id=track_id, is_active=True)
         except WorkoutMusicTrack.DoesNotExist as exc:
-            raise Http404("Track not found")
-        if track.owner_id and track.owner_id != user.id:
             raise Http404("Track not found")
         if not track.file:
             raise Http404("Track not found")

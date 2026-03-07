@@ -394,6 +394,17 @@ const createClientId = () => {
   return `id-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 };
 
+let sharedWorkoutAudio: HTMLAudioElement | null = null;
+
+const getSharedWorkoutAudio = () => {
+  if (typeof window === "undefined") return null;
+  if (!sharedWorkoutAudio) {
+    sharedWorkoutAudio = new Audio();
+    sharedWorkoutAudio.preload = "metadata";
+  }
+  return sharedWorkoutAudio;
+};
+
 const isAllowedAudioFile = (file: File) => {
   const name = file.name.toLowerCase();
   return /\.(mp3|wav|ogg|m4a|aac|webm)$/.test(name);
@@ -864,6 +875,9 @@ export const Checklist = ({
   const musicTrackUrlRef = useRef<string>("");
   const musicLoadingTrackUrlRef = useRef<string>("");
   const musicFailedTrackIdsRef = useRef<Set<number>>(new Set());
+  const musicAutoAdvanceRef = useRef(false);
+  const musicLastTrackIdRef = useRef<number | null>(null);
+  const musicConsecutiveSkipsRef = useRef(0);
   const vibrationSupportedRef = useRef<boolean | null>(null);
   const notificationRequestedRef = useRef(false);
   const restStartNotificationKeyRef = useRef<string | null>(null);
@@ -923,7 +937,7 @@ export const Checklist = ({
         osc.frequency.setValueAtTime(fromHz, startAt);
         osc.frequency.exponentialRampToValueAtTime(toHz, startAt + duration);
         gain.gain.setValueAtTime(0.0001, startAt);
-        gain.gain.exponentialRampToValueAtTime(0.08, startAt + 0.03);
+        gain.gain.exponentialRampToValueAtTime(0.24, startAt + 0.03);
         gain.gain.exponentialRampToValueAtTime(0.0001, startAt + duration);
         osc.connect(gain);
         gain.connect(ctx.destination);
@@ -940,9 +954,19 @@ export const Checklist = ({
   }, [ensureAudioContext]);
   const triggerRestCompletionSignal = useCallback(() => {
     if (typeof window === "undefined") return;
+    const musicAudio = musicAudioRef.current;
+    const initialVolume = musicAudio ? musicAudio.volume : 1;
+    if (musicAudio && !musicAudio.paused) {
+      musicAudio.volume = Math.max(0.15, initialVolume * 0.35);
+    }
     unlockAudioContext();
     playCompletionTone("double");
     showSystemNotification("Отдых завершен", "Можно выполнять следующий подход.");
+    if (musicAudio) {
+      window.setTimeout(() => {
+        musicAudio.volume = initialVolume;
+      }, 1200);
+    }
     const vibrate = window.navigator?.vibrate;
     if (typeof vibrate === "function") {
       try {
@@ -1050,6 +1074,10 @@ export const Checklist = ({
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
+    musicAudioRef.current = getSharedWorkoutAudio();
+  }, []);
+
+  useEffect(() => {
     if (!restOverlay) {
       restStartNotificationKeyRef.current = null;
       return;
@@ -1134,17 +1162,20 @@ export const Checklist = ({
   }, [musicTrackIndex, musicTracks.length]);
 
   useEffect(() => {
+    const currentTrackId = currentMusicTrack?.id ?? null;
+    if (musicLastTrackIdRef.current === currentTrackId) return;
+    musicLastTrackIdRef.current = currentTrackId;
     setMusicCurrentTime(0);
     setMusicDuration(0);
     musicLoadingTrackUrlRef.current = "";
-    if (currentMusicTrack) {
+    if (currentTrackId) {
       const persisted = readPersistedMusicState();
       writePersistedMusicState({
-        trackId: currentMusicTrack.id,
-        time: persisted.trackId === currentMusicTrack.id ? persisted.time ?? 0 : 0,
+        trackId: currentTrackId,
+        time: persisted.trackId === currentTrackId ? persisted.time ?? 0 : 0,
       });
     }
-  }, [currentMusicTrack]);
+  }, [currentMusicTrack?.id]);
 
   useEffect(() => {
     musicFailedTrackIdsRef.current.clear();
@@ -1236,20 +1267,29 @@ export const Checklist = ({
     return nextId;
   }, []);
 
-  const pickNextTrackIndex = useCallback(() => {
+  const pickNextTrackIndex = useCallback((excludeIds?: Set<number>) => {
     if (!musicTracks.length) return null;
     while (musicQueueRef.current.length) {
       const nextId = popQueuedTrackId();
       if (nextId === null) break;
+      if (excludeIds?.has(nextId)) continue;
       const queuedIdx = musicTracks.findIndex((track) => track.id === nextId);
       if (queuedIdx >= 0) return queuedIdx;
     }
-    return (musicTrackIndex + 1) % musicTracks.length;
+    for (let offset = 1; offset <= musicTracks.length; offset += 1) {
+      const idx = (musicTrackIndex + offset) % musicTracks.length;
+      const candidateId = musicTracks[idx]?.id;
+      if (!candidateId) continue;
+      if (excludeIds?.has(candidateId)) continue;
+      return idx;
+    }
+    return null;
   }, [musicTrackIndex, musicTracks, popQueuedTrackId]);
 
   const playNextTrack = useCallback(() => {
     const nextIdx = pickNextTrackIndex();
     if (nextIdx === null) return;
+    musicConsecutiveSkipsRef.current = 0;
     setMusicPlaying(true);
     setMusicTrackIndex(nextIdx);
   }, [pickNextTrackIndex]);
@@ -1269,6 +1309,10 @@ export const Checklist = ({
 
   const handleMusicSeekChange = useCallback((nextValue: number) => {
     setMusicCurrentTime(nextValue);
+    const audio = musicAudioRef.current;
+    if (audio && Number.isFinite(nextValue)) {
+      audio.currentTime = nextValue;
+    }
   }, []);
 
   const applyMusicSeek = useCallback(() => {
@@ -1452,8 +1496,17 @@ export const Checklist = ({
         writePersistedMusicState({ trackId: currentMusicTrack.id, time: now });
       }
     };
-    const handlePause = () => setMusicPlaying(false);
-    const handlePlay = () => setMusicPlaying(true);
+    const handlePause = () => {
+      if (musicAutoAdvanceRef.current) {
+        musicAutoAdvanceRef.current = false;
+        return;
+      }
+      setMusicPlaying(false);
+    };
+    const handlePlay = () => {
+      musicConsecutiveSkipsRef.current = 0;
+      setMusicPlaying(true);
+    };
     const handleEnded = () => {
       if (!musicTracks.length) {
         setMusicPlaying(false);
@@ -1462,7 +1515,19 @@ export const Checklist = ({
       if (currentMusicTrack) {
         writePersistedMusicState({ trackId: currentMusicTrack.id, time: 0 });
       }
+      const tooShortTrack = (audio.duration || 0) <= 1;
+      if (tooShortTrack && currentMusicTrack) {
+        musicFailedTrackIdsRef.current.add(currentMusicTrack.id);
+      }
+      const allFailed = musicTracks.every((track) => musicFailedTrackIdsRef.current.has(track.id));
+      if (allFailed) {
+        setMusicError("Не удалось воспроизвести треки из текущего списка.");
+        setMusicPlaying(false);
+        return;
+      }
       setMusicCurrentTime(0);
+      musicAutoAdvanceRef.current = true;
+      setMusicPlaying(true);
       skipToNextTrack();
     };
     const handleError = () => {
@@ -1473,8 +1538,26 @@ export const Checklist = ({
         return;
       }
       musicFailedTrackIdsRef.current.add(currentMusicTrack.id);
-      setMusicError(`Не удалось воспроизвести: ${currentMusicTrack.name}. Нажмите Next для следующего трека.`);
-      setMusicPlaying(false);
+      const failedIds = musicFailedTrackIdsRef.current;
+      const allFailed = musicTracks.every((track) => failedIds.has(track.id));
+      if (allFailed || musicConsecutiveSkipsRef.current >= musicTracks.length) {
+        setMusicError(`Не удалось воспроизвести: ${currentMusicTrack.name}.`);
+        setMusicPlaying(false);
+        musicConsecutiveSkipsRef.current = 0;
+        return;
+      }
+      const nextIdx = pickNextTrackIndex(failedIds);
+      if (nextIdx === null) {
+        setMusicError(`Не удалось воспроизвести: ${currentMusicTrack.name}.`);
+        setMusicPlaying(false);
+        musicConsecutiveSkipsRef.current = 0;
+        return;
+      }
+      musicConsecutiveSkipsRef.current += 1;
+      setMusicError(`Пропускаем трек: ${currentMusicTrack.name}.`);
+      musicAutoAdvanceRef.current = true;
+      setMusicPlaying(true);
+      setMusicTrackIndex(nextIdx);
     };
     const handleAbort = () => {
       musicLoadingTrackUrlRef.current = "";
@@ -1503,14 +1586,7 @@ export const Checklist = ({
       audio.removeEventListener("abort", handleAbort);
       audio.removeEventListener("stalled", handleStalled);
     };
-  }, [currentMusicTrack, musicSeeking, musicTracks.length, resetAudioSource, skipToNextTrack]);
-
-  useEffect(
-    () => () => {
-      resetAudioSource();
-    },
-    [resetAudioSource],
-  );
+  }, [currentMusicTrack, musicSeeking, musicTracks, pickNextTrackIndex, resetAudioSource, skipToNextTrack]);
 
   const latestPendingProposal = useMemo(
     () =>
@@ -2818,9 +2894,8 @@ export const Checklist = ({
         ) : weighInError ? (
           <p className="mt-2 text-xs text-red-500">{weighInError}</p>
         ) : null}
-        <audio ref={musicAudioRef} preload="metadata" />
       </section>
-      <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-700 dark:bg-slate-900/70">
+      <section className="fixed bottom-3 left-3 right-3 z-40 rounded-2xl border border-slate-200 bg-white/95 p-3 shadow-2xl backdrop-blur dark:border-slate-700 dark:bg-slate-900/95 sm:bottom-4 sm:left-6 sm:right-6">
         <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Музыка</h3>
         <div className="mt-3 rounded-xl border border-slate-200/80 bg-slate-50/70 p-2.5 dark:border-slate-700 dark:bg-slate-800/40">
           <div className="flex flex-wrap items-center gap-2">
@@ -2829,6 +2904,8 @@ export const Checklist = ({
               variant="secondary"
               onClick={() => {
                 if (!musicTracks.length) return;
+                musicFailedTrackIdsRef.current.clear();
+                musicConsecutiveSkipsRef.current = 0;
                 if (musicPlaying) {
                   pauseMusicTrack();
                 } else {
@@ -2877,11 +2954,17 @@ export const Checklist = ({
               max={Math.max(musicDuration, 1)}
               step={1}
               value={Math.min(musicCurrentTime, Math.max(musicDuration, 1))}
+              onInput={(event) => {
+                handleMusicSeekChange(Number((event.target as HTMLInputElement).value));
+              }}
               onChange={(event) => {
-                setMusicSeeking(true);
                 handleMusicSeekChange(Number(event.target.value));
               }}
+              onPointerDown={() => setMusicSeeking(true)}
+              onPointerUp={applyMusicSeek}
+              onMouseDown={() => setMusicSeeking(true)}
               onMouseUp={applyMusicSeek}
+              onTouchStart={() => setMusicSeeking(true)}
               onTouchEnd={applyMusicSeek}
               onBlur={applyMusicSeek}
               onKeyUp={(event) => {
@@ -2901,6 +2984,7 @@ export const Checklist = ({
           {musicError ? <p className="mt-2 text-xs text-amber-600 dark:text-amber-300">{musicError}</p> : null}
         </div>
       </section>
+      <div className="h-[190px] sm:h-[210px]" />
       <div className="space-y-4 sm:space-y-5">
         {plan.folders.map((folder) => {
           const expanded = expandedFolders[folder.id] ?? true;

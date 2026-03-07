@@ -367,7 +367,7 @@ def test_music_tracks_endpoint_lists_active_tracks(tmp_path):
             owner=None,
             file=SimpleUploadedFile("global.mp3", b"fake-mp3", content_type="audio/mpeg"),
         )
-        WorkoutMusicTrack.objects.create(
+        other_track = WorkoutMusicTrack.objects.create(
             title="Other user",
             is_active=True,
             owner=other_user,
@@ -382,9 +382,9 @@ def test_music_tracks_endpoint_lists_active_tracks(tmp_path):
 
     assert response.status_code == 200
     items = response.data["items"]
-    assert len(items) == 2
+    assert len(items) == 3
     ids = {item["id"] for item in items}
-    assert ids == {first.id, global_track.id}
+    assert ids == {first.id, global_track.id, other_track.id}
     own_item = next(item for item in items if item["id"] == first.id)
     assert own_item["is_mine"] is True
     assert own_item["url"] == f"/api/workouts/music/tracks/{first.id}/file/"
@@ -424,7 +424,7 @@ def test_music_track_file_endpoint_blocks_missing_or_inactive_track(tmp_path):
     assert ok["Accept-Ranges"] == "bytes"
     assert missing.status_code == 404
     assert inactive.status_code == 404
-    assert foreign_response.status_code == 404
+    assert foreign_response.status_code == 200
 
 
 @pytest.mark.django_db
