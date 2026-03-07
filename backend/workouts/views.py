@@ -3,9 +3,9 @@ from __future__ import annotations
 from datetime import date
 import mimetypes
 from pathlib import Path
-from typing import Tuple
+from typing import Iterator, Tuple
 
-from django.http import FileResponse, Http404
+from django.http import FileResponse, Http404, StreamingHttpResponse
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework import permissions, viewsets
 from rest_framework.authtoken.models import Token
@@ -49,17 +49,18 @@ def _syncsafe_to_int(raw: bytes) -> int:
     return ((raw[0] & 0x7F) << 21) | ((raw[1] & 0x7F) << 14) | ((raw[2] & 0x7F) << 7) | (raw[3] & 0x7F)
 
 
-def _extract_metadata_from_id3(head: bytes) -> Tuple[str, str]:
+def _extract_metadata_from_id3(head: bytes) -> Tuple[str, str, str]:
     if len(head) < 10 or head[:3] != b"ID3":
-        return "", ""
+        return "", "", ""
     version = head[3]
     tag_size = _syncsafe_to_int(head[6:10])
     if tag_size <= 0:
-        return "", ""
+        return "", "", ""
     end = min(len(head), 10 + tag_size)
     pos = 10
     artist = ""
     title = ""
+    album = ""
     while pos + 10 <= end:
         frame_id = head[pos : pos + 4].decode("latin-1", errors="ignore")
         if not frame_id.strip("\x00"):
@@ -78,41 +79,49 @@ def _extract_metadata_from_id3(head: bytes) -> Tuple[str, str]:
             artist = _decode_text_frame(payload)
         elif frame_id == "TIT2" and not title:
             title = _decode_text_frame(payload)
-        if artist and title:
+        elif frame_id == "TALB" and not album:
+            album = _decode_text_frame(payload)
+        if artist and title and album:
             break
         pos = frame_end
-    return artist, title
+    return artist, title, album
 
 
-def _extract_metadata_from_id3v1(tail: bytes) -> Tuple[str, str]:
+def _extract_metadata_from_id3v1(tail: bytes) -> Tuple[str, str, str]:
     if len(tail) < 128 or tail[:3] != b"TAG":
-        return "", ""
+        return "", "", ""
     title = tail[3:33].decode("latin-1", errors="ignore").strip("\x00 ").strip()
     artist = tail[33:63].decode("latin-1", errors="ignore").strip("\x00 ").strip()
-    return artist, title
+    album = tail[63:93].decode("latin-1", errors="ignore").strip("\x00 ").strip()
+    return artist, title, album
 
 
-def extract_track_metadata(uploaded, fallback_title: str) -> Tuple[str, str]:
+def extract_track_metadata(uploaded, fallback_title: str) -> Tuple[str, str, str]:
     artist = ""
     title = fallback_title
+    album = ""
     try:
         uploaded.seek(0)
         head = uploaded.read(256 * 1024)
-        artist_id3, title_id3 = _extract_metadata_from_id3(head)
+        artist_id3, title_id3, album_id3 = _extract_metadata_from_id3(head)
         if artist_id3:
             artist = artist_id3
         if title_id3:
             title = title_id3
-        if not artist or title == fallback_title:
+        if album_id3:
+            album = album_id3
+        if not artist or title == fallback_title or not album:
             total_size = getattr(uploaded, "size", 0) or 0
             if total_size >= 128:
                 uploaded.seek(max(total_size - 128, 0))
                 tail = uploaded.read(128)
-                artist_v1, title_v1 = _extract_metadata_from_id3v1(tail)
+                artist_v1, title_v1, album_v1 = _extract_metadata_from_id3v1(tail)
                 if not artist and artist_v1:
                     artist = artist_v1
                 if title == fallback_title and title_v1:
                     title = title_v1
+                if not album and album_v1:
+                    album = album_v1
     except Exception:
         pass
     finally:
@@ -120,7 +129,99 @@ def extract_track_metadata(uploaded, fallback_title: str) -> Tuple[str, str]:
             uploaded.seek(0)
         except Exception:
             pass
-    return (artist or "").strip(), (title or fallback_title).strip()
+    return (artist or "").strip(), (title or fallback_title).strip(), (album or "").strip()
+
+
+def _backfill_track_metadata_if_missing(track: WorkoutMusicTrack) -> None:
+    if not track.file:
+        return
+    needs_backfill = not track.album or not track.artist or not track.title
+    if not needs_backfill:
+        return
+    fallback_title = track.title or Path(track.file.name).stem.replace("_", " ")
+    try:
+        with track.file.open("rb") as file_obj:
+            artist, title, album = extract_track_metadata(file_obj, fallback_title=fallback_title)
+    except Exception:
+        return
+    update_fields: list[str] = []
+    if not track.artist and artist:
+        track.artist = artist
+        update_fields.append("artist")
+    if not track.title and title:
+        track.title = title
+        update_fields.append("title")
+    if not track.album and album:
+        track.album = album
+        update_fields.append("album")
+    if update_fields:
+        track.save(update_fields=update_fields)
+
+
+class _RangeNotSatisfiable(Exception):
+    pass
+
+
+def _parse_byte_range(range_header: str | None, file_size: int) -> tuple[int, int] | None:
+    if not range_header:
+        return None
+    if file_size <= 0:
+        raise _RangeNotSatisfiable
+    if not range_header.startswith("bytes="):
+        return None
+    raw_spec = range_header[6:].strip()
+    if not raw_spec or "," in raw_spec or "-" not in raw_spec:
+        raise _RangeNotSatisfiable
+    start_raw, end_raw = raw_spec.split("-", 1)
+    start_raw = start_raw.strip()
+    end_raw = end_raw.strip()
+
+    if not start_raw:
+        # bytes=-500 -> last 500 bytes
+        if not end_raw:
+            raise _RangeNotSatisfiable
+        try:
+            suffix_len = int(end_raw)
+        except ValueError as exc:
+            raise _RangeNotSatisfiable from exc
+        if suffix_len <= 0:
+            raise _RangeNotSatisfiable
+        start = max(file_size - suffix_len, 0)
+        end = file_size - 1
+        return start, end
+
+    try:
+        start = int(start_raw)
+    except ValueError as exc:
+        raise _RangeNotSatisfiable from exc
+    if start < 0 or start >= file_size:
+        raise _RangeNotSatisfiable
+
+    if end_raw:
+        try:
+            end = int(end_raw)
+        except ValueError as exc:
+            raise _RangeNotSatisfiable from exc
+        if end < start:
+            raise _RangeNotSatisfiable
+    else:
+        end = file_size - 1
+
+    end = min(end, file_size - 1)
+    return start, end
+
+
+def _iter_file_chunk(file_obj, remaining: int, chunk_size: int = 64 * 1024) -> Iterator[bytes]:
+    try:
+        bytes_left = remaining
+        while bytes_left > 0:
+            data = file_obj.read(min(chunk_size, bytes_left))
+            if not data:
+                break
+            bytes_left -= len(data)
+            yield data
+    finally:
+        file_obj.close()
 
 
 class WorkoutPlanView(APIView):
@@ -222,17 +323,21 @@ class WorkoutMusicTracksView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request, *args, **kwargs):
+        tracks = list(WorkoutMusicTrack.objects.filter(is_active=True).order_by("title", "id"))
+        for track in tracks:
+            _backfill_track_metadata_if_missing(track)
         items = [
             {
                 "id": track.id,
                 "name": track.display_name,
                 "title": track.title,
                 "artist": track.artist,
+                "album": track.album,
                 "filename": track.file.name,
                 "is_mine": track.owner_id == request.user.id,
                 "url": f"/api/workouts/music/tracks/{track.id}/file/",
             }
-            for track in WorkoutMusicTrack.objects.filter(is_active=True).order_by("title", "id")
+            for track in tracks
         ]
         return Response({"items": items})
 
@@ -253,9 +358,10 @@ class WorkoutMusicTrackUploadView(APIView):
         created_items = []
         for uploaded in uploaded_files:
             fallback_title = Path(uploaded.name).stem
-            artist, title = extract_track_metadata(uploaded, fallback_title=fallback_title)
+            artist, title, album = extract_track_metadata(uploaded, fallback_title=fallback_title)
             payload = {
                 "artist": artist,
+                "album": album,
                 "title": title,
                 "file": uploaded,
             }
@@ -268,6 +374,7 @@ class WorkoutMusicTrackUploadView(APIView):
                     "name": track.display_name,
                     "title": track.title,
                     "artist": track.artist,
+                    "album": track.album,
                     "filename": track.file.name,
                     "is_mine": True,
                     "url": f"/api/workouts/music/tracks/{track.id}/file/",
@@ -308,6 +415,31 @@ class WorkoutMusicTrackFileView(APIView):
         if not track.file:
             raise Http404("Track not found")
         content_type, _ = mimetypes.guess_type(track.file.name)
-        response = FileResponse(track.file.open("rb"), content_type=content_type or "application/octet-stream")
+        file_size = track.file.size or 0
+        range_header = request.headers.get("Range") or request.META.get("HTTP_RANGE")
+        try:
+            byte_range = _parse_byte_range(range_header, file_size)
+        except _RangeNotSatisfiable:
+            response = Response(status=416)
+            response["Content-Range"] = f"bytes */{file_size}"
+            response["Accept-Ranges"] = "bytes"
+            return response
+
+        if byte_range is None:
+            response = FileResponse(track.file.open("rb"), content_type=content_type or "application/octet-stream")
+            if file_size > 0:
+                response["Content-Length"] = str(file_size)
+        else:
+            start, end = byte_range
+            length = end - start + 1
+            file_obj = track.file.open("rb")
+            file_obj.seek(start)
+            response = StreamingHttpResponse(
+                _iter_file_chunk(file_obj, length),
+                status=206,
+                content_type=content_type or "application/octet-stream",
+            )
+            response["Content-Range"] = f"bytes {start}-{end}/{file_size}"
+            response["Content-Length"] = str(length)
         response["Accept-Ranges"] = "bytes"
         return response

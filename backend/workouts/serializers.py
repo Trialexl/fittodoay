@@ -108,7 +108,7 @@ class RecommendationApplySerializer(serializers.Serializer):
 class WorkoutMusicTrackUploadSerializer(serializers.ModelSerializer):
     class Meta:
         model = WorkoutMusicTrack
-        fields = ["id", "artist", "title", "file", "is_active", "created_at", "updated_at"]
+        fields = ["id", "artist", "album", "title", "file", "is_active", "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at", "is_active"]
 
     def validate_file(self, value):

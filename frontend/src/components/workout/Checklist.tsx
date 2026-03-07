@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import clsx from "clsx";
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import useSWR from "swr";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -91,6 +91,12 @@ type TrendFolder = {
 type TrendResponse = {
   granularity: "day" | "week";
   folders: TrendFolder[];
+};
+
+type ExerciseTrendChartPoint = {
+  iso: string;
+  label: string;
+  load: number;
 };
 
 type ExercisePayload = {
@@ -224,9 +230,18 @@ type MusicTrack = {
   name: string;
   title?: string;
   artist?: string;
+  album?: string;
   filename: string;
   is_mine?: boolean;
   url: string;
+};
+
+type MusicGroupBy = "none" | "folder" | "artist" | "album";
+
+type MusicTrackGroup = {
+  key: string;
+  label: string;
+  tracks: MusicTrack[];
 };
 
 type ApplyActionsResponse = {
@@ -597,6 +612,96 @@ const PlaylistIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
+const UploadFilesIcon = ({ className }: { className?: string }) => (
+  <svg
+    viewBox="0 0 20 20"
+    className={clsx("h-4 w-4", className)}
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.8}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M10 12V4m0 0 3 3m-3-3L7 7M4.5 13.5v1.3A1.7 1.7 0 0 0 6.2 16.5h7.6a1.7 1.7 0 0 0 1.7-1.7v-1.3" />
+  </svg>
+);
+
+const UploadFolderIcon = ({ className }: { className?: string }) => (
+  <svg
+    viewBox="0 0 20 20"
+    className={clsx("h-4 w-4", className)}
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.8}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M2.8 6.8h5l1.3 1.4h8a1.2 1.2 0 0 1 1.2 1.2v5.8a1.6 1.6 0 0 1-1.6 1.6H3.8a1.6 1.6 0 0 1-1.6-1.6V8.4a1.6 1.6 0 0 1 1.6-1.6Z" />
+    <path d="M10.2 13.2V9.6m0 0 1.8 1.8m-1.8-1.8-1.8 1.8" />
+  </svg>
+);
+
+const QueueLaterIcon = ({ className }: { className?: string }) => (
+  <svg
+    viewBox="0 0 20 20"
+    className={clsx("h-4 w-4", className)}
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.8}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M4 6h9M4 10h9M4 14h6" />
+    <path d="M15.4 11.7v4.6M13.1 14h4.6" />
+  </svg>
+);
+
+const MoreIcon = ({ className }: { className?: string }) => (
+  <svg
+    viewBox="0 0 20 20"
+    className={clsx("h-4 w-4", className)}
+    fill="currentColor"
+    aria-hidden="true"
+  >
+    <circle cx="4.5" cy="10" r="1.5" />
+    <circle cx="10" cy="10" r="1.5" />
+    <circle cx="15.5" cy="10" r="1.5" />
+  </svg>
+);
+
+const TrashIcon = ({ className }: { className?: string }) => (
+  <svg
+    viewBox="0 0 20 20"
+    className={clsx("h-4 w-4", className)}
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.8}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M4.8 6.2h10.4M7.6 6.2V4.8a.8.8 0 0 1 .8-.8h3.2a.8.8 0 0 1 .8.8v1.4M6.4 6.2l.5 8.3a1.2 1.2 0 0 0 1.2 1.1h3.8a1.2 1.2 0 0 0 1.2-1.1l.5-8.3M8.7 8.7v4.7m2.6-4.7v4.7" />
+  </svg>
+);
+
+const CloseIcon = ({ className }: { className?: string }) => (
+  <svg
+    viewBox="0 0 20 20"
+    className={clsx("h-4 w-4", className)}
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.8}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="m6 6 8 8M14 6l-8 8" />
+  </svg>
+);
+
 const StatusDot = ({ className }: { className?: string }) => (
   <svg viewBox="0 0 20 20" className={clsx("h-3.5 w-3.5", className)} fill="currentColor" aria-hidden="true">
     <circle cx="10" cy="10" r="4.5" />
@@ -687,6 +792,56 @@ const normalizeExerciseName = (value: string) =>
 const normalizeDayName = (value: string) =>
   value.toLowerCase().replace(/\s+/g, " ").trim();
 
+const getMusicTrackMetaLine = (track: MusicTrack | null) => {
+  if (!track) return "";
+  const mainTitle = (track.title || track.name || "").trim();
+  const artist = (track.artist || "").trim();
+  if (artist && mainTitle) return `${artist} - ${mainTitle}`;
+  return mainTitle || artist || "";
+};
+
+const titleCase = (value: string) =>
+  value
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+
+const getTrackPathParts = (track: MusicTrack) =>
+  (track.filename || "")
+    .replace(/\\/g, "/")
+    .split("/")
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+const getTrackFolderLabel = (track: MusicTrack) => {
+  const parts = getTrackPathParts(track);
+  if (!parts.length) return "Без папки";
+  const folderParts = parts.slice(0, -1);
+  if (!folderParts.length) return "Без папки";
+  if (folderParts.length === 1) {
+    if (folderParts[0] === "system") return "Системные";
+    if (/^user_\d+$/i.test(folderParts[0])) return "Мои треки";
+    return titleCase(folderParts[0]);
+  }
+  const technical = folderParts[0];
+  const cleaned =
+    technical === "system" || /^user_\d+$/i.test(technical)
+      ? folderParts.slice(1)
+      : folderParts;
+  return cleaned.length ? cleaned.map((item) => titleCase(item)).join(" / ") : "Без папки";
+};
+
+const getTrackArtistLabel = (track: MusicTrack) => {
+  const artist = (track.artist || "").trim();
+  return artist || "Неизвестный исполнитель";
+};
+
+const getTrackAlbumLabel = (track: MusicTrack) => {
+  const album = (track.album || "").trim();
+  return album || "Без альбома";
+};
+
 const formatTrendDateLabel = (iso: string, granularity: "day" | "week") => {
   const [year, month, day] = iso.split("-").map(Number);
   const start = new Date(year, month - 1, day);
@@ -701,6 +856,53 @@ const formatTrendDateLabel = (iso: string, granularity: "day" | "week") => {
   }
   return `${dd}.${mm}`;
 };
+
+const ExerciseTrendChart = memo(function ExerciseTrendChart({
+  points,
+  sourceFolderName,
+}: {
+  points: ExerciseTrendChartPoint[];
+  sourceFolderName: string;
+}) {
+  return (
+    <>
+      <div className="h-64 rounded-xl border border-slate-200 bg-white p-2 text-primary dark:border-slate-700 dark:bg-slate-900">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={points} margin={{ top: 12, right: 16, bottom: 4, left: 4 }}>
+            <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.35} />
+            <XAxis dataKey="label" minTickGap={10} tick={{ fontSize: 12 }} />
+            <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
+            <Tooltip
+              content={({ active, payload, label }) => {
+                if (!active || !payload || payload.length === 0) return null;
+                const value = payload[0]?.value ?? 0;
+                return (
+                  <div className="rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 shadow dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100">
+                    <p className="font-semibold">{label}</p>
+                    <p>Нагрузка: {Number(value).toFixed(1)}</p>
+                  </div>
+                );
+              }}
+            />
+            <Line
+              type="monotone"
+              dataKey="load"
+              name="Нагрузка"
+              stroke="currentColor"
+              strokeWidth={2.5}
+              animationDuration={800}
+              dot={{ r: 3 }}
+              activeDot={{ r: 4 }}
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+      <p className="text-xs text-slate-500 dark:text-slate-400">
+        Источник: {sourceFolderName || "выбранная программа"}.
+      </p>
+    </>
+  );
+});
 
 type ExerciseParamsMeta = {
   sets: number | null;
@@ -860,9 +1062,17 @@ const humanizeChatError = (raw: string) => {
 export const Checklist = ({
   plan,
   refresh,
+  todayMuscles = [],
+  headerDate,
+  dailyLoad,
+  onOpenCalendar,
 }: {
   plan: WorkoutPlan | null;
   refresh: () => void;
+  todayMuscles?: Array<[string, number]>;
+  headerDate: string;
+  dailyLoad: number;
+  onOpenCalendar: () => void;
 }) => {
   const auth = useAuth();
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -878,6 +1088,7 @@ export const Checklist = ({
   const musicAutoAdvanceRef = useRef(false);
   const musicLastTrackIdRef = useRef<number | null>(null);
   const musicConsecutiveSkipsRef = useRef(0);
+  const musicTimeSecondRef = useRef(-1);
   const vibrationSupportedRef = useRef<boolean | null>(null);
   const notificationRequestedRef = useRef(false);
   const restStartNotificationKeyRef = useRef<string | null>(null);
@@ -930,6 +1141,7 @@ export const Checklist = ({
     if (ctx.state !== "running") return;
     try {
       const now = ctx.currentTime;
+      const peakGain = variant === "double" ? 0.42 : 0.34;
       const emitBeep = (startAt: number, fromHz: number, toHz: number, duration = 0.22) => {
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
@@ -937,7 +1149,7 @@ export const Checklist = ({
         osc.frequency.setValueAtTime(fromHz, startAt);
         osc.frequency.exponentialRampToValueAtTime(toHz, startAt + duration);
         gain.gain.setValueAtTime(0.0001, startAt);
-        gain.gain.exponentialRampToValueAtTime(0.24, startAt + 0.03);
+        gain.gain.exponentialRampToValueAtTime(peakGain, startAt + 0.03);
         gain.gain.exponentialRampToValueAtTime(0.0001, startAt + duration);
         osc.connect(gain);
         gain.connect(ctx.destination);
@@ -1059,12 +1271,16 @@ export const Checklist = ({
   const [chatLoading, setChatLoading] = useState(false);
   const [chatApplying, setChatApplying] = useState(false);
   const [chatCancelling, setChatCancelling] = useState(false);
+  const [isRestOverlayCollapsed, setIsRestOverlayCollapsed] = useState(false);
   const [musicTrackIndex, setMusicTrackIndex] = useState(0);
   const [musicPlaying, setMusicPlaying] = useState(false);
   const [musicUploading, setMusicUploading] = useState(false);
   const [musicQueue, setMusicQueue] = useState<number[]>([]);
   const [musicDeletingTrackId, setMusicDeletingTrackId] = useState<number | null>(null);
   const [musicPlaylistOpen, setMusicPlaylistOpen] = useState(false);
+  const [musicGroupBy, setMusicGroupBy] = useState<MusicGroupBy>("none");
+  const [musicSearchQuery, setMusicSearchQuery] = useState("");
+  const [openMusicTrackMenuId, setOpenMusicTrackMenuId] = useState<number | null>(null);
   const [musicCurrentTime, setMusicCurrentTime] = useState(0);
   const [musicDuration, setMusicDuration] = useState(0);
   const [musicSeeking, setMusicSeeking] = useState(false);
@@ -1072,6 +1288,7 @@ export const Checklist = ({
   const [musicUploadTasks, setMusicUploadTasks] = useState<MusicUploadTask[]>([]);
   const [musicError, setMusicError] = useState<string | null>(null);
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
+  const musicTrackMenuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     musicAudioRef.current = getSharedWorkoutAudio();
@@ -1124,7 +1341,97 @@ export const Checklist = ({
   );
   const musicTracks = useMemo(() => musicTracksData?.items ?? [], [musicTracksData?.items]);
   const musicTracksSignature = useMemo(() => musicTracks.map((track) => track.id).join(","), [musicTracks]);
+  const musicTrackIndexById = useMemo(() => {
+    const indexById = new Map<number, number>();
+    musicTracks.forEach((track, index) => {
+      indexById.set(track.id, index);
+    });
+    return indexById;
+  }, [musicTracks]);
+  const filteredMusicTracks = useMemo(() => {
+    const query = musicSearchQuery.trim().toLowerCase();
+    if (!query) return musicTracks;
+    return musicTracks.filter((track) => {
+      const haystack = [
+        track.name,
+        track.title,
+        track.artist,
+        track.album,
+        track.filename,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [musicSearchQuery, musicTracks]);
+  const groupedMusicTracks = useMemo<MusicTrackGroup[]>(() => {
+    if (musicGroupBy === "none") {
+      return [{ key: "all", label: "", tracks: filteredMusicTracks }];
+    }
+    const groups = new Map<string, MusicTrack[]>();
+    filteredMusicTracks.forEach((track) => {
+      const label =
+        musicGroupBy === "folder"
+          ? getTrackFolderLabel(track)
+          : musicGroupBy === "artist"
+            ? getTrackArtistLabel(track)
+            : getTrackAlbumLabel(track);
+      const normalized = label.trim() || "Другое";
+      const bucket = groups.get(normalized) ?? [];
+      bucket.push(track);
+      groups.set(normalized, bucket);
+    });
+    return Array.from(groups.entries()).map(([label, tracks]) => ({
+      key: label.toLowerCase(),
+      label,
+      tracks,
+    }));
+  }, [filteredMusicTracks, musicGroupBy]);
   const currentMusicTrack = musicTracks[musicTrackIndex] ?? null;
+  const currentMusicMetaLine = useMemo(() => getMusicTrackMetaLine(currentMusicTrack), [currentMusicTrack]);
+  const shouldMarqueeMusicMeta = currentMusicMetaLine.length > 30;
+  const syncMusicUiFromAudio = useCallback(() => {
+    const audio = musicAudioRef.current;
+    if (!audio) return;
+    const currentSource = (audio.currentSrc || audio.src || "").trim();
+    if (currentSource && !musicTrackUrlRef.current) {
+      musicTrackUrlRef.current = currentSource;
+    }
+    const duration = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : 0;
+    const rawTime = Number.isFinite(audio.currentTime) && audio.currentTime >= 0 ? audio.currentTime : 0;
+    const safeTime = duration > 0 ? Math.min(rawTime, duration) : rawTime;
+    setMusicDuration(duration);
+    setMusicCurrentTime(safeTime);
+    musicTimeSecondRef.current = Math.floor(safeTime);
+    setMusicPlaying(!audio.paused && !audio.ended);
+  }, []);
+
+  useEffect(() => {
+    syncMusicUiFromAudio();
+  }, [syncMusicUiFromAudio]);
+
+  useEffect(() => {
+    if (!musicPlaylistOpen) {
+      setOpenMusicTrackMenuId(null);
+    }
+  }, [musicPlaylistOpen]);
+
+  useEffect(() => {
+    if (!openMusicTrackMenuId) return;
+    const handleOutsideClick = (event: MouseEvent | TouchEvent) => {
+      if (!musicTrackMenuRef.current) return;
+      const target = event.target as Node | null;
+      if (target && musicTrackMenuRef.current.contains(target)) return;
+      setOpenMusicTrackMenuId(null);
+    };
+    document.addEventListener("mousedown", handleOutsideClick);
+    document.addEventListener("touchstart", handleOutsideClick);
+    return () => {
+      document.removeEventListener("mousedown", handleOutsideClick);
+      document.removeEventListener("touchstart", handleOutsideClick);
+    };
+  }, [openMusicTrackMenuId]);
 
   useEffect(() => {
     const initialQueue = readPersistedMusicQueue();
@@ -1166,6 +1473,7 @@ export const Checklist = ({
     if (musicLastTrackIdRef.current === currentTrackId) return;
     musicLastTrackIdRef.current = currentTrackId;
     setMusicCurrentTime(0);
+    musicTimeSecondRef.current = 0;
     setMusicDuration(0);
     musicLoadingTrackUrlRef.current = "";
     if (currentTrackId) {
@@ -1176,6 +1484,10 @@ export const Checklist = ({
       });
     }
   }, [currentMusicTrack?.id]);
+
+  useEffect(() => {
+    syncMusicUiFromAudio();
+  }, [currentMusicTrack?.id, musicTracksSignature, syncMusicUiFromAudio]);
 
   useEffect(() => {
     musicFailedTrackIdsRef.current.clear();
@@ -1309,6 +1621,7 @@ export const Checklist = ({
 
   const handleMusicSeekChange = useCallback((nextValue: number) => {
     setMusicCurrentTime(nextValue);
+    musicTimeSecondRef.current = Math.floor(nextValue);
     const audio = musicAudioRef.current;
     if (audio && Number.isFinite(nextValue)) {
       audio.currentTime = nextValue;
@@ -1319,6 +1632,7 @@ export const Checklist = ({
     const audio = musicAudioRef.current;
     if (!audio) return;
     audio.currentTime = musicCurrentTime;
+    musicTimeSecondRef.current = Math.floor(musicCurrentTime);
     if (currentMusicTrack) {
       writePersistedMusicState({ trackId: currentMusicTrack.id, time: musicCurrentTime });
     }
@@ -1456,13 +1770,25 @@ export const Checklist = ({
   );
 
   useEffect(() => {
+    const audio = musicAudioRef.current;
     if (!musicTracks.length) {
+      if (audio && !audio.paused && !audio.ended) {
+        setMusicPlaying(true);
+        return;
+      }
       pauseMusicTrack();
       return;
     }
     if (!musicPlaying) return;
+    if (audio && !audio.paused && !audio.ended && currentMusicTrack) {
+      const activeUrl = (audio.currentSrc || audio.src || "").trim();
+      const expectedUrl = buildMusicTrackUrl(currentMusicTrack.url, auth.token).trim();
+      if (activeUrl && activeUrl === expectedUrl) {
+        return;
+      }
+    }
     void playMusicTrack();
-  }, [musicPlaying, musicTrackIndex, musicTracks.length, playMusicTrack, pauseMusicTrack]);
+  }, [auth.token, currentMusicTrack, musicPlaying, musicTrackIndex, musicTracks.length, playMusicTrack, pauseMusicTrack]);
 
   const skipToNextTrack = useCallback(() => {
     const nextIdx = pickNextTrackIndex();
@@ -1485,12 +1811,16 @@ export const Checklist = ({
       const safeTime = Math.min(Math.max(persisted.time ?? 0, 0), Math.max(duration - 1, 0));
       if (safeTime > 0) {
         audio.currentTime = safeTime;
+        musicTimeSecondRef.current = Math.floor(safeTime);
         setMusicCurrentTime(safeTime);
       }
     };
     const handleTimeUpdate = () => {
       if (musicSeeking) return;
       const now = Number.isFinite(audio.currentTime) ? audio.currentTime : 0;
+      const nextSecond = Math.floor(now);
+      if (musicTimeSecondRef.current === nextSecond) return;
+      musicTimeSecondRef.current = nextSecond;
       setMusicCurrentTime(now);
       if (currentMusicTrack) {
         writePersistedMusicState({ trackId: currentMusicTrack.id, time: now });
@@ -1526,6 +1856,7 @@ export const Checklist = ({
         return;
       }
       setMusicCurrentTime(0);
+      musicTimeSecondRef.current = 0;
       musicAutoAdvanceRef.current = true;
       setMusicPlaying(true);
       skipToNextTrack();
@@ -1569,6 +1900,7 @@ export const Checklist = ({
       setMusicPlaying(false);
     };
     audio.addEventListener("loadedmetadata", handleLoadedMeta);
+    audio.addEventListener("durationchange", handleLoadedMeta);
     audio.addEventListener("timeupdate", handleTimeUpdate);
     audio.addEventListener("pause", handlePause);
     audio.addEventListener("play", handlePlay);
@@ -1576,8 +1908,12 @@ export const Checklist = ({
     audio.addEventListener("error", handleError);
     audio.addEventListener("abort", handleAbort);
     audio.addEventListener("stalled", handleStalled);
+    handleLoadedMeta();
+    handleTimeUpdate();
+    setMusicPlaying(!audio.paused && !audio.ended);
     return () => {
       audio.removeEventListener("loadedmetadata", handleLoadedMeta);
+      audio.removeEventListener("durationchange", handleLoadedMeta);
       audio.removeEventListener("timeupdate", handleTimeUpdate);
       audio.removeEventListener("pause", handlePause);
       audio.removeEventListener("play", handlePlay);
@@ -2763,7 +3099,7 @@ export const Checklist = ({
 
   const infoExerciseTrend = useMemo(() => {
     if (!infoExercise || !infoTrendData?.folders?.length) {
-      return { points: [] as Array<{ iso: string; label: string; load: number }>, sourceFolderName: "" };
+      return { points: [] as ExerciseTrendChartPoint[], sourceFolderName: "" };
     }
     const targetName = normalizeExerciseName(infoExercise.name);
     const allFolders = infoTrendData.folders;
@@ -2781,7 +3117,7 @@ export const Checklist = ({
             ),
           );
     if (!fallbackMatches.length) {
-      return { points: [] as Array<{ iso: string; label: string; load: number }>, sourceFolderName: "" };
+      return { points: [] as ExerciseTrendChartPoint[], sourceFolderName: "" };
     }
     const loadByDate = new Map<string, number>();
     fallbackMatches.forEach((exercise) => {
@@ -2822,6 +3158,14 @@ export const Checklist = ({
     infoExercise && infoExercise.images.length > 0
       ? infoExercise.images[Math.min(infoImageIndex, infoExercise.images.length - 1)]
       : null;
+  const currentWeighInText =
+    plan.weigh_in?.weight_kg !== null && plan.weigh_in?.weight_kg !== undefined
+      ? (() => {
+          const numeric = Number(plan.weigh_in.weight_kg);
+          if (!Number.isFinite(numeric)) return `${plan.weigh_in.weight_kg} кг`;
+          return `${numeric.toFixed(1).replace(/\.0$/, "")} кг`;
+        })()
+      : null;
 
   return (
     <>
@@ -2839,66 +3183,102 @@ export const Checklist = ({
           )}
         </div>
       )}
-      <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-700 dark:bg-slate-900/70">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-              <span className="inline-flex items-center gap-1.5">
-                <Link
-                  href="/analytics#body-weight"
-                  className="inline-flex h-6 w-6 items-center justify-center rounded-md text-primary transition hover:bg-primary/10"
-                  aria-label="Открыть статистику веса"
-                  title="Открыть статистику веса"
-                >
-                  <StatsIcon className="text-primary" />
-                </Link>
-                Взвешивание перед тренировкой
-              </span>
-            </h3>
-          </div>
-          {plan.weigh_in?.weight_kg !== null && plan.weigh_in?.weight_kg !== undefined && (
-            <p className="text-xs font-medium text-slate-500 dark:text-slate-300">
-              Текущее: {plan.weigh_in.weight_kg} кг
-            </p>
-          )}
-        </div>
-        <div className="mt-3 flex flex-wrap items-end gap-2">
-          <label className="w-[120px] text-sm">
-            <input
-              type="number"
-              inputMode="decimal"
-              step="0.1"
-              min="20"
-              max="400"
-              value={weighInValue}
-              onChange={(event) => setWeighInValue(event.target.value)}
-              placeholder="Вес, кг"
-              className="form-field h-[46px]"
-            />
-          </label>
-          <Button
+      <section className="space-y-2">
+        <p className="text-sm uppercase tracking-widest text-primary">Дневной чеклист</p>
+        <div className="flex items-stretch gap-3">
+          <section className="min-w-0 flex-1 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-700 dark:bg-slate-900/70">
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="min-w-0 flex-1 text-sm font-semibold text-slate-900 dark:text-slate-100">
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <Link
+                    href="/analytics#body-weight"
+                    className="inline-flex h-6 w-6 items-center justify-center rounded-md text-primary transition hover:bg-primary/10"
+                    aria-label="Открыть статистику веса"
+                    title="Открыть статистику веса"
+                  >
+                    <StatsIcon className="text-primary" />
+                  </Link>
+                  <span className="block min-w-0 truncate">Вес перед тренировкой</span>
+                </span>
+              </h3>
+            </div>
+            <div className="mt-2 flex items-center gap-2">
+              <label className="w-[98px] text-sm">
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  step="0.1"
+                  min="20"
+                  max="400"
+                  value={weighInValue}
+                  onChange={(event) => setWeighInValue(event.target.value)}
+                  placeholder="Вес, кг"
+                  className="form-field h-[42px]"
+                />
+              </label>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => void saveWeighIn()}
+                disabled={weighInSaving || !weighInValue.trim()}
+                className="h-10 w-10 px-0"
+                aria-label="Сохранить вес"
+                title="Сохранить вес"
+              >
+                {weighInSaving ? "…" : <SaveApplyIcon />}
+              </Button>
+              {currentWeighInText && (
+                <span className="shrink-0 rounded-lg border border-slate-300/80 bg-slate-50 px-2 py-1 text-xs font-medium text-slate-600 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                  {currentWeighInText}
+                </span>
+              )}
+            </div>
+            {weighInError && weighInError.startsWith("Нет сети:") ? (
+              <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50/80 px-3 py-2 text-xs text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
+                {weighInError}
+              </div>
+            ) : weighInError ? (
+              <p className="mt-2 text-xs text-red-500">{weighInError}</p>
+            ) : null}
+          </section>
+          <button
             type="button"
-            onClick={() => void saveWeighIn()}
-            disabled={weighInSaving || !weighInValue.trim()}
-            className="h-[46px] w-[46px] px-0"
-            aria-label="Сохранить вес"
-            title="Сохранить вес"
+            className="inline-flex w-[124px] shrink-0 flex-col items-center justify-center rounded-2xl border border-slate-200 bg-white px-3 py-2 text-center shadow-sm transition hover:border-primary hover:text-primary dark:border-slate-700 dark:bg-slate-900/70"
+            onClick={onOpenCalendar}
           >
-            {weighInSaving ? "…" : <SaveApplyIcon />}
-          </Button>
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              {headerDate}
+            </p>
+            <p className="text-3xl font-black leading-tight text-slate-900">{Math.round(dailyLoad)}</p>
+            <p className="text-[10px] text-slate-500 dark:text-slate-400">нагрузка</p>
+          </button>
         </div>
-        {weighInError && weighInError.startsWith("Нет сети:") ? (
-          <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50/80 px-3 py-2 text-xs text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
-            {weighInError}
-          </div>
-        ) : weighInError ? (
-          <p className="mt-2 text-xs text-red-500">{weighInError}</p>
-        ) : null}
       </section>
-      <section className="fixed bottom-3 left-3 right-3 z-40 rounded-2xl border border-slate-200 bg-white/95 p-3 shadow-2xl backdrop-blur dark:border-slate-700 dark:bg-slate-900/95 sm:bottom-4 sm:left-6 sm:right-6">
-        <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Музыка</h3>
-        <div className="mt-3 rounded-xl border border-slate-200/80 bg-slate-50/70 p-2.5 dark:border-slate-700 dark:bg-slate-800/40">
-          <div className="flex flex-wrap items-center gap-2">
+      {todayMuscles.length > 0 && (
+        <section className="rounded-2xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm dark:border-slate-700 dark:bg-slate-900/70">
+          <div className="flex flex-wrap gap-1.5">
+            {todayMuscles.slice(0, 6).map(([muscle, count]) => (
+              <span
+                key={muscle}
+                className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/5 px-2 py-0.5 text-[11px] font-medium text-primary"
+              >
+                {muscle}
+                {count > 1 && (
+                  <span className="text-[10px] font-semibold text-primary/70">×{count}</span>
+                )}
+              </span>
+            ))}
+          </div>
+        </section>
+      )}
+      <section
+        className={clsx(
+          "fixed left-3 right-3 z-40 rounded-2xl border border-slate-200 bg-white/95 p-1.5 shadow-2xl backdrop-blur dark:border-slate-700 dark:bg-slate-900/95 sm:left-6 sm:right-6 sm:p-2",
+          "bottom-3 sm:bottom-4",
+        )}
+      >
+        <div className="rounded-xl border border-slate-200/80 bg-slate-50/70 p-1.5 dark:border-slate-700 dark:bg-slate-800/40">
+          <div className="flex items-center gap-1.5">
             <Button
               type="button"
               variant="secondary"
@@ -2913,41 +3293,59 @@ export const Checklist = ({
                 }
               }}
               disabled={!musicTracks.length}
-              className="h-9 min-w-[92px] px-3"
+              className="h-8 min-w-[52px] px-2"
               title={musicPlaying ? "Пауза" : "Воспроизвести"}
               aria-label={musicPlaying ? "Пауза" : "Воспроизвести"}
             >
               {musicPlaying ? <PauseIcon /> : <PlayIcon />}
-              {musicPlaying ? "Pause" : "Play"}
             </Button>
+            <button
+              type="button"
+              className="min-w-0 flex-1 text-left"
+              onClick={() => setMusicPlaylistOpen(true)}
+              title="Развернуть в плейлист"
+              aria-label="Развернуть в плейлист"
+            >
+              <div className="flex h-[18px] items-center overflow-hidden">
+                {currentMusicTrack ? (
+                  shouldMarqueeMusicMeta ? (
+                    <div className="ft-music-marquee text-[11px] leading-[18px] text-slate-400 dark:text-slate-300">
+                      <span className="ft-music-marquee__item">{currentMusicMetaLine}</span>
+                      <span className="ft-music-marquee__item" aria-hidden>
+                        {currentMusicMetaLine}
+                      </span>
+                    </div>
+                  ) : (
+                    <p className="truncate text-[11px] leading-[18px] text-slate-400 dark:text-slate-300">{currentMusicMetaLine}</p>
+                  )
+                ) : (
+                  <p className="truncate text-[11px] leading-[18px] text-slate-400 dark:text-slate-300">Выберите трек</p>
+                )}
+              </div>
+            </button>
             <Button
               type="button"
               variant="secondary"
               onClick={playNextTrack}
               disabled={musicTracks.length < 2}
-              className="h-9 px-3"
+              className="h-8 min-w-[44px] px-2"
               title="Следующий трек"
               aria-label="Следующий трек"
             >
               <NextIcon />
-              Next
             </Button>
             <Button
               type="button"
               variant="secondary"
               onClick={() => setMusicPlaylistOpen(true)}
-              className="h-9 px-3"
-              title="Открыть плейлист"
-              aria-label="Открыть плейлист"
+              className="h-8 min-w-[44px] px-2"
+              title="Плейлист"
+              aria-label="Плейлист"
             >
               <PlaylistIcon />
-              Playlist
             </Button>
           </div>
-          <p className="mt-2 min-w-0 text-sm text-slate-600 dark:text-slate-200">
-            {currentMusicTrack ? `Сейчас: ${currentMusicTrack.name}` : "Музыка: откройте плейлист и загрузите треки"}
-          </p>
-          <div className="mt-2">
+          <div className="mt-1">
             <input
               type="range"
               min={0}
@@ -2973,19 +3371,18 @@ export const Checklist = ({
                 }
               }}
               disabled={!currentMusicTrack}
-              className="h-2 w-full cursor-pointer accent-primary disabled:cursor-not-allowed"
+              className="h-1.5 w-full cursor-pointer accent-primary disabled:cursor-not-allowed"
               aria-label="Перемотка трека"
             />
-            <div className="mt-1 flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-300">
+            <div className="mt-0.5 flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-300">
               <span>{formatAudioTime(musicCurrentTime)}</span>
               <span>{formatAudioTime(musicDuration)}</span>
             </div>
           </div>
-          {musicError ? <p className="mt-2 text-xs text-amber-600 dark:text-amber-300">{musicError}</p> : null}
+          {musicError ? <p className="mt-0.5 text-[10px] text-amber-600 dark:text-amber-300">{musicError}</p> : null}
         </div>
       </section>
-      <div className="h-[190px] sm:h-[210px]" />
-      <div className="space-y-4 sm:space-y-5">
+      <div className="space-y-4 pb-[102px] sm:space-y-5 sm:pb-[110px]">
         {plan.folders.map((folder) => {
           const expanded = expandedFolders[folder.id] ?? true;
           const folderComplete = isFolderComplete(folder);
@@ -3564,106 +3961,57 @@ export const Checklist = ({
             }}
             {...({ webkitdirectory: "true", directory: "true" } as Record<string, string>)}
           />
-          <div
-            className={clsx(
-              "mb-3 rounded-xl border border-dashed px-3 py-3 transition",
-              musicDropActive
-                ? "border-primary bg-primary/10"
-                : "border-slate-300 bg-slate-50 dark:border-slate-600 dark:bg-slate-800/60",
-            )}
-            onDragEnter={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              setMusicDropActive(true);
-            }}
-            onDragOver={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              setMusicDropActive(true);
-            }}
-            onDragLeave={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              const nextTarget = event.relatedTarget as Node | null;
-              if (nextTarget && event.currentTarget.contains(nextTarget)) return;
-              setMusicDropActive(false);
-            }}
-            onDrop={(event) => {
-              void handleMusicDrop(event);
-            }}
-          >
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => musicUploadInputRef.current?.click()}
-                className="h-8 px-3"
-                disabled={musicUploading}
-              >
-                Upload files
-              </Button>
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => musicUploadFolderInputRef.current?.click()}
-                className="h-8 px-3"
-                disabled={musicUploading}
-              >
-                Upload folder
-              </Button>
-              <span className="text-xs text-slate-500 dark:text-slate-300">
-                {musicUploading ? "Идёт фоновая загрузка..." : "Перетащите файлы или папку сюда"}
-              </span>
-            </div>
-            {musicUploadTasks.length ? (
-              <div className="mt-2 max-h-24 space-y-1 overflow-y-auto pr-1">
-                {musicUploadTasks.slice(-5).map((task) => (
-                  <div
-                    key={task.id}
-                    className="flex items-center justify-between rounded-lg bg-white/80 px-2 py-1 text-xs dark:bg-slate-900/50"
-                  >
-                    <span className="truncate pr-2">{task.name}</span>
-                    <span
-                      className={clsx(
-                        "shrink-0 font-semibold",
-                        task.status === "queued" && "text-slate-500 dark:text-slate-300",
-                        task.status === "uploading" && "text-amber-600 dark:text-amber-300",
-                        task.status === "done" && "text-emerald-600 dark:text-emerald-300",
-                        task.status === "error" && "text-red-600 dark:text-red-300",
-                      )}
-                    >
-                      {task.status === "queued" && "В очереди"}
-                      {task.status === "uploading" && "Загрузка"}
-                      {task.status === "done" && "Готово"}
-                      {task.status === "error" && "Ошибка"}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            ) : null}
-            {musicUploadTasks.some((task) => task.status === "done" || task.status === "error") ? (
-              <div className="mt-2 flex justify-end">
+          <div className="mb-2 space-y-2">
+            <div className="relative">
+              <input
+                type="text"
+                value={musicSearchQuery}
+                onChange={(event) => setMusicSearchQuery(event.target.value)}
+                placeholder="Поиск по треку, исполнителю, альбому"
+                className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 pr-9 text-sm text-slate-700 outline-none ring-primary/40 transition placeholder:text-slate-400 focus:ring dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500"
+              />
+              {musicSearchQuery ? (
                 <button
                   type="button"
-                  onClick={clearFinishedMusicUploads}
-                  className="text-xs font-medium text-slate-500 hover:text-primary dark:text-slate-300"
+                  onClick={() => setMusicSearchQuery("")}
+                  className="absolute right-1 top-1 inline-flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                  title="Очистить поиск"
+                  aria-label="Очистить поиск"
                 >
-                  Очистить завершённые
+                  <CloseIcon className="h-3.5 w-3.5" />
                 </button>
-              </div>
-            ) : null}
+              ) : null}
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <label htmlFor="music-group-by" className="text-xs text-slate-500 dark:text-slate-300">
+                Группировка
+              </label>
+              <select
+                id="music-group-by"
+                value={musicGroupBy}
+                onChange={(event) => setMusicGroupBy(event.target.value as MusicGroupBy)}
+                className="h-8 rounded-lg border border-slate-300 bg-white px-2 text-xs text-slate-700 outline-none ring-primary/40 transition focus:ring dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+              >
+                <option value="none">Без группировки</option>
+                <option value="folder">По папкам</option>
+                <option value="artist">По исполнителю</option>
+                <option value="album">По альбому</option>
+              </select>
+            </div>
           </div>
           <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
             {musicQueue.length ? (
-              <div className="rounded-xl border border-amber-400/40 bg-amber-500/10 px-3 py-2">
+              <div className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 dark:border-amber-400/40 dark:bg-amber-500/10">
                 <div className="flex items-center justify-between gap-2">
-                  <p className="text-xs font-semibold text-amber-300">Очередь ({musicQueue.length})</p>
+                  <p className="text-xs font-semibold text-amber-800 dark:text-amber-300">Очередь ({musicQueue.length})</p>
                   <button
                     type="button"
                     onClick={clearMusicQueue}
-                    className="text-[11px] font-medium text-amber-200 hover:text-amber-100"
+                    title="Очистить очередь"
+                    aria-label="Очистить очередь"
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-amber-300 text-amber-700 transition hover:bg-amber-100 hover:text-amber-900 dark:border-amber-400/40 dark:text-amber-200 dark:hover:bg-amber-500/15 dark:hover:text-amber-100"
                   >
-                    Очистить
+                    <CloseIcon className="h-3.5 w-3.5" />
                   </button>
                 </div>
                 <div className="mt-1 flex flex-wrap gap-1.5">
@@ -3673,14 +4021,14 @@ export const Checklist = ({
                     return (
                       <span
                         key={`queue-${queuedId}`}
-                        className="rounded-md bg-amber-500/20 px-2 py-1 text-[11px] text-amber-100"
+                        className="rounded-md bg-amber-100 px-2 py-1 text-[11px] text-amber-900 dark:bg-amber-500/20 dark:text-amber-100"
                       >
                         {queuedTrack.name}
                       </span>
                     );
                   })}
                   {musicQueue.length > 6 ? (
-                    <span className="rounded-md bg-amber-500/20 px-2 py-1 text-[11px] text-amber-100">
+                    <span className="rounded-md bg-amber-100 px-2 py-1 text-[11px] text-amber-900 dark:bg-amber-500/20 dark:text-amber-100">
                       +{musicQueue.length - 6}
                     </span>
                   ) : null}
@@ -3688,75 +4036,235 @@ export const Checklist = ({
               </div>
             ) : null}
             {musicTracks.length ? (
-              musicTracks.map((track, index) => {
-                const active = index === musicTrackIndex;
-                const inQueue = musicQueue.includes(track.id);
-                return (
-                  <div
-                    key={track.id}
-                    className={clsx(
-                      "rounded-xl border px-3 py-2 transition",
-                      active
-                        ? "border-primary/40 bg-primary/10"
-                        : "border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800",
-                    )}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <button
-                        type="button"
-                        onClick={() => selectMusicTrack(index, { play: false })}
-                        className="min-w-0 flex-1 text-left"
-                      >
-                        <p className={clsx("truncate text-sm font-medium", active ? "text-primary" : "text-slate-700 dark:text-slate-200")}>
-                          {track.name}
-                        </p>
-                        <p className="truncate text-[11px] text-slate-400">
-                          {track.artist ? `${track.artist}${track.title ? " — " : ""}` : ""}
-                          {track.title ?? ""}
-                        </p>
-                      </button>
-                      {active && <span className="text-xs font-semibold text-primary">Сейчас</span>}
-                      {inQueue && !active ? <span className="text-[11px] text-amber-300">В очереди</span> : null}
+              filteredMusicTracks.length ? (
+              groupedMusicTracks.map((group) => (
+                <div key={group.key} className="space-y-1.5">
+                  {musicGroupBy !== "none" ? (
+                    <div className="flex items-center justify-between px-1">
+                      <p className="truncate text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-300">
+                        {group.label}
+                      </p>
+                      <span className="text-[10px] text-slate-400 dark:text-slate-500">{group.tracks.length}</span>
                     </div>
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => selectMusicTrack(index, { play: true })}
-                        className="rounded-md border border-slate-500/40 px-2 py-1 text-[11px] text-slate-200 hover:border-primary/60 hover:text-primary"
+                  ) : null}
+                  {group.tracks.map((track) => {
+                    const index = musicTrackIndexById.get(track.id);
+                    if (index === undefined) return null;
+                    const active = index === musicTrackIndex;
+                    const inQueue = musicQueue.includes(track.id);
+                    const menuOpen = openMusicTrackMenuId === track.id;
+                    return (
+                      <div
+                        key={track.id}
+                        className={clsx(
+                          "rounded-xl border px-2.5 py-1.5 transition",
+                          active
+                            ? "border-primary/40 bg-primary/10"
+                            : "border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800",
+                        )}
                       >
-                        Play now
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => queueTrackNext(track.id)}
-                        className="rounded-md border border-slate-500/40 px-2 py-1 text-[11px] text-slate-200 hover:border-primary/60 hover:text-primary"
-                      >
-                        Play next
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => queueTrackLater(track.id)}
-                        className="rounded-md border border-slate-500/40 px-2 py-1 text-[11px] text-slate-200 hover:border-primary/60 hover:text-primary"
-                      >
-                        Queue
-                      </button>
-                      {track.is_mine ? (
-                        <button
-                          type="button"
-                          onClick={() => void deleteMusicTrack(track)}
-                          disabled={musicDeletingTrackId === track.id}
-                          className="rounded-md border border-red-400/40 px-2 py-1 text-[11px] text-red-300 hover:bg-red-500/10 disabled:opacity-50"
-                        >
-                          {musicDeletingTrackId === track.id ? "Удаление..." : "Удалить"}
-                        </button>
-                      ) : null}
-                    </div>
-                  </div>
-                );
-              })
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => selectMusicTrack(index, { play: false, close: false })}
+                            className="min-w-0 flex-1 text-left"
+                          >
+                            <p
+                              className={clsx(
+                                "truncate text-sm font-medium leading-tight",
+                                active ? "text-primary" : "text-slate-700 dark:text-slate-200",
+                              )}
+                            >
+                              {track.name}
+                            </p>
+                            {musicGroupBy !== "artist" && track.artist ? (
+                              <p className="truncate text-[11px] text-slate-500 dark:text-slate-400">{track.artist}</p>
+                            ) : null}
+                          </button>
+                          <div className="relative shrink-0" ref={menuOpen ? musicTrackMenuRef : null}>
+                            <div className="flex items-center gap-1">
+                              {active ? (
+                                <span className="rounded-md bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
+                                  Сейчас
+                                </span>
+                              ) : inQueue ? (
+                                <span className="rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
+                                  В очереди
+                                </span>
+                              ) : null}
+                              <button
+                                type="button"
+                                onClick={() => setOpenMusicTrackMenuId((prev) => (prev === track.id ? null : track.id))}
+                                title="Действия с треком"
+                                aria-label={`Действия с треком: ${track.name}`}
+                                aria-haspopup="menu"
+                                aria-expanded={menuOpen}
+                                className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-400/40 text-slate-700 transition hover:border-primary/60 hover:text-primary dark:text-slate-200"
+                              >
+                                <MoreIcon className="h-3 w-3" />
+                              </button>
+                            </div>
+                            {menuOpen ? (
+                              <div className="absolute right-0 top-8 z-20 w-44 rounded-lg border border-slate-200 bg-white p-1 shadow-xl dark:border-slate-600 dark:bg-slate-900">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    selectMusicTrack(index, { play: true, close: false });
+                                    setOpenMusicTrackMenuId(null);
+                                  }}
+                                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-slate-700 transition hover:bg-slate-100 dark:text-slate-100 dark:hover:bg-slate-800"
+                                >
+                                  <PlayIcon className="h-3 w-3" />
+                                  Играть
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    queueTrackNext(track.id);
+                                    setOpenMusicTrackMenuId(null);
+                                  }}
+                                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-slate-700 transition hover:bg-slate-100 dark:text-slate-100 dark:hover:bg-slate-800"
+                                >
+                                  <NextIcon className="h-3 w-3" />
+                                  Следующим
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    queueTrackLater(track.id);
+                                    setOpenMusicTrackMenuId(null);
+                                  }}
+                                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-slate-700 transition hover:bg-slate-100 dark:text-slate-100 dark:hover:bg-slate-800"
+                                >
+                                  <QueueLaterIcon className="h-3 w-3" />
+                                  В очередь
+                                </button>
+                                {track.is_mine ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      void deleteMusicTrack(track);
+                                      setOpenMusicTrackMenuId(null);
+                                    }}
+                                    disabled={musicDeletingTrackId === track.id}
+                                    className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-red-500 transition hover:bg-red-500/10 disabled:opacity-50 dark:text-red-300"
+                                  >
+                                    {musicDeletingTrackId === track.id ? (
+                                      <span className="h-3 w-3 animate-pulse rounded-full bg-current/70" />
+                                    ) : (
+                                      <TrashIcon className="h-3 w-3" />
+                                    )}
+                                    Удалить
+                                  </button>
+                                ) : null}
+                              </div>
+                            ) : null}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ))
+              ) : (
+                <p className="text-sm text-slate-500 dark:text-slate-300">
+                  По запросу ничего не найдено.
+                </p>
+              )
             ) : (
               <p className="text-sm text-slate-500 dark:text-slate-300">Треки пока не загружены.</p>
             )}
+            <div
+              className={clsx(
+                "mt-2 rounded-xl border border-dashed px-3 py-3 transition",
+                musicDropActive
+                  ? "border-primary bg-primary/10"
+                  : "border-slate-300 bg-slate-50 dark:border-slate-600 dark:bg-slate-800/60",
+              )}
+              onDragEnter={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                setMusicDropActive(true);
+              }}
+              onDragOver={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                setMusicDropActive(true);
+              }}
+              onDragLeave={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                const nextTarget = event.relatedTarget as Node | null;
+                if (nextTarget && event.currentTarget.contains(nextTarget)) return;
+                setMusicDropActive(false);
+              }}
+              onDrop={(event) => {
+                void handleMusicDrop(event);
+              }}
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => musicUploadInputRef.current?.click()}
+                  disabled={musicUploading}
+                  title="Загрузить файлы"
+                  aria-label="Загрузить файлы"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-primary/35 bg-primary/10 text-primary transition hover:bg-primary/20 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <UploadFilesIcon />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => musicUploadFolderInputRef.current?.click()}
+                  disabled={musicUploading}
+                  title="Загрузить папку"
+                  aria-label="Загрузить папку"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-primary/35 bg-primary/10 text-primary transition hover:bg-primary/20 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <UploadFolderIcon />
+                </button>
+                <span className="text-xs text-slate-500 dark:text-slate-300">
+                  {musicUploading ? "Идёт фоновая загрузка..." : "Перетащите файлы или папку сюда"}
+                </span>
+              </div>
+              {musicUploadTasks.length ? (
+                <div className="mt-2 max-h-24 space-y-1 overflow-y-auto pr-1">
+                  {musicUploadTasks.slice(-5).map((task) => (
+                    <div
+                      key={task.id}
+                      className="flex items-center justify-between rounded-lg bg-white/80 px-2 py-1 text-xs dark:bg-slate-900/50"
+                    >
+                      <span className="truncate pr-2">{task.name}</span>
+                      <span
+                        className={clsx(
+                          "shrink-0 font-semibold",
+                          task.status === "queued" && "text-slate-500 dark:text-slate-300",
+                          task.status === "uploading" && "text-amber-600 dark:text-amber-300",
+                          task.status === "done" && "text-emerald-600 dark:text-emerald-300",
+                          task.status === "error" && "text-red-600 dark:text-red-300",
+                        )}
+                      >
+                        {task.status === "queued" && "В очереди"}
+                        {task.status === "uploading" && "Загрузка"}
+                        {task.status === "done" && "Готово"}
+                        {task.status === "error" && "Ошибка"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+              {musicUploadTasks.some((task) => task.status === "done" || task.status === "error") ? (
+                <div className="mt-2 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={clearFinishedMusicUploads}
+                    className="text-xs font-medium text-slate-500 hover:text-primary dark:text-slate-300"
+                  >
+                    Очистить завершённые
+                  </button>
+                </div>
+              ) : null}
+            </div>
           </div>
         </div>
       </Modal>
@@ -3907,6 +4415,7 @@ export const Checklist = ({
         onChange={handleRestFieldChange}
         onSkip={skipRest}
         onClose={closeRestOverlay}
+        onCollapsedChange={setIsRestOverlayCollapsed}
         error={restError}
       />
       <ExecutionTimerOverlay
@@ -4008,41 +4517,10 @@ export const Checklist = ({
                     Пока недостаточно данных для графика прогресса по этому упражнению.
                   </p>
                 ) : (
-                  <>
-                    <div className="h-64 rounded-xl border border-slate-200 bg-white p-2 text-primary dark:border-slate-700 dark:bg-slate-900">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={infoExerciseTrend.points} margin={{ top: 12, right: 16, bottom: 4, left: 4 }}>
-                          <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.35} />
-                          <XAxis dataKey="label" minTickGap={10} tick={{ fontSize: 12 }} />
-                          <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
-                          <Tooltip
-                            content={({ active, payload, label }) => {
-                              if (!active || !payload || payload.length === 0) return null;
-                              const value = payload[0]?.value ?? 0;
-                              return (
-                                <div className="rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 shadow dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100">
-                                  <p className="font-semibold">{label}</p>
-                                  <p>Нагрузка: {Number(value).toFixed(1)}</p>
-                                </div>
-                              );
-                            }}
-                          />
-                          <Line
-                            type="monotone"
-                            dataKey="load"
-                            name="Нагрузка"
-                            stroke="currentColor"
-                            strokeWidth={2.5}
-                            dot={{ r: 3 }}
-                            activeDot={{ r: 4 }}
-                          />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">
-                      Источник: {infoExerciseTrend.sourceFolderName || "выбранная программа"}.
-                    </p>
-                  </>
+                  <ExerciseTrendChart
+                    points={infoExerciseTrend.points}
+                    sourceFolderName={infoExerciseTrend.sourceFolderName}
+                  />
                 )}
               </div>
             )}
@@ -4098,6 +4576,35 @@ export const Checklist = ({
           </div>
         )}
       </Modal>
+      <style jsx global>{`
+        .ft-music-marquee {
+          display: inline-flex;
+          align-items: center;
+          height: 18px;
+          line-height: 18px;
+          min-width: 100%;
+          width: max-content;
+          white-space: nowrap;
+          will-change: transform;
+          animation: ft-music-marquee 12s linear infinite;
+        }
+        .ft-music-marquee__item {
+          padding-right: 1.6rem;
+        }
+        @keyframes ft-music-marquee {
+          from {
+            transform: translateX(0);
+          }
+          to {
+            transform: translateX(-50%);
+          }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .ft-music-marquee {
+            animation: none;
+          }
+        }
+      `}</style>
     </>
   );
 };

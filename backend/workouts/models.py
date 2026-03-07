@@ -240,6 +240,7 @@ class WorkoutMusicTrack(TimestampedModel):
         help_text="Пусто = системный трек для всех пользователей",
     )
     artist = models.CharField(max_length=120, blank=True, default="")
+    album = models.CharField(max_length=160, blank=True, default="")
     title = models.CharField(max_length=120, blank=True)
     file = models.FileField(
         upload_to=music_upload_to,

@@ -169,48 +169,14 @@ const WorkoutPageContent = () => {
 
   return (
     <div className="space-y-6 overflow-x-hidden">
-      <header className="space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="space-y-1">
-            <p className="text-sm uppercase tracking-widest text-primary">Дневной чеклист</p>
-            <h1 className="text-3xl font-semibold leading-tight">
-              {normalizedSelectedDate === todayIso ? "Сегодня" : normalizedSelectedDate}
-            </h1>
-          </div>
-          <button
-            type="button"
-            className="inline-flex flex-col rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-center shadow-sm transition hover:border-primary hover:text-primary"
-            onClick={() => setIsCalendarOpen(true)}
-          >
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-              {currentDate}
-            </p>
-            <p className="text-3xl font-black leading-tight text-slate-900">{Math.round(dailyLoad)}</p>
-            <p className="text-[10px] text-slate-400">нагрузка за день</p>
-          </button>
-        </div>
-        {todayMuscles.length > 0 && (
-          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-500">
-              {normalizedSelectedDate === todayIso ? "Сегодня работаем" : `День (${normalizedSelectedDate})`}
-            </p>
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {todayMuscles.slice(0, 6).map(([muscle, count]) => (
-                <span
-                  key={muscle}
-                  className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/5 px-2 py-0.5 text-[11px] font-medium text-primary"
-                >
-                  {muscle}
-                  {count > 1 && (
-                    <span className="text-[10px] font-semibold text-primary/70">×{count}</span>
-                  )}
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
-      </header>
-      <Checklist plan={plan} refresh={() => fetchPlan(normalizedSelectedDate)} />
+      <Checklist
+        plan={plan}
+        refresh={() => fetchPlan(normalizedSelectedDate)}
+        todayMuscles={todayMuscles}
+        headerDate={currentDate}
+        dailyLoad={dailyLoad}
+        onOpenCalendar={() => setIsCalendarOpen(true)}
+      />
       <WorkoutCalendar
         open={isCalendarOpen}
         onClose={() => setIsCalendarOpen(false)}

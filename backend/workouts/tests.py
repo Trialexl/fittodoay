@@ -357,6 +357,7 @@ def test_music_tracks_endpoint_lists_active_tracks(tmp_path):
     with override_settings(MUSIC_ROOT=tmp_path):
         first = WorkoutMusicTrack.objects.create(
             title="Warmup",
+            album="Manual Album",
             is_active=True,
             owner=user,
             file=SimpleUploadedFile("warmup.mp3", b"fake-mp3", content_type="audio/mpeg"),
@@ -388,6 +389,7 @@ def test_music_tracks_endpoint_lists_active_tracks(tmp_path):
     own_item = next(item for item in items if item["id"] == first.id)
     assert own_item["is_mine"] is True
     assert own_item["url"] == f"/api/workouts/music/tracks/{first.id}/file/"
+    assert own_item["album"] == "Manual Album"
 
 
 @pytest.mark.django_db
@@ -428,6 +430,53 @@ def test_music_track_file_endpoint_blocks_missing_or_inactive_track(tmp_path):
 
 
 @pytest.mark.django_db
+def test_music_track_file_endpoint_supports_http_range_streaming(tmp_path):
+    user = User.objects.create_user(email="musicrange@example.com", password="pass")
+    client = APIClient()
+    client.force_authenticate(user=user)
+    payload = b"0123456789"
+    with override_settings(MUSIC_ROOT=tmp_path):
+        track = WorkoutMusicTrack.objects.create(
+            title="Range",
+            is_active=True,
+            owner=user,
+            file=SimpleUploadedFile("range.mp3", payload, content_type="audio/mpeg"),
+        )
+        response = client.get(
+            f"/api/workouts/music/tracks/{track.id}/file/",
+            HTTP_RANGE="bytes=2-5",
+        )
+
+    assert response.status_code == 206
+    assert response["Accept-Ranges"] == "bytes"
+    assert response["Content-Range"] == "bytes 2-5/10"
+    assert response["Content-Length"] == "4"
+    assert b"".join(response.streaming_content) == b"2345"
+
+
+@pytest.mark.django_db
+def test_music_track_file_endpoint_returns_416_for_invalid_range(tmp_path):
+    user = User.objects.create_user(email="musicrangeinvalid@example.com", password="pass")
+    client = APIClient()
+    client.force_authenticate(user=user)
+    with override_settings(MUSIC_ROOT=tmp_path):
+        track = WorkoutMusicTrack.objects.create(
+            title="Range invalid",
+            is_active=True,
+            owner=user,
+            file=SimpleUploadedFile("range-invalid.mp3", b"0123456789", content_type="audio/mpeg"),
+        )
+        response = client.get(
+            f"/api/workouts/music/tracks/{track.id}/file/",
+            HTTP_RANGE="bytes=999-1000",
+        )
+
+    assert response.status_code == 416
+    assert response["Content-Range"] == "bytes */10"
+    assert response["Accept-Ranges"] == "bytes"
+
+
+@pytest.mark.django_db
 def test_music_upload_endpoint_creates_user_track(tmp_path):
     user = User.objects.create_user(email="musicupload@example.com", password="pass")
     client = APIClient()
@@ -449,6 +498,7 @@ def test_music_upload_endpoint_creates_user_track(tmp_path):
     assert created.owner_id == user.id
     assert created.title == "mine"
     assert created_item["is_mine"] is True
+    assert created_item["album"] == ""
     assert created.file.name.startswith(f"user_{user.id}/mine-")
 
 
@@ -487,7 +537,11 @@ def test_music_upload_endpoint_extracts_artist_and_title_from_id3v1(tmp_path):
 
     artist = "Artist Name".ljust(30, "\x00").encode("latin-1")
     title = "Track Title".ljust(30, "\x00").encode("latin-1")
-    payload = b"\x00" * 256 + b"TAG" + title + artist + (b"\x00" * 65)
+    album = "Album Name".ljust(30, "\x00").encode("latin-1")
+    year = b"2024"
+    comment = b"\x00" * 30
+    genre = b"\x00"
+    payload = b"\x00" * 256 + b"TAG" + title + artist + album + year + comment + genre
 
     with override_settings(MUSIC_ROOT=tmp_path):
         response = client.post(
@@ -502,7 +556,39 @@ def test_music_upload_endpoint_extracts_artist_and_title_from_id3v1(tmp_path):
     created_item = response.data["items"][0]
     assert created_item["artist"] == "Artist Name"
     assert created_item["title"] == "Track Title"
+    assert created_item["album"] == "Album Name"
     assert created_item["name"] == "Artist Name — Track Title"
+
+
+@pytest.mark.django_db
+def test_music_tracks_endpoint_backfills_missing_album_from_file_metadata(tmp_path):
+    user = User.objects.create_user(email="musicbackfill@example.com", password="pass")
+    client = APIClient()
+    client.force_authenticate(user=user)
+    artist = "System Of A Down".ljust(30, "\x00").encode("latin-1")
+    title = "Aerials".ljust(30, "\x00").encode("latin-1")
+    album = "Toxicity".ljust(30, "\x00").encode("latin-1")
+    year = b"2001"
+    comment = b"\x00" * 30
+    genre = b"\x00"
+    payload = b"\x00" * 64 + b"TAG" + title + artist + album + year + comment + genre
+
+    with override_settings(MUSIC_ROOT=tmp_path):
+        track = WorkoutMusicTrack.objects.create(
+            title="Aerials",
+            artist="System Of A Down",
+            album="",
+            is_active=True,
+            owner=user,
+            file=SimpleUploadedFile("aerials.mp3", payload, content_type="audio/mpeg"),
+        )
+        response = client.get("/api/workouts/music/tracks/")
+        track.refresh_from_db()
+
+    assert response.status_code == 200
+    item = next(row for row in response.data["items"] if row["id"] == track.id)
+    assert item["album"] == "Toxicity"
+    assert track.album == "Toxicity"
 
 
 @pytest.mark.django_db

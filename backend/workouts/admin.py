@@ -25,9 +25,9 @@ class WorkoutWeighInAdmin(admin.ModelAdmin):
 
 @admin.register(WorkoutMusicTrack)
 class WorkoutMusicTrackAdmin(admin.ModelAdmin):
-    list_display = ("id", "display_name", "artist", "title", "owner", "file", "is_active", "created_at")
+    list_display = ("id", "display_name", "artist", "album", "title", "owner", "file", "is_active", "created_at")
     list_filter = ("is_active", "owner", "created_at")
-    search_fields = ("artist", "title", "file", "owner__email")
+    search_fields = ("artist", "album", "title", "file", "owner__email")
     readonly_fields = ("created_at", "updated_at")
 
 # Register your models here.

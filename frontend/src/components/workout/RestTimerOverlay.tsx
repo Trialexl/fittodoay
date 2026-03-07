@@ -17,6 +17,7 @@ type Props = {
   onSave?: () => void;
   onSkip: () => void;
   onClose: () => void;
+  onCollapsedChange?: (collapsed: boolean) => void;
   error?: string | null;
 };
 
@@ -30,6 +31,7 @@ export const RestTimerOverlay = ({
   onSave: _onSave,
   onSkip,
   onClose,
+  onCollapsedChange,
   error,
 }: Props) => {
   const [mounted, setMounted] = useState(false);
@@ -72,19 +74,26 @@ export const RestTimerOverlay = ({
     if (!pending) {
       setVisibleCallout(null);
       setCollapsed(false);
+      onCollapsedChange?.(false);
       return;
     }
     if (calloutText) {
       setVisibleCallout(calloutText);
     }
-  }, [calloutText, pending]);
+  }, [calloutText, onCollapsedChange, pending]);
+
+  useEffect(() => {
+    if (!pending) return;
+    onCollapsedChange?.(collapsed);
+  }, [collapsed, onCollapsedChange, pending]);
 
   if (!pending || !mounted) return null;
 
   if (collapsed) {
     const bar = (
-      <div className="pointer-events-none fixed inset-0 z-50 flex items-end justify-center pb-4">
-        <div className="pointer-events-auto flex w-[calc(100%-1.5rem)] max-w-lg items-center justify-between rounded-2xl border border-white/30 bg-slate-900/90 px-4 py-3 text-white shadow-lg backdrop-blur">
+      <div className="pointer-events-none fixed inset-0 z-50">
+        <div className="pointer-events-auto fixed bottom-[104px] left-3 right-3 rounded-2xl border border-white/30 bg-slate-900/90 px-4 py-3 text-white shadow-lg backdrop-blur sm:bottom-[112px] sm:left-6 sm:right-6">
+          <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-sm">
             {showTimer && (
               <span className="text-xs uppercase tracking-[0.4em] text-violet-200">
@@ -104,8 +113,8 @@ export const RestTimerOverlay = ({
               ×
             </button>
           </div>
+          </div>
         </div>
-        <div className="pointer-events-none h-full" />
       </div>
     );
     return createPortal(bar, document.body);
