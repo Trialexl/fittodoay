@@ -1661,7 +1661,7 @@ export const Checklist = ({
     setMusicError(null);
     try {
       while (musicUploadQueueRef.current.length) {
-        const batch = musicUploadQueueRef.current.splice(0, 5);
+        const batch = musicUploadQueueRef.current.splice(0, 1);
         setMusicUploadTasks((prev) =>
           prev.map((item) =>
             batch.some((queued) => queued.id === item.id) ? { ...item, status: "uploading", message: undefined } : item,
