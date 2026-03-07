@@ -28,7 +28,7 @@ import {
   PolarGrid,
   PolarAngleAxis,
   PolarRadiusAxis,
-  type TooltipProps,
+  type TooltipContentProps,
 } from "recharts";
 
 type TrendSeriesPoint = { date: string; load: number };
@@ -314,8 +314,12 @@ export const ProgramTrendPanel = () => {
     [effectiveSeries, activeGranularity, isoOrderMap],
   );
 
-  const tooltipRenderer = (props: TooltipProps<number, string>) => (
-    <ChartTooltipContent {...props} granularity={activeGranularity} />
+  const tooltipRenderer = (props: TooltipContentProps<any, any>) => (
+    <ChartTooltipContent
+      active={props.active}
+      payload={props.payload as ReadonlyArray<ChartTooltipEntry> | undefined}
+      granularity={activeGranularity}
+    />
   );
 
   const renderChart = () => {
@@ -659,7 +663,7 @@ type ChartTooltipEntry = {
 
 type ChartTooltipProps = {
   active?: boolean;
-  payload?: ChartTooltipEntry[];
+  payload?: ReadonlyArray<ChartTooltipEntry>;
   granularity: "day" | "week";
 };
 
