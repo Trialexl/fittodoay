@@ -1247,15 +1247,6 @@ export const Checklist = ({
   useEffect(() => {
     setInfoTab("overview");
   }, [infoExercise]);
-  useEffect(() => {
-    const raw = plan?.weigh_in?.weight_kg;
-    if (raw === null || raw === undefined || raw === "") {
-      setWeighInValue("");
-      return;
-    }
-    const numeric = typeof raw === "number" ? raw : Number(raw);
-    setWeighInValue(Number.isFinite(numeric) ? String(numeric) : "");
-  }, [plan?.weigh_in?.weight_kg]);
   const [recommendationsSaving, setRecommendationsSaving] = useState<number | null>(null);
   const [recommendationsError, setRecommendationsError] = useState<string | null>(null);
   const [recommendationsApplied, setRecommendationsApplied] = useState<Record<number, boolean>>({});
@@ -1326,6 +1317,28 @@ export const Checklist = ({
         token: token as string,
       }),
   );
+  const { data: weighInData, mutate: refreshWeighIn } = useSWR(
+    auth.token && headerDate
+      ? [`/api/workouts/weigh-in/?date=${headerDate}`, auth.token]
+      : null,
+    ([url, token]) =>
+      apiFetch<{ date: string; weight_kg: string | number | null; note?: string | null }>(url as string, {
+        token: token as string,
+      }),
+    {
+      revalidateOnFocus: false,
+      keepPreviousData: true,
+    },
+  );
+  useEffect(() => {
+    const raw = weighInData?.weight_kg ?? plan?.weigh_in?.weight_kg;
+    if (raw === null || raw === undefined || raw === "") {
+      setWeighInValue("");
+      return;
+    }
+    const numeric = typeof raw === "number" ? raw : Number(raw);
+    setWeighInValue(Number.isFinite(numeric) ? String(numeric) : "");
+  }, [headerDate, weighInData?.weight_kg, plan?.weigh_in?.weight_kg]);
   const { data: musicTracksData, mutate: refreshMusicTracks } = useSWR(
     auth.token ? ["/api/workouts/music/tracks/", auth.token] : null,
     ([url, token]) =>
@@ -3031,9 +3044,10 @@ export const Checklist = ({
           ? null
           : prev,
       );
+      void refreshWeighIn();
       refresh();
     }
-  }, [auth.token, refresh]);
+  }, [auth.token, refresh, refreshWeighIn]);
 
   useEffect(() => {
     if (!auth.token) return;
@@ -3056,7 +3070,12 @@ export const Checklist = ({
   }, [auth.token, syncOfflineWeighIns]);
 
   const saveWeighIn = async () => {
-    if (!auth.token || !plan) return;
+    if (!auth.token) return;
+    const targetDate = headerDate || plan?.date;
+    if (!targetDate) {
+      setWeighInError("Не удалось определить дату взвешивания");
+      return;
+    }
     const parsed = Number.parseFloat(weighInValue.replace(",", "."));
     if (!Number.isFinite(parsed)) {
       setWeighInError("Введите корректный вес в килограммах");
@@ -3073,16 +3092,17 @@ export const Checklist = ({
         method: "PUT",
         token: auth.token,
         body: JSON.stringify({
-          date: plan.date,
+          date: targetDate,
           weight_kg: Number(parsed.toFixed(2)),
         }),
       });
+      await refreshWeighIn();
       refresh();
     } catch (error: any) {
       const isNetworkFailure = !(error instanceof ApiError);
       if (isNetworkFailure) {
         enqueueOfflineWeighIn({
-          date: plan.date,
+          date: targetDate,
           weight_kg: Number(parsed.toFixed(2)),
           note: null,
           created_at: new Date().toISOString(),
@@ -3140,29 +3160,16 @@ export const Checklist = ({
     };
   }, [infoExercise, infoTrendData]);
 
-  if (!plan || !hasTemplates) {
-    return (
-      <div className="rounded-2xl border border-dashed border-slate-300 bg-white/60 p-6 text-center">
-        <p className="text-lg font-semibold text-slate-900">На сегодня тренировок нет</p>
-        <p className="mt-2 text-sm text-slate-500">
-          Активируйте папку «Основная» или создайте новую программу, чтобы заполнить чеклист.
-        </p>
-        <Link href="/programs" className="inline-block">
-          <Button className="mt-4">Создать программу</Button>
-        </Link>
-      </div>
-    );
-  }
-
   const activeInfoImage =
     infoExercise && infoExercise.images.length > 0
       ? infoExercise.images[Math.min(infoImageIndex, infoExercise.images.length - 1)]
       : null;
+  const currentWeighInWeight = weighInData?.weight_kg ?? plan?.weigh_in?.weight_kg;
   const currentWeighInText =
-    plan.weigh_in?.weight_kg !== null && plan.weigh_in?.weight_kg !== undefined
+    currentWeighInWeight !== null && currentWeighInWeight !== undefined
       ? (() => {
-          const numeric = Number(plan.weigh_in.weight_kg);
-          if (!Number.isFinite(numeric)) return `${plan.weigh_in.weight_kg} кг`;
+          const numeric = Number(currentWeighInWeight);
+          if (!Number.isFinite(numeric)) return `${currentWeighInWeight} кг`;
           return `${numeric.toFixed(1).replace(/\.0$/, "")} кг`;
         })()
       : null;
@@ -3383,7 +3390,22 @@ export const Checklist = ({
         </div>
       </section>
       <div className="space-y-4 pb-[102px] sm:space-y-5 sm:pb-[110px]">
-        {plan.folders.map((folder) => {
+        {!plan ? (
+          <div className="rounded-2xl border border-dashed border-slate-300 bg-white/60 p-6 text-center">
+            <p className="text-sm font-medium text-slate-600">Загружаем план тренировки…</p>
+          </div>
+        ) : !hasTemplates ? (
+          <div className="rounded-2xl border border-dashed border-slate-300 bg-white/60 p-6 text-center">
+            <p className="text-lg font-semibold text-slate-900">На сегодня тренировок нет</p>
+            <p className="mt-2 text-sm text-slate-500">
+              Активируйте папку «Основная» или создайте новую программу, чтобы заполнить чеклист.
+            </p>
+            <Link href="/programs" className="inline-block">
+              <Button className="mt-4">Создать программу</Button>
+            </Link>
+          </div>
+        ) : (
+        plan.folders.map((folder) => {
           const expanded = expandedFolders[folder.id] ?? true;
           const folderComplete = isFolderComplete(folder);
           const folderRecommendation = folderRecommendations[folder.id];
@@ -3928,7 +3950,7 @@ export const Checklist = ({
               </div>
             </section>
           );
-        })}
+        }))}
       </div>
 
       <Modal
