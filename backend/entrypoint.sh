@@ -4,8 +4,28 @@ set -e
 # For Postgres wait until connection succeeds
 if [ "$DJANGO_DB_ENGINE" != "django.db.backends.sqlite3" ]; then
   echo "Waiting for database to be ready..."
-  until python manage.py check --database default; do
-    echo "Database unavailable, retrying in 2s..."
+  until python - <<'PY'
+import os
+import socket
+import sys
+
+host = os.getenv("DJANGO_DB_HOST", "db")
+port = int(os.getenv("DJANGO_DB_PORT", "5432"))
+
+try:
+    with socket.create_connection((host, port), timeout=2):
+        pass
+except OSError as exc:
+    print(f"Database socket unavailable: {exc}", file=sys.stderr)
+    sys.exit(1)
+PY
+  do
+    echo "Database socket unavailable, retrying in 2s..."
+    sleep 2
+  done
+
+  until python manage.py check --database default >/dev/null 2>&1; do
+    echo "Database check failed, retrying in 2s..."
     sleep 2
   done
 fi
