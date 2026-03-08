@@ -123,6 +123,7 @@ if EXERCISES_STATIC_DIR.exists():
 MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
 MUSIC_ROOT = Path(os.environ.get("DJANGO_MUSIC_ROOT", BASE_DIR.parent / "music"))
+MUSIC_UPLOAD_MAX_MB = int(os.environ.get("DJANGO_MUSIC_UPLOAD_MAX_MB", "130"))
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 

@@ -4,6 +4,7 @@ from datetime import date
 from decimal import Decimal
 
 from rest_framework import serializers
+from django.conf import settings
 
 from workouts.models import WorkoutDay, WorkoutMusicTrack, WorkoutSetLog, WorkoutWeighIn
 
@@ -112,7 +113,10 @@ class WorkoutMusicTrackUploadSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "created_at", "updated_at", "is_active"]
 
     def validate_file(self, value):
-        max_size = 20 * 1024 * 1024
+        max_size_mb = max(int(getattr(settings, "MUSIC_UPLOAD_MAX_MB", 130)), 1)
+        max_size = max_size_mb * 1024 * 1024
         if value.size > max_size:
-            raise serializers.ValidationError("Файл слишком большой (максимум 20MB).")
+            raise serializers.ValidationError(
+                f"Файл слишком большой (максимум {max_size_mb}MB)."
+            )
         return value
