@@ -92,7 +92,7 @@ export const RestTimerOverlay = ({
   if (collapsed) {
     const bar = (
       <div className="pointer-events-none fixed inset-0 z-50">
-        <div className="pointer-events-auto fixed bottom-[104px] left-3 right-3 rounded-2xl border border-white/30 bg-slate-900/90 px-4 py-3 text-white shadow-lg backdrop-blur sm:bottom-[112px] sm:left-6 sm:right-6">
+        <div className="pointer-events-auto fixed bottom-[calc(env(safe-area-inset-bottom)+114px)] left-3 right-3 rounded-2xl border border-white/30 bg-slate-900/90 px-4 py-3 text-white shadow-lg backdrop-blur sm:bottom-[calc(env(safe-area-inset-bottom)+122px)] sm:left-6 sm:right-6">
           <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-sm">
             {showTimer && (

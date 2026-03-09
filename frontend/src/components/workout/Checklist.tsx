@@ -254,6 +254,9 @@ const SHOW_LEGACY_RECOMMENDATIONS = false;
 const OFFLINE_WEIGH_IN_STORAGE_KEY = "fittodoay:workout:offline-weigh-ins:v1";
 const MUSIC_PLAYER_STATE_STORAGE_KEY = "fittodoay:workout:music-player:v1";
 const MUSIC_QUEUE_STORAGE_KEY = "fittodoay:workout:music-queue:v1";
+const MUSIC_SHUFFLE_STORAGE_KEY = "fittodoay:workout:music-shuffle:v1";
+const MUSIC_SHUFFLE_RECENT_STORAGE_KEY = "fittodoay:workout:music-shuffle-recent:v1";
+const MUSIC_SHUFFLE_RECENT_MAX = 12;
 
 type OfflineWeighInEntry = {
   date: string;
@@ -362,6 +365,53 @@ const readPersistedMusicQueue = (): number[] => {
 const writePersistedMusicQueue = (queue: number[]) => {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(MUSIC_QUEUE_STORAGE_KEY, JSON.stringify({ queue }));
+};
+
+const readPersistedMusicShuffle = () => {
+  if (typeof window === "undefined") return false;
+  const raw = window.localStorage.getItem(MUSIC_SHUFFLE_STORAGE_KEY);
+  if (!raw) return false;
+  try {
+    const parsed = JSON.parse(raw) as { enabled?: unknown };
+    return parsed.enabled === true;
+  } catch {
+    return false;
+  }
+};
+
+const writePersistedMusicShuffle = (enabled: boolean) => {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(MUSIC_SHUFFLE_STORAGE_KEY, JSON.stringify({ enabled }));
+};
+
+const readPersistedMusicRecentTrackIds = (): number[] => {
+  if (typeof window === "undefined") return [];
+  const raw = window.localStorage.getItem(MUSIC_SHUFFLE_RECENT_STORAGE_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as { recent?: unknown };
+    if (!Array.isArray(parsed.recent)) return [];
+    const unique: number[] = [];
+    const seen = new Set<number>();
+    parsed.recent.forEach((id) => {
+      if (!Number.isInteger(id)) return;
+      const normalized = Number(id);
+      if (seen.has(normalized)) return;
+      seen.add(normalized);
+      unique.push(normalized);
+    });
+    return unique.slice(-MUSIC_SHUFFLE_RECENT_MAX);
+  } catch {
+    return [];
+  }
+};
+
+const writePersistedMusicRecentTrackIds = (recent: number[]) => {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(
+    MUSIC_SHUFFLE_RECENT_STORAGE_KEY,
+    JSON.stringify({ recent: recent.slice(-MUSIC_SHUFFLE_RECENT_MAX) }),
+  );
 };
 
 const parseTargetMuscles = (value?: string | null) =>
@@ -609,6 +659,24 @@ const PlaylistIcon = ({ className }: { className?: string }) => (
     aria-hidden="true"
   >
     <path d="M4 6h9M4 10h9M4 14h6M15 5v8m0 0-2-2m2 2 2-2" />
+  </svg>
+);
+
+const ShuffleIcon = ({ className }: { className?: string }) => (
+  <svg
+    viewBox="0 0 20 20"
+    className={clsx("h-4 w-4", className)}
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.8}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M4 6h2.5c1.4 0 2.8.6 3.7 1.7l1.1 1.3c.9 1.1 2.3 1.7 3.7 1.7H16" />
+    <path d="m13.2 4.5 2.8 1.5-2.8 1.5" />
+    <path d="M4 14h2.5c1.4 0 2.8-.6 3.7-1.7l1.1-1.3c.9-1.1 2.3-1.7 3.7-1.7H16" />
+    <path d="m13.2 12.5 2.8 1.5-2.8 1.5" />
   </svg>
 );
 
@@ -1082,6 +1150,8 @@ export const Checklist = ({
   const musicUploadQueueRef = useRef<Array<{ id: string; file: File }>>([]);
   const musicUploadWorkerRef = useRef(false);
   const musicQueueRef = useRef<number[]>([]);
+  const musicRecentTrackIdsRef = useRef<number[]>([]);
+  const musicTrackRestoreReadyRef = useRef(false);
   const musicTrackUrlRef = useRef<string>("");
   const musicLoadingTrackUrlRef = useRef<string>("");
   const musicFailedTrackIdsRef = useRef<Set<number>>(new Set());
@@ -1278,6 +1348,7 @@ export const Checklist = ({
   const [musicDropActive, setMusicDropActive] = useState(false);
   const [musicUploadTasks, setMusicUploadTasks] = useState<MusicUploadTask[]>([]);
   const [musicError, setMusicError] = useState<string | null>(null);
+  const [musicShuffle, setMusicShuffle] = useState(false);
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const musicTrackMenuRef = useRef<HTMLDivElement | null>(null);
 
@@ -1450,11 +1521,18 @@ export const Checklist = ({
     const initialQueue = readPersistedMusicQueue();
     musicQueueRef.current = initialQueue;
     setMusicQueue(initialQueue);
+    setMusicShuffle(readPersistedMusicShuffle());
+    musicRecentTrackIdsRef.current = readPersistedMusicRecentTrackIds();
+    musicTrackRestoreReadyRef.current = false;
   }, []);
 
   useEffect(() => {
     musicQueueRef.current = musicQueue;
   }, [musicQueue]);
+
+  useEffect(() => {
+    writePersistedMusicShuffle(musicShuffle);
+  }, [musicShuffle]);
 
   useEffect(() => {
     const allowedIds = new Set(musicTracks.map((track) => track.id));
@@ -1468,23 +1546,52 @@ export const Checklist = ({
   }, [musicTracksSignature, musicTracks]);
 
   useEffect(() => {
+    const allowedIds = new Set(musicTracks.map((track) => track.id));
+    const filteredRecent = musicRecentTrackIdsRef.current.filter((id) => allowedIds.has(id));
+    if (filteredRecent.length === musicRecentTrackIdsRef.current.length) return;
+    musicRecentTrackIdsRef.current = filteredRecent;
+    writePersistedMusicRecentTrackIds(filteredRecent);
+  }, [musicTracksSignature, musicTracks]);
+
+  useEffect(() => {
     if (!musicTracks.length) return;
     const persisted = readPersistedMusicState();
     if (!persisted.trackId) return;
     const idx = musicTracks.findIndex((track) => track.id === persisted.trackId);
     if (idx < 0) return;
     setMusicTrackIndex((prev) => (prev === idx ? prev : idx));
+    musicTrackRestoreReadyRef.current = true;
   }, [musicTracksSignature, musicTracks]);
+
+  useEffect(() => {
+    if (!musicTracks.length) return;
+    if (musicTrackRestoreReadyRef.current) return;
+    musicTrackRestoreReadyRef.current = true;
+  }, [musicTracks.length]);
 
   useEffect(() => {
     if (musicTrackIndex < musicTracks.length) return;
     setMusicTrackIndex(0);
   }, [musicTrackIndex, musicTracks.length]);
 
+  const rememberRecentTrack = useCallback(
+    (trackId: number | null) => {
+      if (!trackId) return;
+      const dynamicLimit = Math.max(1, Math.min(MUSIC_SHUFFLE_RECENT_MAX, Math.max(musicTracks.length - 1, 1)));
+      const deduped = musicRecentTrackIdsRef.current.filter((id) => id !== trackId);
+      const nextRecent = [...deduped, trackId].slice(-dynamicLimit);
+      musicRecentTrackIdsRef.current = nextRecent;
+      writePersistedMusicRecentTrackIds(nextRecent);
+    },
+    [musicTracks.length],
+  );
+
   useEffect(() => {
     const currentTrackId = currentMusicTrack?.id ?? null;
+    if (currentTrackId && !musicTrackRestoreReadyRef.current && musicTracks.length > 0) return;
     if (musicLastTrackIdRef.current === currentTrackId) return;
     musicLastTrackIdRef.current = currentTrackId;
+    rememberRecentTrack(currentTrackId);
     setMusicCurrentTime(0);
     musicTimeSecondRef.current = 0;
     setMusicDuration(0);
@@ -1496,7 +1603,36 @@ export const Checklist = ({
         time: persisted.trackId === currentTrackId ? persisted.time ?? 0 : 0,
       });
     }
-  }, [currentMusicTrack?.id]);
+  }, [currentMusicTrack?.id, musicTracks.length, rememberRecentTrack]);
+
+  useEffect(() => {
+    const persistCurrentPosition = () => {
+      const currentTrackId = currentMusicTrack?.id;
+      if (!currentTrackId) return;
+      const audio = musicAudioRef.current;
+      const rawTime = audio && Number.isFinite(audio.currentTime) ? audio.currentTime : musicCurrentTime;
+      const safeTime = Number.isFinite(rawTime) && rawTime > 0 ? rawTime : 0;
+      writePersistedMusicState({
+        trackId: currentTrackId,
+        time: safeTime,
+      });
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        persistCurrentPosition();
+      }
+    };
+
+    window.addEventListener("beforeunload", persistCurrentPosition);
+    window.addEventListener("pagehide", persistCurrentPosition);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      window.removeEventListener("beforeunload", persistCurrentPosition);
+      window.removeEventListener("pagehide", persistCurrentPosition);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [currentMusicTrack?.id, musicCurrentTime]);
 
   useEffect(() => {
     syncMusicUiFromAudio();
@@ -1601,6 +1737,23 @@ export const Checklist = ({
       const queuedIdx = musicTracks.findIndex((track) => track.id === nextId);
       if (queuedIdx >= 0) return queuedIdx;
     }
+    if (musicShuffle) {
+      const currentTrackId = currentMusicTrack?.id ?? null;
+      const recentSet = new Set(musicRecentTrackIdsRef.current);
+      const preferredPool: number[] = [];
+      const fallbackPool: number[] = [];
+      musicTracks.forEach((track, idx) => {
+        if (excludeIds?.has(track.id)) return;
+        if (musicTracks.length > 1 && currentTrackId === track.id) return;
+        fallbackPool.push(idx);
+        if (!recentSet.has(track.id)) {
+          preferredPool.push(idx);
+        }
+      });
+      const pool = preferredPool.length ? preferredPool : fallbackPool;
+      if (!pool.length) return null;
+      return pool[Math.floor(Math.random() * pool.length)] ?? null;
+    }
     for (let offset = 1; offset <= musicTracks.length; offset += 1) {
       const idx = (musicTrackIndex + offset) % musicTracks.length;
       const candidateId = musicTracks[idx]?.id;
@@ -1609,7 +1762,7 @@ export const Checklist = ({
       return idx;
     }
     return null;
-  }, [musicTrackIndex, musicTracks, popQueuedTrackId]);
+  }, [currentMusicTrack?.id, musicShuffle, musicTrackIndex, musicTracks, popQueuedTrackId]);
 
   const playNextTrack = useCallback(() => {
     const nextIdx = pickNextTrackIndex();
@@ -3165,14 +3318,17 @@ export const Checklist = ({
       ? infoExercise.images[Math.min(infoImageIndex, infoExercise.images.length - 1)]
       : null;
   const currentWeighInWeight = weighInData?.weight_kg ?? plan?.weigh_in?.weight_kg;
-  const currentWeighInText =
+  const currentWeighInNumeric =
     currentWeighInWeight !== null && currentWeighInWeight !== undefined
-      ? (() => {
-          const numeric = Number(currentWeighInWeight);
-          if (!Number.isFinite(numeric)) return `${currentWeighInWeight} кг`;
-          return `${numeric.toFixed(1).replace(/\.0$/, "")} кг`;
-        })()
+      ? Number(currentWeighInWeight)
       : null;
+  const inputWeighInNumeric = weighInValue.trim() ? Number.parseFloat(weighInValue.replace(",", ".")) : null;
+  const isWeighInFixed =
+    currentWeighInNumeric !== null &&
+    Number.isFinite(currentWeighInNumeric) &&
+    inputWeighInNumeric !== null &&
+    Number.isFinite(inputWeighInNumeric) &&
+    Math.abs(currentWeighInNumeric - inputWeighInNumeric) <= 0.05;
 
   return (
     <>
@@ -3220,7 +3376,11 @@ export const Checklist = ({
                   value={weighInValue}
                   onChange={(event) => setWeighInValue(event.target.value)}
                   placeholder="Вес, кг"
-                  className="form-field h-[42px]"
+                  className={clsx(
+                    "form-field h-[42px] transition-colors",
+                    isWeighInFixed &&
+                      "border-emerald-300 bg-emerald-50/80 text-emerald-900 dark:border-emerald-400/50 dark:bg-emerald-500/15 dark:text-emerald-100",
+                  )}
                 />
               </label>
               <Button
@@ -3234,11 +3394,6 @@ export const Checklist = ({
               >
                 {weighInSaving ? "…" : <SaveApplyIcon />}
               </Button>
-              {currentWeighInText && (
-                <span className="shrink-0 rounded-lg border border-slate-300/80 bg-slate-50 px-2 py-1 text-xs font-medium text-slate-600 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                  {currentWeighInText}
-                </span>
-              )}
             </div>
             {weighInError && weighInError.startsWith("Нет сети:") ? (
               <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50/80 px-3 py-2 text-xs text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
@@ -3281,7 +3436,7 @@ export const Checklist = ({
       <section
         className={clsx(
           "fixed left-3 right-3 z-40 rounded-2xl border border-slate-200 bg-white/95 p-1.5 shadow-2xl backdrop-blur dark:border-slate-700 dark:bg-slate-900/95 sm:left-6 sm:right-6 sm:p-2",
-          "bottom-3 sm:bottom-4",
+          "bottom-[calc(env(safe-area-inset-bottom)+2px)] sm:bottom-[calc(env(safe-area-inset-bottom)+6px)]",
         )}
       >
         <div className="rounded-xl border border-slate-200/80 bg-slate-50/70 p-1.5 dark:border-slate-700 dark:bg-slate-800/40">
@@ -3340,6 +3495,16 @@ export const Checklist = ({
               aria-label="Следующий трек"
             >
               <NextIcon />
+            </Button>
+            <Button
+              type="button"
+              variant={musicShuffle ? "primary" : "secondary"}
+              onClick={() => setMusicShuffle((prev) => !prev)}
+              className="h-8 min-w-[44px] px-2"
+              title={musicShuffle ? "Случайный режим включён" : "Случайный режим выключен"}
+              aria-label={musicShuffle ? "Выключить случайный режим" : "Включить случайный режим"}
+            >
+              <ShuffleIcon />
             </Button>
             <Button
               type="button"
