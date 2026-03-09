@@ -1151,6 +1151,7 @@ export const Checklist = ({
   const musicUploadWorkerRef = useRef(false);
   const musicQueueRef = useRef<number[]>([]);
   const musicRecentTrackIdsRef = useRef<number[]>([]);
+  const musicInitialPersistedStateRef = useRef<PersistedMusicState | null>(null);
   const musicTrackRestoreReadyRef = useRef(false);
   const musicTrackUrlRef = useRef<string>("");
   const musicLoadingTrackUrlRef = useRef<string>("");
@@ -1523,6 +1524,7 @@ export const Checklist = ({
     setMusicQueue(initialQueue);
     setMusicShuffle(readPersistedMusicShuffle());
     musicRecentTrackIdsRef.current = readPersistedMusicRecentTrackIds();
+    musicInitialPersistedStateRef.current = readPersistedMusicState();
     musicTrackRestoreReadyRef.current = false;
   }, []);
 
@@ -1555,19 +1557,21 @@ export const Checklist = ({
 
   useEffect(() => {
     if (!musicTracks.length) return;
-    const persisted = readPersistedMusicState();
-    if (!persisted.trackId) return;
-    const idx = musicTracks.findIndex((track) => track.id === persisted.trackId);
-    if (idx < 0) return;
-    setMusicTrackIndex((prev) => (prev === idx ? prev : idx));
-    musicTrackRestoreReadyRef.current = true;
-  }, [musicTracksSignature, musicTracks]);
-
-  useEffect(() => {
-    if (!musicTracks.length) return;
     if (musicTrackRestoreReadyRef.current) return;
+    const persisted = musicInitialPersistedStateRef.current ?? readPersistedMusicState();
+    if (persisted.trackId) {
+      const idx = musicTracks.findIndex((track) => track.id === persisted.trackId);
+      if (idx >= 0) {
+        if (musicTrackIndex !== idx) {
+          setMusicTrackIndex(idx);
+          return;
+        }
+        musicTrackRestoreReadyRef.current = true;
+        return;
+      }
+    }
     musicTrackRestoreReadyRef.current = true;
-  }, [musicTracks.length]);
+  }, [musicTrackIndex, musicTracks]);
 
   useEffect(() => {
     if (musicTrackIndex < musicTracks.length) return;
@@ -1588,22 +1592,43 @@ export const Checklist = ({
 
   useEffect(() => {
     const currentTrackId = currentMusicTrack?.id ?? null;
-    if (currentTrackId && !musicTrackRestoreReadyRef.current && musicTracks.length > 0) return;
+    if (!musicTrackRestoreReadyRef.current && musicTracks.length > 0) return;
     if (musicLastTrackIdRef.current === currentTrackId) return;
     musicLastTrackIdRef.current = currentTrackId;
     rememberRecentTrack(currentTrackId);
-    setMusicCurrentTime(0);
-    musicTimeSecondRef.current = 0;
+    const persisted = readPersistedMusicState();
+    const persistedTime =
+      currentTrackId && persisted.trackId === currentTrackId && Number.isFinite(Number(persisted.time))
+        ? Math.max(Number(persisted.time), 0)
+        : 0;
+    setMusicCurrentTime(persistedTime);
+    musicTimeSecondRef.current = Math.floor(persistedTime);
     setMusicDuration(0);
     musicLoadingTrackUrlRef.current = "";
     if (currentTrackId) {
-      const persisted = readPersistedMusicState();
       writePersistedMusicState({
         trackId: currentTrackId,
-        time: persisted.trackId === currentTrackId ? persisted.time ?? 0 : 0,
+        time: persistedTime,
       });
     }
   }, [currentMusicTrack?.id, musicTracks.length, rememberRecentTrack]);
+
+  useEffect(() => {
+    const audio = musicAudioRef.current;
+    if (!audio || !currentMusicTrack) return;
+    const expectedUrl = buildMusicTrackUrl(currentMusicTrack.url, auth.token).trim();
+    const activeUrl = (audio.currentSrc || audio.src || "").trim();
+    if (activeUrl === expectedUrl) return;
+    if (!audio.paused && !audio.ended) return;
+    audio.src = expectedUrl;
+    audio.preload = "metadata";
+    musicTrackUrlRef.current = expectedUrl;
+    try {
+      audio.load();
+    } catch {
+      // Ignore load errors here; main playback path will surface a user-friendly message.
+    }
+  }, [auth.token, currentMusicTrack]);
 
   useEffect(() => {
     const persistCurrentPosition = () => {
@@ -1681,9 +1706,16 @@ export const Checklist = ({
   const pauseMusicTrack = useCallback(() => {
     const audio = musicAudioRef.current;
     if (!audio) return;
+    if (currentMusicTrack?.id) {
+      const now = Number.isFinite(audio.currentTime) && audio.currentTime > 0 ? audio.currentTime : 0;
+      writePersistedMusicState({
+        trackId: currentMusicTrack.id,
+        time: now,
+      });
+    }
     audio.pause();
     setMusicPlaying(false);
-  }, []);
+  }, [currentMusicTrack?.id]);
 
   const queueTrackNext = useCallback(
     (trackId: number) => {
