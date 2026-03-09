@@ -195,6 +195,8 @@ def build_program_trends(
     folder_names: Dict[int, str] = {}
     folder_daily: Dict[int, Dict[date, float]] = defaultdict(lambda: defaultdict(float))
     exercise_daily: Dict[tuple, Dict[date, float]] = defaultdict(lambda: defaultdict(float))
+    exercise_weight_sum: Dict[tuple, Dict[date, float]] = defaultdict(lambda: defaultdict(float))
+    exercise_weight_count: Dict[tuple, Dict[date, int]] = defaultdict(lambda: defaultdict(int))
     exercise_meta: Dict[tuple, Dict] = {}
 
     for log in logs:
@@ -224,6 +226,9 @@ def build_program_trends(
         else:
             exercise_meta[group_key]["template_names"].add(te.template.name)
         exercise_daily[group_key][workout_date] += load
+        if log.actual_weight is not None:
+            exercise_weight_sum[group_key][workout_date] += float(log.actual_weight)
+            exercise_weight_count[group_key][workout_date] += 1
 
     if not folder_names:
         return [], None, None
@@ -254,10 +259,18 @@ def build_program_trends(
             points = []
             for current in dates:
                 value = exercise_daily[group_key].get(current)
+                weight_count = exercise_weight_count[group_key].get(current, 0)
+                avg_weight = (
+                    exercise_weight_sum[group_key][current] / weight_count
+                    if weight_count > 0
+                    else None
+                )
                 points.append(
                     {
                         "date": current.isoformat(),
                         "load": None if value is None else round(value, 2),
+                        "avg_weight": None if avg_weight is None else round(avg_weight, 2),
+                        "weight_sets": weight_count,
                     }
                 )
             if not any((point["load"] or 0) > 0 for point in points):

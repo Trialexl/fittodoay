@@ -6,7 +6,12 @@ import pytest
 from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
 
-from analytics.services import aggregate_body_weight, aggregate_daily_loads, aggregate_exercise_loads
+from analytics.services import (
+    aggregate_body_weight,
+    aggregate_daily_loads,
+    aggregate_exercise_loads,
+    build_program_trends,
+)
 from programs.models import ProgramFolder, DayTemplate, TemplateExercise
 from workouts.models import WorkoutDay, WorkoutSetLog, Exercise_DB, WorkoutWeighIn
 
@@ -174,3 +179,79 @@ def test_body_weight_endpoint_defaults_start_to_first_weigh_in():
     assert response.data["end"] == date.today().isoformat()
     assert response.data["items"][0]["date"] == first.isoformat()
     assert response.data["items"][-1]["date"] == date.today().isoformat()
+
+
+@pytest.mark.django_db
+def test_build_program_trends_includes_daily_average_weight_for_exercise():
+    user = User.objects.create_user(email="trend-weight@example.com", password="password")
+    folder = ProgramFolder.objects.get(user=user, name="Основные")
+    template = DayTemplate.objects.create(
+        folder=folder,
+        name="Пятница",
+        schedule_type=DayTemplate.ScheduleType.WEEKLY,
+        schedule_config={"days_of_week": [4]},
+    )
+    exercise = Exercise_DB.objects.create(
+        id="incline_bench_press",
+        name_en="Incline Bench Press",
+        name_ru="Жим гантелей на наклонной",
+        force_en="push",
+        force_ru="",
+        level_en="intermediate",
+        level_ru="средний",
+        mechanic_en="compound",
+        mechanic_ru="",
+        equipment_en="dumbbell",
+        equipment_ru="гантели",
+        category_en="strength",
+        category_ru="Силовая",
+        has_weight=True,
+        default_weight=24,
+        default_reps=10,
+        default_sets=3,
+    )
+    template_exercise = TemplateExercise.objects.create(template=template, exercise=exercise, set_override=3)
+    day_1 = date.today() - timedelta(days=2)
+    day_2 = date.today()
+    workout_day_1 = WorkoutDay.objects.create(user=user, date=day_1)
+    workout_day_2 = WorkoutDay.objects.create(user=user, date=day_2)
+
+    WorkoutSetLog.objects.create(
+        workout_day=workout_day_1,
+        template_exercise=template_exercise,
+        set_index=1,
+        actual_weight=24,
+        actual_reps=10,
+    )
+    WorkoutSetLog.objects.create(
+        workout_day=workout_day_1,
+        template_exercise=template_exercise,
+        set_index=2,
+        actual_weight=26,
+        actual_reps=9,
+    )
+    WorkoutSetLog.objects.create(
+        workout_day=workout_day_2,
+        template_exercise=template_exercise,
+        set_index=1,
+        actual_weight=28,
+        actual_reps=8,
+    )
+
+    folders, trimmed_start, trimmed_end = build_program_trends(
+        user,
+        start=day_1,
+        end=day_2,
+        granularity="day",
+    )
+
+    assert trimmed_start == day_1
+    assert trimmed_end == day_2
+    assert len(folders) == 1
+
+    exercise_series = folders[0]["exercises"][0]["series"]
+    by_date = {item["date"]: item for item in exercise_series}
+    assert by_date[day_1.isoformat()]["avg_weight"] == 25.0
+    assert by_date[day_1.isoformat()]["weight_sets"] == 2
+    assert by_date[day_2.isoformat()]["avg_weight"] == 28.0
+    assert by_date[day_2.isoformat()]["weight_sets"] == 1

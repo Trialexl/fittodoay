@@ -13,6 +13,7 @@ import { ExecutionTimerOverlay } from "@/components/workout/ExecutionTimerOverla
 import { useOfflineWorkoutQueue } from "@/hooks/useOfflineWorkoutQueue";
 import { useRestTimer } from "@/hooks/useRestTimer";
 import { API_BASE_URL, ApiError, apiFetch } from "@/lib/api";
+import { getSharedWorkoutAudio } from "@/lib/workoutAudio";
 import { useAuth } from "@/state/AuthContext";
 import {
   CartesianGrid,
@@ -76,7 +77,12 @@ type InfoExerciseState = {
   folderId: number;
 };
 
-type TrendSeriesPoint = { date: string; load: number };
+type TrendSeriesPoint = {
+  date: string;
+  load: number | null;
+  avg_weight?: number | null;
+  weight_sets?: number;
+};
 type TrendExercise = {
   template_exercise_id: number;
   exercise_name: string;
@@ -97,7 +103,10 @@ type ExerciseTrendChartPoint = {
   iso: string;
   label: string;
   load: number;
+  averageWeight: number | null;
 };
+
+type ExerciseTrendMode = "load" | "average_weight";
 
 type ExercisePayload = {
   template_exercise_id: number;
@@ -457,17 +466,6 @@ const createClientId = () => {
     }
   }
   return `id-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-};
-
-let sharedWorkoutAudio: HTMLAudioElement | null = null;
-
-const getSharedWorkoutAudio = () => {
-  if (typeof window === "undefined") return null;
-  if (!sharedWorkoutAudio) {
-    sharedWorkoutAudio = new Audio();
-    sharedWorkoutAudio.preload = "metadata";
-  }
-  return sharedWorkoutAudio;
 };
 
 const isAllowedAudioFile = (file: File) => {
@@ -928,10 +926,15 @@ const formatTrendDateLabel = (iso: string, granularity: "day" | "week") => {
 const ExerciseTrendChart = memo(function ExerciseTrendChart({
   points,
   sourceFolderName,
+  mode,
 }: {
   points: ExerciseTrendChartPoint[];
   sourceFolderName: string;
+  mode: ExerciseTrendMode;
 }) {
+  const isAverageWeightMode = mode === "average_weight";
+  const lineDataKey = isAverageWeightMode ? "averageWeight" : "load";
+  const metricLabel = isAverageWeightMode ? "Средний вес" : "Нагрузка";
   return (
     <>
       <div className="h-64 rounded-xl border border-slate-200 bg-white p-2 text-primary dark:border-slate-700 dark:bg-slate-900">
@@ -939,7 +942,7 @@ const ExerciseTrendChart = memo(function ExerciseTrendChart({
           <LineChart data={points} margin={{ top: 12, right: 16, bottom: 4, left: 4 }}>
             <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.35} />
             <XAxis dataKey="label" minTickGap={10} tick={{ fontSize: 12 }} />
-            <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
+            <YAxis allowDecimals={isAverageWeightMode} tick={{ fontSize: 12 }} />
             <Tooltip
               content={({ active, payload, label }) => {
                 if (!active || !payload || payload.length === 0) return null;
@@ -947,15 +950,19 @@ const ExerciseTrendChart = memo(function ExerciseTrendChart({
                 return (
                   <div className="rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 shadow dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100">
                     <p className="font-semibold">{label}</p>
-                    <p>Нагрузка: {Number(value).toFixed(1)}</p>
+                    {isAverageWeightMode ? (
+                      <p>Средний вес: {Number(value).toFixed(1)} кг</p>
+                    ) : (
+                      <p>Нагрузка: {Number(value).toFixed(1)}</p>
+                    )}
                   </div>
                 );
               }}
             />
             <Line
               type="monotone"
-              dataKey="load"
-              name="Нагрузка"
+              dataKey={lineDataKey}
+              name={metricLabel}
               stroke="currentColor"
               strokeWidth={2.5}
               animationDuration={800}
@@ -1350,6 +1357,7 @@ export const Checklist = ({
   const [musicUploadTasks, setMusicUploadTasks] = useState<MusicUploadTask[]>([]);
   const [musicError, setMusicError] = useState<string | null>(null);
   const [musicShuffle, setMusicShuffle] = useState(false);
+  const [infoTrendMode, setInfoTrendMode] = useState<ExerciseTrendMode>("load");
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const musicTrackMenuRef = useRef<HTMLDivElement | null>(null);
 
@@ -2739,6 +2747,7 @@ export const Checklist = ({
   const closeInfoModal = () => {
     setInfoExercise(null);
     setInfoImageIndex(0);
+    setInfoTrendMode("load");
   };
 
   const showPrevInfoImage = () => {
@@ -3325,25 +3334,55 @@ export const Checklist = ({
       return { points: [] as ExerciseTrendChartPoint[], sourceFolderName: "" };
     }
     const loadByDate = new Map<string, number>();
+    const avgWeightByDate = new Map<string, { weightedSum: number; sets: number }>();
     fallbackMatches.forEach((exercise) => {
       exercise.series.forEach((point) => {
         loadByDate.set(point.date, (loadByDate.get(point.date) ?? 0) + (point.load ?? 0));
+        if (point.avg_weight !== null && point.avg_weight !== undefined && (point.weight_sets ?? 0) > 0) {
+          const current = avgWeightByDate.get(point.date) ?? { weightedSum: 0, sets: 0 };
+          avgWeightByDate.set(point.date, {
+            weightedSum: current.weightedSum + point.avg_weight * (point.weight_sets ?? 0),
+            sets: current.sets + (point.weight_sets ?? 0),
+          });
+        }
       });
     });
     const granularity = infoTrendData.granularity ?? "week";
-    const points = Array.from(loadByDate.entries())
-      .filter(([, load]) => load > 0)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([iso, load]) => ({
-        iso,
-        label: formatTrendDateLabel(iso, granularity),
-        load: Number(load.toFixed(1)),
-      }));
+    const chartDates = Array.from(new Set<string>([...loadByDate.keys(), ...avgWeightByDate.keys()])).sort((a, b) =>
+      a.localeCompare(b),
+    );
+    const points = chartDates
+      .map((iso) => {
+        const load = loadByDate.get(iso) ?? 0;
+        const avgWeightState = avgWeightByDate.get(iso);
+        const averageWeight =
+          avgWeightState && avgWeightState.sets > 0
+            ? Number((avgWeightState.weightedSum / avgWeightState.sets).toFixed(2))
+            : null;
+        return {
+          iso,
+          label: formatTrendDateLabel(iso, granularity),
+          load: Number(load.toFixed(1)),
+          averageWeight,
+        };
+      })
+      .filter((point) => point.load > 0 || point.averageWeight !== null);
     return {
       points,
       sourceFolderName: preferredFolder.name,
     };
   }, [infoExercise, infoTrendData]);
+  const infoExerciseHasAverageWeight = useMemo(
+    () => infoExerciseTrend.points.some((point) => point.averageWeight !== null),
+    [infoExerciseTrend.points],
+  );
+  const infoExercisePoints = useMemo(
+    () =>
+      infoTrendMode === "average_weight"
+        ? infoExerciseTrend.points.filter((point) => point.averageWeight !== null)
+        : infoExerciseTrend.points.filter((point) => point.load > 0),
+    [infoExerciseTrend.points, infoTrendMode],
+  );
 
   const activeInfoImage =
     infoExercise && infoExercise.images.length > 0
@@ -4736,10 +4775,46 @@ export const Checklist = ({
                     Пока недостаточно данных для графика прогресса по этому упражнению.
                   </p>
                 ) : (
-                  <ExerciseTrendChart
-                    points={infoExerciseTrend.points}
-                    sourceFolderName={infoExerciseTrend.sourceFolderName}
-                  />
+                  <div className="space-y-3">
+                    <div className="inline-flex items-center rounded-lg border border-slate-200 bg-white p-1 text-xs dark:border-slate-700 dark:bg-slate-900">
+                      <button
+                        type="button"
+                        onClick={() => setInfoTrendMode("load")}
+                        className={clsx(
+                          "rounded-md px-3 py-1.5 font-semibold transition",
+                          infoTrendMode === "load"
+                            ? "bg-primary/10 text-primary"
+                            : "text-slate-500 hover:text-slate-900 dark:text-slate-300 dark:hover:text-slate-100",
+                        )}
+                      >
+                        Тоннаж
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setInfoTrendMode("average_weight")}
+                        disabled={!infoExerciseHasAverageWeight}
+                        className={clsx(
+                          "rounded-md px-3 py-1.5 font-semibold transition disabled:cursor-not-allowed disabled:opacity-50",
+                          infoTrendMode === "average_weight"
+                            ? "bg-primary/10 text-primary"
+                            : "text-slate-500 hover:text-slate-900 dark:text-slate-300 dark:hover:text-slate-100",
+                        )}
+                      >
+                        Средний вес
+                      </button>
+                    </div>
+                    {infoExercisePoints.length === 0 ? (
+                      <p className="text-sm text-slate-500 dark:text-slate-400">
+                        Для этого упражнения пока нет данных по среднему весу за день.
+                      </p>
+                    ) : (
+                      <ExerciseTrendChart
+                        points={infoExercisePoints}
+                        sourceFolderName={infoExerciseTrend.sourceFolderName}
+                        mode={infoTrendMode}
+                      />
+                    )}
+                  </div>
                 )}
               </div>
             )}

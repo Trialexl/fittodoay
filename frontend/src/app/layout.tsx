@@ -3,6 +3,7 @@ import "./globals.css";
 import { AppProviders } from "@/components/providers/AppProviders";
 import { OfflineBanner } from "@/components/common/OfflineBanner";
 import { AppHeader } from "@/components/common/AppHeader";
+import { GlobalMusicPlayer } from "@/components/common/GlobalMusicPlayer";
 
 export const metadata: Metadata = {
   title: "fitTODOay",
@@ -20,7 +21,8 @@ export default function RootLayout({
         <AppProviders>
           <OfflineBanner />
           <AppHeader />
-          <div className="min-h-screen px-4 pb-10 pt-20 sm:px-6 lg:px-8">{children}</div>
+          <div className="min-h-screen px-4 pb-24 pt-20 sm:px-6 lg:px-8">{children}</div>
+          <GlobalMusicPlayer />
         </AppProviders>
       </body>
     </html>
