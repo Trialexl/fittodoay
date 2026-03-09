@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import date
 
 import pytest
@@ -293,6 +294,64 @@ def test_chat_send_drops_update_without_target_fields(monkeypatch):
     assistant = service.send("Добавь в пятницу подтягивания на гравитроне")
     assert assistant.actions == []
     assert assistant.proposal_status == LLMProgramMessage.ProposalStatus.NONE
+
+
+@pytest.mark.django_db
+def test_chat_send_cancels_previous_pending_when_new_reply_has_no_actions(monkeypatch):
+    user = User.objects.create_user(email="agent_chat_cancel_stale_none@example.com", password="pass")
+    folder, te = _create_base_program(user)
+    thread = LLMProgramThread.objects.create(user=user, program=folder, title="Чат")
+    stale = LLMProgramMessage.objects.create(
+        thread=thread,
+        role=LLMProgramMessage.Role.ASSISTANT,
+        content="Старое предложение",
+        actions=[{"type": "update_weight", "template_exercise_id": te.id, "weight": 42}],
+        proposal_status=LLMProgramMessage.ProposalStatus.PENDING,
+    )
+    service = LLMProgramChatService(thread)
+
+    monkeypatch.setattr(
+        service,
+        "_call_llm",
+        lambda _messages: '{"assistant_reply":"Принято, правок сейчас нет","actions":[]}',
+    )
+
+    assistant = service.send("Просто уточнение без изменений")
+    stale.refresh_from_db()
+
+    assert stale.proposal_status == LLMProgramMessage.ProposalStatus.CANCELLED
+    assert assistant.proposal_status == LLMProgramMessage.ProposalStatus.NONE
+
+
+@pytest.mark.django_db
+def test_chat_send_cancels_previous_pending_when_new_pending_is_created(monkeypatch):
+    user = User.objects.create_user(email="agent_chat_cancel_stale_new_pending@example.com", password="pass")
+    folder, te = _create_base_program(user)
+    thread = LLMProgramThread.objects.create(user=user, program=folder, title="Чат")
+    stale = LLMProgramMessage.objects.create(
+        thread=thread,
+        role=LLMProgramMessage.Role.ASSISTANT,
+        content="Старое предложение",
+        actions=[{"type": "update_weight", "template_exercise_id": te.id, "weight": 42}],
+        proposal_status=LLMProgramMessage.ProposalStatus.PENDING,
+    )
+    service = LLMProgramChatService(thread)
+
+    monkeypatch.setattr(
+        service,
+        "_call_llm",
+        lambda _messages: (
+            '{"assistant_reply":"Новая правка","actions":[{"type":"update_weight",'
+            '"template_exercise_id":%d,"weight":44}]}' % te.id
+        ),
+    )
+
+    assistant = service.send("Дай новую рекомендацию")
+    stale.refresh_from_db()
+
+    assert stale.proposal_status == LLMProgramMessage.ProposalStatus.CANCELLED
+    assert assistant.proposal_status == LLMProgramMessage.ProposalStatus.PENDING
+    assert assistant.actions
 
 
 @pytest.mark.django_db
@@ -1091,11 +1150,109 @@ def test_build_messages_includes_progress_context_for_post_workout_mode(monkeypa
         chat_mode="post_workout_review",
         workout_date=date(2026, 2, 23),
     )
-    context = messages[1]["content"]
+    context = json.loads(messages[1]["content"])
+    progress_context = context["progress_context"]
 
-    assert "\"progress_context\"" in context
-    assert "\"algorithm_recommendations\"" in context
-    assert "\"requested_workout_date\": \"2026-02-23\"" in context
+    assert progress_context["requested_workout_date"] == "2026-02-23"
+    assert "algorithm_recommendations" in progress_context
+    assert "weekly_trend" in progress_context
+    assert "day_type_trend" in progress_context
+    assert "recent_workouts" in progress_context
+
+
+@pytest.mark.django_db
+def test_post_workout_context_uses_other_days_and_weekly_trend():
+    user = User.objects.create_user(email="agent_post_workout_history@example.com", password="pass")
+    folder, te = _create_base_program(user)
+    second_template = DayTemplate.objects.create(
+        folder=folder,
+        name="День 2",
+        schedule_type=DayTemplate.ScheduleType.WEEKLY,
+        schedule_config={"days_of_week": [3]},
+    )
+    second_te = TemplateExercise.objects.create(
+        template=second_template,
+        exercise=te.exercise,
+        set_override=3,
+        rep_override=10,
+        weight_override=36,
+    )
+    thread = LLMProgramThread.objects.create(user=user, program=folder, title="Пост-трен история")
+    first_date = date(2026, 2, 11)
+    second_date = date(2026, 2, 23)
+    first_day = WorkoutDay.objects.create(
+        user=user,
+        date=first_date,
+        source_folder_ids=[folder.id],
+        source_template_ids=[te.template_id, second_template.id],
+        plan_snapshot={
+            "folders": [
+                {
+                    "id": folder.id,
+                    "name": folder.name,
+                    "templates": [
+                        {
+                            "id": te.template_id,
+                            "name": te.template.name,
+                            "exercises": [
+                                {
+                                    "template_exercise_id": te.id,
+                                    "is_active": True,
+                                    "sets": [{"set_index": 1}, {"set_index": 2}, {"set_index": 3}],
+                                }
+                            ],
+                        },
+                        {
+                            "id": second_template.id,
+                            "name": second_template.name,
+                            "exercises": [
+                                {
+                                    "template_exercise_id": second_te.id,
+                                    "is_active": True,
+                                    "sets": [{"set_index": 1}, {"set_index": 2}, {"set_index": 3}],
+                                }
+                            ],
+                        },
+                    ],
+                }
+            ]
+        },
+    )
+    second_day = WorkoutDay.objects.create(
+        user=user,
+        date=second_date,
+        source_folder_ids=[folder.id],
+        source_template_ids=[te.template_id, second_template.id],
+        plan_snapshot=first_day.plan_snapshot,
+    )
+    WorkoutSetLog.objects.create(
+        workout_day=first_day,
+        template_exercise=te,
+        set_index=1,
+        actual_reps=8,
+        actual_weight=36,
+    )
+    WorkoutSetLog.objects.create(
+        workout_day=second_day,
+        template_exercise=second_te,
+        set_index=1,
+        actual_reps=10,
+        actual_weight=40,
+    )
+    service = LLMProgramChatService(thread)
+
+    messages = service._build_messages(
+        "Оцени тренд",
+        mode="chat",
+        chat_mode="post_workout_review",
+        workout_date=second_date,
+    )
+    context = json.loads(messages[1]["content"])["progress_context"]
+
+    assert len(context["recent_workouts"]) >= 2
+    assert len(context["weekly_trend"]) >= 2
+    assert any(item["day_name"] == "День 1" for item in context["day_type_trend"])
+    assert any(item["day_name"] == "День 2" for item in context["day_type_trend"])
 
 
 @pytest.mark.django_db
@@ -1113,7 +1270,9 @@ def test_post_workout_prompt_enforces_concise_reply_and_irr_scope():
     )
     system_prompt = messages[0]["content"]
 
-    assert "максимум 6-8 коротких предложений" in system_prompt
+    assert "максимум 4-6 коротких предложений" in system_prompt
+    assert "историю других тренировочных дней и недельную динамику" in system_prompt
+    assert "1-3 приоритетные правки с пометками [P1]/[P2]/[P3]" in system_prompt
     assert "IRR/RIR используй только для силовых упражнений" in system_prompt
     assert "обязательно передавай exercise_name" in system_prompt
 
