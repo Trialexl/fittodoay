@@ -6,7 +6,7 @@ from typing import Any, Dict, List
 from django.db.models import Prefetch
 
 from programs.models import DayTemplate, ProgramFolder, TemplateExercise
-from workouts.models import WorkoutDay
+from workouts.models import ExerciseImage, ExerciseInstruction, ExerciseMuscle, WorkoutDay
 
 
 def _parse_date(value: str | None) -> date | None:
@@ -69,6 +69,38 @@ def resolve_defaults(te: TemplateExercise) -> Dict[str, Any]:
     }
 
 
+def _exercise_description(source: Any) -> str:
+    prefetched = getattr(source, "prefetched_instructions", None)
+    if prefetched is not None:
+        ru_steps = [item.text_ru.strip() for item in prefetched if item.text_ru]
+        if ru_steps:
+            return " ".join(ru_steps).strip()
+        en_steps = [item.text_en.strip() for item in prefetched if item.text_en]
+        return " ".join(en_steps).strip()
+    return getattr(source, "description", "") or ""
+
+
+def _exercise_target_muscles(source: Any) -> str:
+    prefetched = getattr(source, "prefetched_muscles", None)
+    if prefetched is not None:
+        return "/".join(
+            filter(None, ((muscle.name_ru or muscle.name_en) for muscle in prefetched))
+        )
+    return getattr(source, "target_muscles", "") or ""
+
+
+def _exercise_images(te: TemplateExercise) -> List[dict]:
+    if not te.exercise_id:
+        return []
+    prefetched = getattr(te.exercise, "prefetched_images", None)
+    if prefetched is not None:
+        return [{"order": image.order, "path": image.path} for image in prefetched]
+    return [
+        {"order": image.order, "path": image.path}
+        for image in te.exercise.images.order_by("order")
+    ]
+
+
 def _folder_display_name(folder: ProgramFolder) -> str:
     if folder.is_active:
         return folder.name
@@ -90,8 +122,25 @@ def generate_daily_plan(user, target_date: date | None = None) -> WorkoutDay:
         queryset=DayTemplate.objects.prefetch_related(
             Prefetch(
                 "template_exercises",
-                queryset=TemplateExercise.objects.select_related("exercise", "custom_exercise")
-                .prefetch_related("exercise__images", "exercise__instructions"),
+                queryset=TemplateExercise.objects.select_related(
+                    "exercise", "custom_exercise", "custom_exercise__base_exercise"
+                ).prefetch_related(
+                    Prefetch(
+                        "exercise__images",
+                        queryset=ExerciseImage.objects.order_by("order"),
+                        to_attr="prefetched_images",
+                    ),
+                    Prefetch(
+                        "exercise__instructions",
+                        queryset=ExerciseInstruction.objects.order_by("order"),
+                        to_attr="prefetched_instructions",
+                    ),
+                    Prefetch(
+                        "exercise__muscles",
+                        queryset=ExerciseMuscle.objects.order_by("-is_primary", "name_ru", "name_en"),
+                        to_attr="prefetched_muscles",
+                    ),
+                ),
             )
         ),
     )
@@ -135,35 +184,30 @@ def generate_daily_plan(user, target_date: date | None = None) -> WorkoutDay:
                 exercise_active = te.is_active
                 if exercise_active:
                     total_sets += len(sets)
-                images_payload = []
-                if te.exercise_id:
-                    images_payload = [
-                        {"order": image.order, "path": image.path}
-                        for image in te.exercise.images.order_by("order")
-                    ]
+                images_payload = _exercise_images(te)
                 difficulty = getattr(source, "difficulty", "") or ""
                 if not difficulty:
                     base_exercise = getattr(source, "base_exercise", None)
                     if base_exercise is not None:
                         difficulty = getattr(base_exercise, "difficulty", "") or ""
                 exercises_payload.append(
-                        {
-                            "template_exercise_id": te.id,
-                            "source": {
-                                "type": "system" if te.exercise else "custom",
-                                "id": source.id,
-                                "name": source.name,
-                                "description": getattr(source, "description", "") or "",
-                                "target_muscles": getattr(source, "target_muscles", "") or "",
-                                "difficulty": difficulty,
-                                "images": images_payload,
-                            },
-                            "defaults": defaults,
-                            "note": te.note,
-                            "is_active": exercise_active,
-                            "sets": sets,
-                        }
-                    )
+                    {
+                        "template_exercise_id": te.id,
+                        "source": {
+                            "type": "system" if te.exercise else "custom",
+                            "id": source.id,
+                            "name": source.name,
+                            "description": _exercise_description(source),
+                            "target_muscles": _exercise_target_muscles(source),
+                            "difficulty": difficulty,
+                            "images": images_payload,
+                        },
+                        "defaults": defaults,
+                        "note": te.note,
+                        "is_active": exercise_active,
+                        "sets": sets,
+                    }
+                )
             folder_payload["templates"].append(
                 {
                     "id": template.id,

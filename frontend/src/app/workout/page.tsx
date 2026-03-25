@@ -5,7 +5,7 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Checklist, type WorkoutPlan } from "@/components/workout/Checklist";
 import { WorkoutCalendar } from "@/components/workout/WorkoutCalendar";
-import { apiFetch } from "@/lib/api";
+import { ApiError, apiFetch } from "@/lib/api";
 import { useAuth } from "@/state/AuthContext";
 
 const formatISODate = (value: Date) => {
@@ -23,11 +23,27 @@ const normalizeIsoDate = (value: string) => {
   return formatISODate(parsed);
 };
 
+const humanizePlanError = (error: unknown) => {
+  if (error instanceof ApiError) {
+    if (error.status === 401 || error.status === 403) {
+      return "Не удалось авторизоваться для загрузки чеклиста.";
+    }
+    if (error.status === 502 || error.status === 503 || error.status === 504) {
+      return "Сервер временно недоступен. Попробуйте обновить страницу через несколько секунд.";
+    }
+  }
+  if (error instanceof Error && error.message.trim()) {
+    return error.message;
+  }
+  return "Не удалось загрузить чеклист тренировки.";
+};
+
 const WorkoutPageContent = () => {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { token, user, loading } = useAuth();
   const [plan, setPlan] = useState<WorkoutPlan | null>(null);
+  const [planError, setPlanError] = useState<string | null>(null);
   const todayIso = useMemo(() => formatISODate(new Date()), []);
   const initialQueryDate = useMemo(() => {
     const paramDate = searchParams?.get("date");
@@ -72,32 +88,38 @@ const WorkoutPageContent = () => {
   const fetchPlan = useCallback(
     async (targetDate?: string) => {
       if (!token) return;
+      setPlanError(null);
       const query = targetDate ?? todayIso;
       const params = query ? `?date=${query}` : "";
-      const data = await apiFetch<{
-        id: number;
-        date: string;
-        plan_snapshot: { folders: WorkoutPlan["folders"]; date: string };
-        set_logs?: WorkoutPlan["logs"];
-        weigh_in?: WorkoutPlan["weigh_in"];
-      }>(`/api/workouts/plan/${params}`, { token });
-      const resolvedDate = data.date ?? data.plan_snapshot.date ?? query;
-      const normalizedDate = normalizeIsoDate(resolvedDate);
-      setPlan({
-        id: data.id,
-        date: normalizedDate,
-        folders: data.plan_snapshot.folders,
-        logs: data.set_logs ?? [],
-        weigh_in: data.weigh_in ?? { date: normalizedDate, weight_kg: null, note: "" },
-      });
-      setSelectedDate(normalizedDate);
+      try {
+        const data = await apiFetch<{
+          id: number;
+          date: string;
+          plan_snapshot: { folders: WorkoutPlan["folders"]; date: string };
+          set_logs?: WorkoutPlan["logs"];
+          weigh_in?: WorkoutPlan["weigh_in"];
+        }>(`/api/workouts/plan/${params}`, { token });
+        const resolvedDate = data.date ?? data.plan_snapshot.date ?? query;
+        const normalizedDate = normalizeIsoDate(resolvedDate);
+        setPlan({
+          id: data.id,
+          date: normalizedDate,
+          folders: data.plan_snapshot.folders,
+          logs: data.set_logs ?? [],
+          weigh_in: data.weigh_in ?? { date: normalizedDate, weight_kg: null, note: "" },
+        });
+        setSelectedDate(normalizedDate);
+      } catch (error) {
+        setPlan(null);
+        setPlanError(humanizePlanError(error));
+      }
     },
     [token, todayIso],
   );
 
   useEffect(() => {
     if (token && !plan) {
-      fetchPlan(selectedDate);
+      void fetchPlan(selectedDate);
     }
   }, [token, plan, fetchPlan, selectedDate]);
 
@@ -167,11 +189,29 @@ const WorkoutPageContent = () => {
     return null;
   }
 
+  if (!plan && planError) {
+    return (
+      <div className="space-y-6 overflow-x-hidden">
+        <section className="rounded-2xl border border-red-200 bg-red-50/80 p-5 text-center dark:border-red-500/30 dark:bg-red-500/10">
+          <p className="text-base font-semibold text-red-700 dark:text-red-200">Чеклист не загрузился</p>
+          <p className="mt-2 text-sm text-red-600 dark:text-red-200/90">{planError}</p>
+          <button
+            type="button"
+            onClick={() => void fetchPlan(normalizedSelectedDate)}
+            className="mt-4 inline-flex rounded-xl bg-primary px-4 py-2 text-sm font-medium text-white transition hover:bg-primary-dark"
+          >
+            Повторить загрузку
+          </button>
+        </section>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 overflow-x-hidden">
       <Checklist
         plan={plan}
-        refresh={() => fetchPlan(normalizedSelectedDate)}
+        refresh={() => void fetchPlan(normalizedSelectedDate)}
         todayMuscles={todayMuscles}
         headerDate={currentDate}
         dailyLoad={dailyLoad}
@@ -188,7 +228,7 @@ const WorkoutPageContent = () => {
           setCalendarCursor(iso);
           setSelectedDate(iso);
           setIsCalendarOpen(false);
-          fetchPlan(iso);
+          void fetchPlan(iso);
         }}
       />
     </div>

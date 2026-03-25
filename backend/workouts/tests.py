@@ -7,12 +7,22 @@ from uuid import uuid4
 import pytest
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from django.test import override_settings
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APIClient
 
 from programs.models import DayTemplate, ProgramFolder, TemplateExercise
-from workouts.models import Exercise_DB, WorkoutMusicTrack, WorkoutSetLog, WorkoutWeighIn
+from workouts.models import (
+    Exercise_DB,
+    ExerciseImage,
+    ExerciseInstruction,
+    ExerciseMuscle,
+    WorkoutMusicTrack,
+    WorkoutSetLog,
+    WorkoutWeighIn,
+)
 from workouts.recommendations import generate_recommendations_for_day
 from workouts.services import generate_daily_plan, template_matches_date
 
@@ -124,6 +134,38 @@ def _first_recommendation(day):
     return folders[0]["recommendations"][0]
 
 
+def _build_query_count_fixture(user, exercise_count: int) -> None:
+    folder = ProgramFolder.objects.create(user=user, name=f"Папка {uuid4().hex[:6]}")
+    template = DayTemplate.objects.create(
+        folder=folder,
+        name=f"День {uuid4().hex[:4]}",
+        schedule_type=DayTemplate.ScheduleType.WEEKLY,
+        schedule_config={"days_of_week": [0]},
+    )
+    for idx in range(exercise_count):
+        exercise = _build_exercise()
+        ExerciseInstruction.objects.create(
+            exercise=exercise,
+            order=1,
+            text_ru=f"Шаг {idx + 1}",
+            text_en=f"Step {idx + 1}",
+        )
+        ExerciseMuscle.objects.create(
+            exercise=exercise,
+            name_en=f"back-{idx}",
+            name_ru=f"Спина {idx}",
+            is_primary=True,
+        )
+        ExerciseImage.objects.create(exercise=exercise, order=1, path=f"/img/{idx}.jpg")
+        TemplateExercise.objects.create(template=template, exercise=exercise)
+
+
+def _count_generate_daily_plan_queries(user) -> int:
+    with CaptureQueriesContext(connection) as captured:
+        generate_daily_plan(user, target_date=TEST_DATE)
+    return len(captured)
+
+
 @pytest.mark.django_db
 def test_template_matches_weekly_day():
     folder = ProgramFolder.objects.create(user=User.objects.create_user("a@a.a"), name="Тестовая папка")
@@ -135,6 +177,19 @@ def test_template_matches_weekly_day():
     )
     assert template_matches_date(template, date(2024, 6, 3))  # Monday
     assert not template_matches_date(template, date(2024, 6, 4))  # Tuesday
+
+
+@pytest.mark.django_db
+def test_generate_daily_plan_query_count_does_not_scale_with_exercise_metadata():
+    user_one = User.objects.create_user(email="queries1@example.com", password="pass")
+    user_many = User.objects.create_user(email="queries3@example.com", password="pass")
+    _build_query_count_fixture(user_one, 1)
+    _build_query_count_fixture(user_many, 3)
+
+    single_exercise_queries = _count_generate_daily_plan_queries(user_one)
+    three_exercise_queries = _count_generate_daily_plan_queries(user_many)
+
+    assert three_exercise_queries <= single_exercise_queries + 2
 
 
 @pytest.mark.django_db
