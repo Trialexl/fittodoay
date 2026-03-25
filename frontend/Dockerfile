@@ -23,4 +23,4 @@ COPY --from=builder /app/frontend ./
 
 EXPOSE 3000
 
-CMD ["npm", "run", "start"]
+CMD ["node", ".next/standalone/server.js"]

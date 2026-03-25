@@ -670,10 +670,10 @@ export const GlobalMusicPlayer = () => {
         open={playlistOpen}
         onClose={() => setPlaylistOpen(false)}
         title="Плейлист"
-        className="h-[92vh] sm:h-[94vh] sm:max-w-[96vw]"
+        className="h-[92vh] max-h-[92vh] sm:h-[94vh] sm:max-h-[94vh] sm:max-w-[96vw]"
         mobileSheet
       >
-        <div className="flex h-full min-h-0 flex-col">
+        <div className="flex h-full min-h-0 overflow-hidden flex-col">
           <div className="mb-2">
             <input
               type="text"
@@ -683,7 +683,7 @@ export const GlobalMusicPlayer = () => {
               className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-700 outline-none ring-primary/40 transition placeholder:text-slate-400 focus:ring dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500"
             />
           </div>
-          <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1">
+          <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto overscroll-contain pr-1">
             {filteredTracks.length ? (
               filteredTracks.map((track) => {
                 const index = tracks.findIndex((item) => item.id === track.id);
