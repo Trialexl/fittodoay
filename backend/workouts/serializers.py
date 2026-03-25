@@ -113,6 +113,9 @@ class WorkoutMusicTrackUploadSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "created_at", "updated_at", "is_active"]
 
     def validate_file(self, value):
+        extension = value.name.rsplit(".", 1)[-1].lower() if "." in value.name else ""
+        if extension != "mp3":
+            raise serializers.ValidationError("Поддерживаются только MP3-файлы.")
         max_size_mb = max(int(getattr(settings, "MUSIC_UPLOAD_MAX_MB", 130)), 1)
         max_size = max_size_mb * 1024 * 1024
         if value.size > max_size:

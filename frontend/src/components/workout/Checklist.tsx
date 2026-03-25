@@ -470,7 +470,7 @@ const createClientId = () => {
 
 const isAllowedAudioFile = (file: File) => {
   const name = file.name.toLowerCase();
-  return /\.(mp3|wav|ogg|m4a|aac|webm)$/.test(name);
+  return /\.mp3$/.test(name);
 };
 
 const readFileFromEntry = (entry: FileSystemFileEntryLike): Promise<File> =>
@@ -1902,7 +1902,7 @@ export const Checklist = ({
     (files: File[]) => {
       const allowed = files.filter((file) => isAllowedAudioFile(file));
       if (!allowed.length) {
-        setMusicError("Поддерживаются только аудио-файлы: mp3, wav, ogg, m4a, aac, webm.");
+        setMusicError("Поддерживаются только MP3-файлы.");
         return;
       }
       const queued = allowed.map((file) => ({ id: createClientId(), file }));
@@ -4200,7 +4200,7 @@ export const Checklist = ({
           <input
             ref={musicUploadInputRef}
             type="file"
-            accept=".mp3,.wav,.ogg,.m4a,.aac,.webm,audio/*"
+            accept=".mp3,audio/mpeg"
             multiple
             className="hidden"
             onChange={(event) => {

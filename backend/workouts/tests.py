@@ -530,6 +530,25 @@ def test_music_upload_endpoint_creates_user_track(tmp_path):
 
 
 @pytest.mark.django_db
+def test_music_upload_endpoint_rejects_non_mp3_files(tmp_path):
+    user = User.objects.create_user(email="musicreject@example.com", password="pass")
+    client = APIClient()
+    client.force_authenticate(user=user)
+
+    with override_settings(MUSIC_ROOT=tmp_path):
+        response = client.post(
+            "/api/workouts/music/tracks/upload/",
+            {
+                "file": SimpleUploadedFile("snow.m4a", b"fake-m4a", content_type="audio/mp4"),
+            },
+            format="multipart",
+        )
+
+    assert response.status_code == 400
+    assert "Поддерживаются только MP3-файлы." in str(response.data)
+
+
+@pytest.mark.django_db
 def test_music_upload_endpoint_accepts_multiple_files(tmp_path):
     user = User.objects.create_user(email="musicmulti@example.com", password="pass")
     client = APIClient()
