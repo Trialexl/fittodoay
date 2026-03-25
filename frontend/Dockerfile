@@ -18,9 +18,10 @@ ENV NODE_ENV=production \
     PORT=3000 \
     NEXT_SHARP_PATH=/app/node_modules/sharp
 
-# Keep source files in runtime image so dockerized lint/test commands work.
-COPY --from=builder /app/frontend ./
+COPY --from=builder /app/frontend/public ./public
+COPY --from=builder /app/frontend/.next/standalone ./
+COPY --from=builder /app/frontend/.next/static ./.next/static
 
 EXPOSE 3000
 
-CMD ["node", ".next/standalone/server.js"]
+CMD ["node", "server.js"]
