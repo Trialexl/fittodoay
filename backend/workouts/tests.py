@@ -455,6 +455,33 @@ def test_music_track_file_endpoint_supports_http_range_streaming(tmp_path):
 
 
 @pytest.mark.django_db
+def test_music_track_file_endpoint_uses_explicit_audio_content_types(tmp_path):
+    user = User.objects.create_user(email="musiccontenttype@example.com", password="pass")
+    client = APIClient()
+    client.force_authenticate(user=user)
+
+    cases = [
+        ("sample.mp3", "audio/mpeg"),
+        ("sample.wav", "audio/wav"),
+        ("sample.ogg", "audio/ogg"),
+        ("sample.m4a", "audio/mp4"),
+        ("sample.aac", "audio/aac"),
+        ("sample.webm", "audio/webm"),
+    ]
+
+    with override_settings(MUSIC_ROOT=tmp_path):
+        for index, (filename, expected_type) in enumerate(cases, start=1):
+            track = WorkoutMusicTrack.objects.create(
+                title=f"Track {index}",
+                is_active=True,
+                owner=user,
+                file=SimpleUploadedFile(filename, b"fake-audio", content_type="application/octet-stream"),
+            )
+            response = client.get(f"/api/workouts/music/tracks/{track.id}/file/")
+            assert response.status_code == 200
+            assert response["Content-Type"] == expected_type
+
+
 def test_music_track_file_endpoint_returns_416_for_invalid_range(tmp_path):
     user = User.objects.create_user(email="musicrangeinvalid@example.com", password="pass")
     client = APIClient()
@@ -529,6 +556,33 @@ def test_music_upload_endpoint_accepts_multiple_files(tmp_path):
     assert all(track.file.name.startswith(f"user_{user.id}/") for track in tracks)
 
 
+def _syncsafe(value: int) -> bytes:
+    return bytes([
+        (value >> 21) & 0x7F,
+        (value >> 14) & 0x7F,
+        (value >> 7) & 0x7F,
+        value & 0x7F,
+    ])
+
+
+def _id3_text_frame(frame_id: str, value: str) -> bytes:
+    payload = b"\x03" + value.encode("utf-8")
+    return frame_id.encode("ascii") + len(payload).to_bytes(4, "big") + b"\x00\x00" + payload
+
+
+def _build_mp3_with_large_apic(*, artist: str, title: str, album: str, apic_size: int = 700_000) -> bytes:
+    frames = [
+        _id3_text_frame("TPE1", artist),
+        _id3_text_frame("TIT2", title),
+        _id3_text_frame("TALB", album),
+    ]
+    apic_payload = b"\x00image/jpeg\x00\x03\x00" + (b"\xff\xd8" + b"J" * max(apic_size - 2, 0))
+    frames.append(b"APIC" + len(apic_payload).to_bytes(4, "big") + b"\x00\x00" + apic_payload)
+    tag = b"".join(frames)
+    audio = (b"\xff\xfb\xe0d" + b"\x00" * 28 + b"Info" + b"\x00" * 64) * 16
+    return b"ID3\x03\x00\x00" + _syncsafe(len(tag)) + tag + audio
+
+
 @pytest.mark.django_db
 def test_music_upload_endpoint_extracts_artist_and_title_from_id3v1(tmp_path):
     user = User.objects.create_user(email="musicmeta@example.com", password="pass")
@@ -558,6 +612,36 @@ def test_music_upload_endpoint_extracts_artist_and_title_from_id3v1(tmp_path):
     assert created_item["title"] == "Track Title"
     assert created_item["album"] == "Album Name"
     assert created_item["name"] == "Artist Name — Track Title"
+
+
+@pytest.mark.django_db
+def test_music_upload_endpoint_strips_oversized_mp3_cover_art(tmp_path):
+    user = User.objects.create_user(email="musiccover@example.com", password="pass")
+    client = APIClient()
+    client.force_authenticate(user=user)
+
+    payload = _build_mp3_with_large_apic(artist="Мельница", title="Бес Джиги", album="Химера")
+
+    with override_settings(MUSIC_ROOT=tmp_path):
+        response = client.post(
+            "/api/workouts/music/tracks/upload/",
+            {
+                "file": SimpleUploadedFile("cover-heavy.mp3", payload, content_type="audio/mpeg"),
+            },
+            format="multipart",
+        )
+        assert response.status_code == 201
+        created_item = response.data["items"][0]
+        created = WorkoutMusicTrack.objects.get(id=created_item["id"])
+        stored = (tmp_path / created.file.name).read_bytes()
+
+    assert created_item["artist"] == "Мельница"
+    assert created_item["title"] == "Бес Джиги"
+    assert created_item["album"] == "Химера"
+    assert len(stored) < len(payload)
+    assert b"APIC" not in stored[:4096]
+    assert stored.startswith(b"ID3")
+    assert b"\xff\xfb" in stored
 
 
 @pytest.mark.django_db

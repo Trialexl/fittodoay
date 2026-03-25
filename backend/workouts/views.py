@@ -5,6 +5,7 @@ import mimetypes
 from pathlib import Path
 from typing import Iterator, Tuple
 
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.http import FileResponse, Http404, StreamingHttpResponse
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework import permissions, viewsets
@@ -25,6 +26,24 @@ from workouts.serializers import (
 )
 from workouts.recommendations import apply_recommendations, generate_recommendations_for_day
 from workouts.services import generate_daily_plan, update_workout_status
+
+_AUDIO_CONTENT_TYPES = {
+    ".mp3": "audio/mpeg",
+    ".wav": "audio/wav",
+    ".ogg": "audio/ogg",
+    ".m4a": "audio/mp4",
+    ".aac": "audio/aac",
+    ".webm": "audio/webm",
+}
+
+
+def _resolve_audio_content_type(filename: str) -> str:
+    suffix = Path(filename).suffix.lower()
+    explicit = _AUDIO_CONTENT_TYPES.get(suffix)
+    if explicit:
+        return explicit
+    guessed, _ = mimetypes.guess_type(filename)
+    return guessed or "application/octet-stream"
 
 
 def _decode_text_frame(payload: bytes) -> str:
@@ -47,6 +66,93 @@ def _syncsafe_to_int(raw: bytes) -> int:
     if len(raw) != 4:
         return 0
     return ((raw[0] & 0x7F) << 21) | ((raw[1] & 0x7F) << 14) | ((raw[2] & 0x7F) << 7) | (raw[3] & 0x7F)
+
+
+def _int_to_syncsafe(value: int) -> bytes:
+    safe_value = max(int(value), 0)
+    return bytes(
+        [
+            (safe_value >> 21) & 0x7F,
+            (safe_value >> 14) & 0x7F,
+            (safe_value >> 7) & 0x7F,
+            safe_value & 0x7F,
+        ]
+    )
+
+
+def _strip_large_apic_from_mp3(raw: bytes, max_apic_size: int = 512 * 1024) -> bytes:
+    if len(raw) < 10 or raw[:3] != b"ID3":
+        return raw
+    version = raw[3]
+    flags = raw[5]
+    if version not in (3, 4):
+        return raw
+    if flags & 0xC0:
+        return raw
+    tag_size = _syncsafe_to_int(raw[6:10])
+    tag_end = 10 + tag_size
+    if tag_size <= 0 or tag_end > len(raw):
+        return raw
+
+    tag_payload = raw[10:tag_end]
+    kept_frames: list[bytes] = []
+    pos = 0
+    dropped = False
+    while pos + 10 <= len(tag_payload):
+        frame_header = tag_payload[pos : pos + 10]
+        frame_id = frame_header[:4].decode("latin-1", errors="ignore")
+        if not frame_id.strip("\x00"):
+            break
+        size_raw = frame_header[4:8]
+        frame_size = _syncsafe_to_int(size_raw) if version >= 4 else int.from_bytes(size_raw, "big", signed=False)
+        if frame_size < 0:
+            return raw
+        frame_end = pos + 10 + frame_size
+        if frame_end > len(tag_payload):
+            return raw
+        frame_bytes = tag_payload[pos:frame_end]
+        if frame_id == "APIC" and frame_size > max_apic_size:
+            dropped = True
+        else:
+            kept_frames.append(frame_bytes)
+        pos = frame_end
+
+    if not dropped:
+        return raw
+
+    rebuilt_tag = b"".join(kept_frames)
+    rebuilt_header = bytearray(raw[:10])
+    rebuilt_header[6:10] = _int_to_syncsafe(len(rebuilt_tag))
+    return bytes(rebuilt_header) + rebuilt_tag + raw[tag_end:]
+
+
+def normalize_uploaded_audio(uploaded):
+    filename = getattr(uploaded, "name", "") or ""
+    suffix = Path(filename).suffix.lower()
+    if suffix != ".mp3":
+        return uploaded
+    try:
+        uploaded.seek(0)
+        raw = uploaded.read()
+    except Exception:
+        try:
+            uploaded.seek(0)
+        except Exception:
+            pass
+        return uploaded
+
+    normalized = _strip_large_apic_from_mp3(raw)
+    try:
+        uploaded.seek(0)
+    except Exception:
+        pass
+    if normalized == raw:
+        return uploaded
+    return SimpleUploadedFile(
+        filename,
+        normalized,
+        content_type=getattr(uploaded, "content_type", None) or "audio/mpeg",
+    )
 
 
 def _extract_metadata_from_id3(head: bytes) -> Tuple[str, str, str]:
@@ -357,6 +463,7 @@ class WorkoutMusicTrackUploadView(APIView):
 
         created_items = []
         for uploaded in uploaded_files:
+            uploaded = normalize_uploaded_audio(uploaded)
             fallback_title = Path(uploaded.name).stem
             artist, title, album = extract_track_metadata(uploaded, fallback_title=fallback_title)
             payload = {
@@ -414,7 +521,7 @@ class WorkoutMusicTrackFileView(APIView):
             raise Http404("Track not found")
         if not track.file:
             raise Http404("Track not found")
-        content_type, _ = mimetypes.guess_type(track.file.name)
+        content_type = _resolve_audio_content_type(track.file.name)
         file_size = track.file.size or 0
         range_header = request.headers.get("Range") or request.META.get("HTTP_RANGE")
         try:
