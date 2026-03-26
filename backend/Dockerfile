@@ -9,7 +9,7 @@ WORKDIR /app
 RUN apt-get update -o Acquire::Retries=5 \
     || (sed -i 's|http://deb.debian.org|http://ftp.us.debian.org|g' /etc/apt/sources.list.d/debian.sources \
         && apt-get update -o Acquire::Retries=5) \
-    && apt-get install -y --no-install-recommends --fix-missing build-essential libpq-dev \
+    && apt-get install -y --no-install-recommends --fix-missing build-essential libpq-dev ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 COPY backend/requirements.txt ./requirements.txt

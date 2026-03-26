@@ -3,6 +3,9 @@ from __future__ import annotations
 from datetime import date
 import mimetypes
 from pathlib import Path
+import shutil
+import subprocess
+import tempfile
 from typing import Iterator, Tuple
 
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -110,6 +113,79 @@ def _strip_oversized_id3v2_tag_from_mp3(uploaded, min_tag_size: int = 512 * 1024
         stripped,
         content_type=getattr(uploaded, "content_type", None) or "audio/mpeg",
     )
+
+
+def normalize_uploaded_audio(uploaded):
+    filename = getattr(uploaded, "name", "") or ""
+    if Path(filename).suffix.lower() != ".mp3":
+        return uploaded
+
+    ffmpeg_path = shutil.which("ffmpeg")
+    if not ffmpeg_path:
+        return _strip_oversized_id3v2_tag_from_mp3(uploaded)
+
+    try:
+        uploaded.seek(0)
+        raw = uploaded.read()
+    except Exception:
+        try:
+            uploaded.seek(0)
+        except Exception:
+            pass
+        return _strip_oversized_id3v2_tag_from_mp3(uploaded)
+
+    if not raw:
+        try:
+            uploaded.seek(0)
+        except Exception:
+            pass
+        return uploaded
+
+    try:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            input_path = Path(tmp_dir) / "input.mp3"
+            output_path = Path(tmp_dir) / "output.mp3"
+            input_path.write_bytes(raw)
+            completed = subprocess.run(
+                [
+                    ffmpeg_path,
+                    "-y",
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-i",
+                    str(input_path),
+                    "-map_metadata",
+                    "-1",
+                    "-vn",
+                    "-c:a",
+                    "libmp3lame",
+                    "-b:a",
+                    "192k",
+                    "-ar",
+                    "44100",
+                    str(output_path),
+                ],
+                check=False,
+                capture_output=True,
+            )
+            if completed.returncode == 0 and output_path.exists():
+                normalized = output_path.read_bytes()
+                if normalized:
+                    return SimpleUploadedFile(
+                        filename,
+                        normalized,
+                        content_type=getattr(uploaded, "content_type", None) or "audio/mpeg",
+                    )
+    except Exception:
+        pass
+    finally:
+        try:
+            uploaded.seek(0)
+        except Exception:
+            pass
+
+    return _strip_oversized_id3v2_tag_from_mp3(uploaded)
 
 
 def _extract_metadata_from_id3(head: bytes) -> Tuple[str, str, str]:
@@ -422,7 +498,7 @@ class WorkoutMusicTrackUploadView(APIView):
         for uploaded in uploaded_files:
             fallback_title = Path(uploaded.name).stem
             artist, title, album = extract_track_metadata(uploaded, fallback_title=fallback_title)
-            uploaded = _strip_oversized_id3v2_tag_from_mp3(uploaded)
+            uploaded = normalize_uploaded_audio(uploaded)
             payload = {
                 "artist": artist,
                 "album": album,

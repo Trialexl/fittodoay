@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
+import dynamic from "next/dynamic";
 import "./globals.css";
 import { AppProviders } from "@/components/providers/AppProviders";
-import { OfflineBanner } from "@/components/common/OfflineBanner";
-import { AppHeader } from "@/components/common/AppHeader";
-import { GlobalMusicPlayer } from "@/components/common/GlobalMusicPlayer";
+
+const OfflineBanner = dynamic(() => import("@/components/common/OfflineBanner").then((mod) => mod.OfflineBanner), { ssr: false });
+const AppHeader = dynamic(() => import("@/components/common/AppHeader").then((mod) => mod.AppHeader), { ssr: false });
+const GlobalMusicPlayer = dynamic(() => import("@/components/common/GlobalMusicPlayer").then((mod) => mod.GlobalMusicPlayer), { ssr: false });
 
 export const metadata: Metadata = {
   title: "fitTODOay",
