@@ -604,6 +604,27 @@ def test_music_upload_endpoint_rejects_non_mp3_files(tmp_path):
 
 
 @pytest.mark.django_db
+def test_music_upload_endpoint_rejects_mp3_with_invalid_id3_header(tmp_path):
+    user = User.objects.create_user(email="musicinvalidid3@example.com", password="pass")
+    client = APIClient()
+    client.force_authenticate(user=user)
+
+    payload = b"ID3\x03\x00\x00\x00\x00\x7f\x06" + b"broken"
+
+    with override_settings(MUSIC_ROOT=tmp_path):
+        response = client.post(
+            "/api/workouts/music/tracks/upload/",
+            {
+                "file": SimpleUploadedFile("broken-id3.mp3", payload, content_type="audio/mpeg"),
+            },
+            format="multipart",
+        )
+
+    assert response.status_code == 400
+    assert "MP3-файл поврежден: некорректный ID3-заголовок." in str(response.data)
+
+
+@pytest.mark.django_db
 def test_music_upload_endpoint_accepts_multiple_files(tmp_path):
     user = User.objects.create_user(email="musicmulti@example.com", password="pass")
     client = APIClient()

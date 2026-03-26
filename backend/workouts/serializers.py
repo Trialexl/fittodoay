@@ -8,6 +8,31 @@ from django.conf import settings
 
 from workouts.models import WorkoutDay, WorkoutMusicTrack, WorkoutSetLog, WorkoutWeighIn
 
+def _syncsafe_to_int(raw: bytes) -> int:
+    if len(raw) != 4:
+        return 0
+    return ((raw[0] & 0x7F) << 21) | ((raw[1] & 0x7F) << 14) | ((raw[2] & 0x7F) << 7) | (raw[3] & 0x7F)
+
+
+def _has_invalid_mp3_id3_header(value) -> bool:
+    try:
+        value.seek(0)
+        head = value.read(10)
+        total_size = int(getattr(value, "size", 0) or 0)
+    except Exception:
+        return False
+    finally:
+        try:
+            value.seek(0)
+        except Exception:
+            pass
+
+    if len(head) < 10 or head[:3] != b"ID3":
+        return False
+    tag_size = _syncsafe_to_int(head[6:10])
+    return 10 + tag_size > total_size
+
+
 
 class WorkoutSetLogSerializer(serializers.ModelSerializer):
     class Meta:
@@ -122,4 +147,6 @@ class WorkoutMusicTrackUploadSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 f"Файл слишком большой (максимум {max_size_mb}MB)."
             )
+        if _has_invalid_mp3_id3_header(value):
+            raise serializers.ValidationError("MP3-файл поврежден: некорректный ID3-заголовок.")
         return value
