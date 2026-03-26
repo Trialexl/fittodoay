@@ -1809,6 +1809,9 @@ export const Checklist = ({
     } finally {
       setMusicUploading(false);
       musicUploadWorkerRef.current = false;
+      if (musicUploadInputRef.current) {
+        musicUploadInputRef.current.value = "";
+      }
     }
   }, [auth.token, musicPlaying, musicTracks.length, refreshMusicTracks]);
 
@@ -4123,7 +4126,6 @@ export const Checklist = ({
             className="hidden"
             onChange={(event) => {
               handleMusicFilesSelected(event.target.files);
-              event.currentTarget.value = "";
             }}
           />
           <div className="mb-2 space-y-2">
