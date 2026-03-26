@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+import logging
 import mimetypes
 from pathlib import Path
 import shutil
@@ -30,6 +31,9 @@ from workouts.serializers import (
 from workouts.recommendations import apply_recommendations, generate_recommendations_for_day
 from workouts.services import generate_daily_plan, update_workout_status
 
+logger = logging.getLogger(__name__)
+
+
 _AUDIO_CONTENT_TYPES = {
     ".mp3": "audio/mpeg",
     ".wav": "audio/wav",
@@ -38,6 +42,25 @@ _AUDIO_CONTENT_TYPES = {
     ".aac": "audio/aac",
     ".webm": "audio/webm",
 }
+
+
+def _audio_head_hex(raw: bytes, size: int = 16) -> str:
+    return raw[:size].hex() if raw else ""
+
+
+def _safe_upload_debug(uploaded) -> tuple[int | None, str]:
+    try:
+        uploaded.seek(0)
+        raw = uploaded.read(32)
+        size = int(getattr(uploaded, "size", 0) or 0)
+    except Exception:
+        return None, ""
+    finally:
+        try:
+            uploaded.seek(0)
+        except Exception:
+            pass
+    return size, _audio_head_hex(raw)
 
 
 def _resolve_audio_content_type(filename: str) -> str:
@@ -496,9 +519,27 @@ class WorkoutMusicTrackUploadView(APIView):
 
         created_items = []
         for uploaded in uploaded_files:
+            original_name = getattr(uploaded, "name", "") or ""
+            original_content_type = getattr(uploaded, "content_type", None) or ""
+            original_size, original_head = _safe_upload_debug(uploaded)
             fallback_title = Path(uploaded.name).stem
             artist, title, album = extract_track_metadata(uploaded, fallback_title=fallback_title)
             uploaded = normalize_uploaded_audio(uploaded)
+            normalized_size, normalized_head = _safe_upload_debug(uploaded)
+            logger.warning(
+                "music_upload_debug user_id=%s name=%s original_content_type=%s original_size=%s original_head=%s normalized_name=%s normalized_size=%s normalized_head=%s artist=%s title=%s album=%s",
+                request.user.id,
+                original_name,
+                original_content_type,
+                original_size,
+                original_head,
+                getattr(uploaded, "name", "") or "",
+                normalized_size,
+                normalized_head,
+                artist,
+                title,
+                album,
+            )
             payload = {
                 "artist": artist,
                 "album": album,
@@ -565,6 +606,13 @@ class WorkoutMusicTrackFileView(APIView):
             response["Accept-Ranges"] = "bytes"
             return response
 
+        file_head = ""
+        try:
+            with track.file.open("rb") as debug_file:
+                file_head = _audio_head_hex(debug_file.read(32))
+        except Exception:
+            file_head = ""
+
         if byte_range is None:
             response = FileResponse(track.file.open("rb"), content_type=content_type or "application/octet-stream")
             if file_size > 0:
@@ -582,4 +630,16 @@ class WorkoutMusicTrackFileView(APIView):
             response["Content-Range"] = f"bytes {start}-{end}/{file_size}"
             response["Content-Length"] = str(length)
         response["Accept-Ranges"] = "bytes"
+        logger.warning(
+            "music_file_debug user_id=%s track_id=%s filename=%s size=%s content_type=%s range=%s status=%s response_length=%s file_head=%s",
+            user.id if user else None,
+            track.id,
+            track.file.name,
+            file_size,
+            content_type,
+            range_header,
+            response.status_code,
+            response.get("Content-Length"),
+            file_head,
+        )
         return response

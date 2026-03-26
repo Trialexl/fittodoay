@@ -46,6 +46,19 @@ const buildMusicTrackUrl = (path: string, token?: string | null) => {
   return url.toString();
 };
 
+const describeAudioDebugState = (audio: HTMLAudioElement | null) => ({
+  currentSrc: audio?.currentSrc || audio?.src || "",
+  duration: audio && Number.isFinite(audio.duration) ? audio.duration : null,
+  currentTime: audio && Number.isFinite(audio.currentTime) ? audio.currentTime : null,
+  readyState: audio?.readyState ?? null,
+  networkState: audio?.networkState ?? null,
+  paused: audio?.paused ?? null,
+  ended: audio?.ended ?? null,
+  errorCode: audio?.error?.code ?? null,
+  errorMessage: audio?.error?.message ?? null,
+});
+
+
 const formatAudioTime = (seconds: number) => {
   if (!Number.isFinite(seconds) || seconds <= 0) return "0:00";
   const total = Math.floor(seconds);
@@ -480,12 +493,14 @@ export const GlobalMusicPlayer = () => {
       setError(null);
     };
     const handleEnded = () => {
+      console.warn("global_music_ended", { trackId: currentTrack?.id ?? null, trackName: currentTrack?.name ?? null, ...describeAudioDebugState(audio) });
       if (currentTrack) {
         writePersistedMusicState({ trackId: currentTrack.id, time: 0 });
       }
       playNextTrack();
     };
     const handleError = () => {
+      console.error("global_music_error", { trackId: currentTrack?.id ?? null, trackName: currentTrack?.name ?? null, ...describeAudioDebugState(audio) });
       setError(currentTrack ? `Не удалось воспроизвести: ${currentTrack.name}` : "Не удалось воспроизвести трек");
       playNextTrack();
     };
