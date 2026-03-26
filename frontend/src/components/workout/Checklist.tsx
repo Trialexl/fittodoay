@@ -292,6 +292,11 @@ type MusicUploadTask = {
   message?: string;
 };
 
+type DirectoryInputElement = HTMLInputElement & {
+  directory?: boolean;
+  webkitdirectory?: boolean;
+};
+
 const readOfflineWeighIns = (): OfflineWeighInEntry[] => {
   if (typeof window === "undefined") return [];
   const raw = window.localStorage.getItem(OFFLINE_WEIGH_IN_STORAGE_KEY);
@@ -468,6 +473,11 @@ const describeUploadFile = (file: File) => ({
   lastModified: file.lastModified,
   webkitRelativePath: file.webkitRelativePath || "",
 });
+
+const getUploadFileLabel = (file: File) => file.webkitRelativePath || file.name;
+
+const getUploadFileSignature = (file: File) =>
+  `${getUploadFileLabel(file)}::${file.size}::${file.lastModified}`;
 
 const keyForSet = (templateExerciseId: number, setIndex: number) =>
   `${templateExerciseId}-${setIndex}`;
@@ -1074,7 +1084,9 @@ export const Checklist = ({
   const audioContextRef = useRef<AudioContext | null>(null);
   const musicAudioRef = useRef<HTMLAudioElement | null>(null);
   const musicUploadInputRef = useRef<HTMLInputElement | null>(null);
+  const musicFolderUploadInputRef = useRef<HTMLInputElement | null>(null);
   const musicUploadQueueRef = useRef<Array<{ id: string; file: File }>>([]);
+  const musicUploadFilesRef = useRef<Map<string, File>>(new Map());
   const musicUploadWorkerRef = useRef(false);
   const musicQueueRef = useRef<number[]>([]);
   const musicRecentTrackIdsRef = useRef<number[]>([]);
@@ -1781,13 +1793,15 @@ export const Checklist = ({
         );
         const form = new FormData();
         console.warn("music_upload_append", describeUploadFile(queued.file));
-        form.append("file", queued.file);
+        // Send the original File object unchanged so the server receives intact MP3 bytes.
+        form.append("file", queued.file, getUploadFileLabel(queued.file));
         try {
           const response = await apiFetch<{ items: MusicTrack[] }>("/api/workouts/music/tracks/upload/", {
             method: "POST",
             token: auth.token,
             body: form,
           });
+          musicUploadFilesRef.current.delete(queued.id);
           const createdCount = Array.isArray(response.items) ? response.items.length : 0;
           setMusicUploadTasks((prev) =>
             prev.map((task) =>
@@ -1812,24 +1826,36 @@ export const Checklist = ({
       if (musicUploadInputRef.current) {
         musicUploadInputRef.current.value = "";
       }
+      if (musicFolderUploadInputRef.current) {
+        musicFolderUploadInputRef.current.value = "";
+      }
     }
   }, [auth.token, musicPlaying, musicTracks.length, refreshMusicTracks]);
 
   const enqueueMusicUploads = useCallback(
     (files: File[]) => {
       console.warn("music_upload_selected", files.map((file) => describeUploadFile(file)));
-      const allowed = files.filter((file) => isAllowedAudioFile(file));
-      if (!allowed.length) {
-        setMusicError("Поддерживаются только MP3-файлы.");
+      const allowed = files.filter((file) => isAllowedAudioFile(file) && file.size > 0);
+      const unique = allowed.filter((file, index, list) => {
+        const signature = getUploadFileSignature(file);
+        return list.findIndex((candidate) => getUploadFileSignature(candidate) === signature) === index;
+      });
+      if (!unique.length) {
+        setMusicError("Поддерживаются только непустые MP3-файлы.");
         return;
       }
-      const queued = allowed.map((file) => ({ id: createClientId(), file }));
+      const skippedCount = files.length - unique.length;
+      setMusicError(skippedCount > 0 ? "Часть файлов пропущена: загружаются только непустые MP3 без дублей." : null);
+      const queued = unique.map((file) => ({ id: createClientId(), file }));
+      queued.forEach((item) => {
+        musicUploadFilesRef.current.set(item.id, item.file);
+      });
       musicUploadQueueRef.current.push(...queued);
       setMusicUploadTasks((prev) => [
         ...prev,
         ...queued.map((item) => ({
           id: item.id,
-          name: item.file.webkitRelativePath || item.file.name,
+          name: getUploadFileLabel(item.file),
           status: "queued" as MusicUploadStatus,
         })),
       ]);
@@ -1859,8 +1885,35 @@ export const Checklist = ({
   );
 
   const clearFinishedMusicUploads = useCallback(() => {
-    setMusicUploadTasks((prev) => prev.filter((task) => task.status === "queued" || task.status === "uploading"));
+    setMusicUploadTasks((prev) => {
+      prev
+        .filter((task) => task.status === "done" || task.status === "error")
+        .forEach((task) => {
+          musicUploadFilesRef.current.delete(task.id);
+        });
+      return prev.filter((task) => task.status === "queued" || task.status === "uploading");
+    });
   }, []);
+
+  const retryMusicUploadTask = useCallback(
+    (taskId: string) => {
+      const file = musicUploadFilesRef.current.get(taskId);
+      if (!file) {
+        setMusicError("Исходный файл для повтора недоступен. Выберите его заново.");
+        return;
+      }
+      const alreadyQueued = musicUploadQueueRef.current.some((queued) => queued.id === taskId);
+      if (!alreadyQueued) {
+        musicUploadQueueRef.current.push({ id: taskId, file });
+      }
+      setMusicError(null);
+      setMusicUploadTasks((prev) =>
+        prev.map((task) => (task.id === taskId ? { ...task, status: "queued", message: undefined } : task)),
+      );
+      void processMusicUploadQueue();
+    },
+    [processMusicUploadQueue],
+  );
 
   const deleteMusicTrack = useCallback(
     async (track: MusicTrack) => {
@@ -2311,6 +2364,16 @@ export const Checklist = ({
       window.removeEventListener("keydown", onFirstInteraction);
     };
   }, [unlockAudioContext]);
+
+  useEffect(() => {
+    const input = musicFolderUploadInputRef.current as DirectoryInputElement | null;
+    if (!input) return;
+    input.directory = true;
+    input.webkitdirectory = true;
+    input.setAttribute("directory", "");
+    input.setAttribute("webkitdirectory", "");
+    input.multiple = true;
+  }, []);
 
   useEffect(() => {
     if (!plan || typeof window === "undefined") return;
@@ -4114,12 +4177,22 @@ export const Checklist = ({
         open={musicPlaylistOpen}
         onClose={() => setMusicPlaylistOpen(false)}
         title="Плейлист"
-        className="h-[92vh] sm:h-[94vh] sm:max-w-[96vw]"
+        className="h-[92vh] max-h-[92vh] sm:h-[94vh] sm:max-h-[94vh] sm:max-w-[96vw]"
         mobileSheet
       >
-        <div className="flex h-full min-h-0 flex-col">
+        <div className="flex h-full min-h-0 overflow-hidden flex-col">
           <input
             ref={musicUploadInputRef}
+            type="file"
+            accept=".mp3,audio/mpeg"
+            multiple
+            className="hidden"
+            onChange={(event) => {
+              handleMusicFilesSelected(event.target.files);
+            }}
+          />
+          <input
+            ref={musicFolderUploadInputRef}
             type="file"
             accept=".mp3,audio/mpeg"
             multiple
@@ -4166,7 +4239,7 @@ export const Checklist = ({
               </select>
             </div>
           </div>
-          <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
+          <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain pr-1">
             {musicQueue.length ? (
               <div className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 dark:border-amber-400/40 dark:bg-amber-500/10">
                 <div className="flex items-center justify-between gap-2">
@@ -4374,14 +4447,27 @@ export const Checklist = ({
                   type="button"
                   onClick={() => musicUploadInputRef.current?.click()}
                   disabled={musicUploading}
-                  title="Загрузить файлы"
-                  aria-label="Загрузить файлы"
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-primary/35 bg-primary/10 text-primary transition hover:bg-primary/20 disabled:cursor-not-allowed disabled:opacity-60"
+                  title="Выбрать файлы"
+                  aria-label="Выбрать файлы"
+                  className="inline-flex h-9 items-center justify-center gap-2 rounded-xl border border-primary/35 bg-primary/10 px-3 text-xs font-medium text-primary transition hover:bg-primary/20 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <UploadFilesIcon />
+                  <span>Файлы</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => musicFolderUploadInputRef.current?.click()}
+                  disabled={musicUploading}
+                  title="Выбрать папку"
+                  aria-label="Выбрать папку"
+                  className="inline-flex h-9 items-center justify-center rounded-xl border border-slate-300 bg-white px-3 text-xs font-medium text-slate-700 transition hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                >
+                  Папка
                 </button>
                 <span className="text-xs text-slate-500 dark:text-slate-300">
-                  {musicUploading ? "Идёт фоновая загрузка..." : "Перетащите MP3-файлы сюда"}
+                  {musicUploading
+                    ? "Идёт фоновая загрузка..."
+                    : "Выберите один файл, несколько файлов или папку с MP3, либо перетащите их сюда"}
                 </span>
               </div>
               {musicUploadTasks.length ? (
@@ -4392,20 +4478,32 @@ export const Checklist = ({
                       className="flex items-center justify-between rounded-lg bg-white/80 px-2 py-1 text-xs dark:bg-slate-900/50"
                     >
                       <span className="truncate pr-2">{task.name}</span>
-                      <span
-                        className={clsx(
-                          "shrink-0 font-semibold",
-                          task.status === "queued" && "text-slate-500 dark:text-slate-300",
-                          task.status === "uploading" && "text-amber-600 dark:text-amber-300",
-                          task.status === "done" && "text-emerald-600 dark:text-emerald-300",
-                          task.status === "error" && "text-red-600 dark:text-red-300",
-                        )}
-                      >
-                        {task.status === "queued" && "В очереди"}
-                        {task.status === "uploading" && "Загрузка"}
-                        {task.status === "done" && "Готово"}
-                        {task.status === "error" && "Ошибка"}
-                      </span>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <span
+                          className={clsx(
+                            "font-semibold",
+                            task.status === "queued" && "text-slate-500 dark:text-slate-300",
+                            task.status === "uploading" && "text-amber-600 dark:text-amber-300",
+                            task.status === "done" && "text-emerald-600 dark:text-emerald-300",
+                            task.status === "error" && "text-red-600 dark:text-red-300",
+                          )}
+                        >
+                          {task.status === "queued" && "В очереди"}
+                          {task.status === "uploading" && "Загрузка"}
+                          {task.status === "done" && "Готово"}
+                          {task.status === "error" && "Ошибка"}
+                        </span>
+                        {task.status === "error" ? (
+                          <button
+                            type="button"
+                            onClick={() => retryMusicUploadTask(task.id)}
+                            disabled={musicUploading}
+                            className="rounded-md border border-red-300 px-2 py-0.5 text-[11px] font-medium text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-400/40 dark:text-red-300 dark:hover:bg-red-500/10"
+                          >
+                            Повторить
+                          </button>
+                        ) : null}
+                      </div>
                     </div>
                   ))}
                 </div>

@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 from decimal import Decimal
+from pathlib import Path
+import shutil
+import subprocess
 from uuid import uuid4
 
 import pytest
@@ -28,6 +31,65 @@ from workouts.services import generate_daily_plan, template_matches_date
 
 User = get_user_model()
 TEST_DATE = date(2024, 6, 3)  # Monday
+
+
+def _build_real_mp3(
+    tmp_path: Path,
+    *,
+    filename: str,
+    title: str,
+    artist: str,
+    album: str,
+) -> bytes:
+    ffmpeg_path = shutil.which("ffmpeg")
+    if not ffmpeg_path:
+        pytest.skip("ffmpeg is required for real mp3 tests")
+
+    output_path = tmp_path / filename
+    completed = subprocess.run(
+        [
+            ffmpeg_path,
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=880:duration=0.4",
+            "-id3v2_version",
+            "3",
+            "-metadata",
+            f"title={title}",
+            "-metadata",
+            f"artist={artist}",
+            "-metadata",
+            f"album={album}",
+            "-codec:a",
+            "libmp3lame",
+            "-q:a",
+            "6",
+            str(output_path),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode == 0, completed.stderr
+    return output_path.read_bytes()
+
+
+def _assert_mp3_decodes(file_path: Path) -> None:
+    ffmpeg_path = shutil.which("ffmpeg")
+    if not ffmpeg_path:
+        pytest.skip("ffmpeg is required for real mp3 tests")
+
+    completed = subprocess.run(
+        [ffmpeg_path, "-v", "error", "-i", str(file_path), "-f", "null", "-"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode == 0, completed.stderr
 
 
 def _build_exercise(
@@ -649,6 +711,80 @@ def test_music_upload_endpoint_accepts_multiple_files(tmp_path):
     assert len(tracks) == 2
     assert all(track.owner_id == user.id for track in tracks)
     assert all(track.file.name.startswith(f"user_{user.id}/") for track in tracks)
+
+
+@pytest.mark.django_db
+def test_music_upload_endpoint_keeps_real_mp3_playable_after_single_upload(tmp_path):
+    user = User.objects.create_user(email="musicreal@example.com", password="pass")
+    client = APIClient()
+    client.force_authenticate(user=user)
+    payload = _build_real_mp3(
+        tmp_path,
+        filename="single-source.mp3",
+        title="Single Tone",
+        artist="Test Artist",
+        album="Test Album",
+    )
+
+    with override_settings(MUSIC_ROOT=tmp_path):
+        response = client.post(
+            "/api/workouts/music/tracks/upload/",
+            {
+                "file": SimpleUploadedFile("single.mp3", payload, content_type="audio/mpeg"),
+            },
+            format="multipart",
+        )
+        assert response.status_code == 201
+        created_item = response.data["items"][0]
+        created = WorkoutMusicTrack.objects.get(id=created_item["id"])
+        stored_path = tmp_path / created.file.name
+
+    assert created_item["artist"] == "Test Artist"
+    assert created_item["title"] == "Single Tone"
+    assert created_item["album"] == "Test Album"
+    _assert_mp3_decodes(stored_path)
+
+
+@pytest.mark.django_db
+def test_music_upload_endpoint_keeps_real_mp3_playable_for_folder_style_multi_upload(tmp_path):
+    user = User.objects.create_user(email="musicfolder@example.com", password="pass")
+    client = APIClient()
+    client.force_authenticate(user=user)
+    warmup_payload = _build_real_mp3(
+        tmp_path,
+        filename="warmup-source.mp3",
+        title="Warmup Tone",
+        artist="Folder Artist",
+        album="Folder Album",
+    )
+    cooldown_payload = _build_real_mp3(
+        tmp_path,
+        filename="cooldown-source.mp3",
+        title="Cooldown Tone",
+        artist="Folder Artist",
+        album="Folder Album",
+    )
+
+    with override_settings(MUSIC_ROOT=tmp_path):
+        response = client.post(
+            "/api/workouts/music/tracks/upload/",
+            {
+                "files": [
+                    SimpleUploadedFile("Morning Set/warmup.mp3", warmup_payload, content_type="audio/mpeg"),
+                    SimpleUploadedFile("Morning Set/Cooldown/cooldown.mp3", cooldown_payload, content_type="audio/mpeg"),
+                ],
+            },
+            format="multipart",
+        )
+        assert response.status_code == 201
+        created_items = response.data["items"]
+        tracks = list(WorkoutMusicTrack.objects.filter(id__in=[item["id"] for item in created_items]).order_by("id"))
+
+    assert len(created_items) == 2
+    assert {item["title"] for item in created_items} == {"Warmup Tone", "Cooldown Tone"}
+    assert all(track.owner_id == user.id for track in tracks)
+    for track in tracks:
+        _assert_mp3_decodes(tmp_path / track.file.name)
 
 
 def _syncsafe(value: int) -> bytes:
