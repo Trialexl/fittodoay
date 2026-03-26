@@ -292,31 +292,6 @@ type MusicUploadTask = {
   message?: string;
 };
 
-type FileSystemEntryLike = {
-  isFile: boolean;
-  isDirectory: boolean;
-  name: string;
-};
-
-type FileSystemFileEntryLike = FileSystemEntryLike & {
-  file: (callback: (file: File) => void, errorCallback?: (error: unknown) => void) => void;
-};
-
-type FileSystemDirectoryReaderLike = {
-  readEntries: (
-    successCallback: (entries: FileSystemEntryLike[]) => void,
-    errorCallback?: (error: unknown) => void,
-  ) => void;
-};
-
-type FileSystemDirectoryEntryLike = FileSystemEntryLike & {
-  createReader: () => FileSystemDirectoryReaderLike;
-};
-
-type DataTransferItemWithEntry = DataTransferItem & {
-  webkitGetAsEntry?: () => FileSystemEntryLike | null;
-};
-
 const readOfflineWeighIns = (): OfflineWeighInEntry[] => {
   if (typeof window === "undefined") return [];
   const raw = window.localStorage.getItem(OFFLINE_WEIGH_IN_STORAGE_KEY);
@@ -486,64 +461,13 @@ const isAllowedAudioFile = (file: File) => {
   return /\.mp3$/.test(name);
 };
 
-const readFileFromEntry = (entry: FileSystemFileEntryLike): Promise<File> =>
-  new Promise((resolve, reject) => {
-    entry.file(resolve, reject);
-  });
-
-const readDirectoryEntries = (directory: FileSystemDirectoryEntryLike): Promise<FileSystemEntryLike[]> =>
-  new Promise((resolve, reject) => {
-    const reader = directory.createReader();
-    const allEntries: FileSystemEntryLike[] = [];
-    const readChunk = () => {
-      reader.readEntries(
-        (entries) => {
-          if (!entries.length) {
-            resolve(allEntries);
-            return;
-          }
-          allEntries.push(...entries);
-          readChunk();
-        },
-        (error) => reject(error),
-      );
-    };
-    readChunk();
-  });
-
-const collectFilesFromEntry = async (entry: FileSystemEntryLike): Promise<File[]> => {
-  if (entry.isFile) {
-    try {
-      const file = await readFileFromEntry(entry as FileSystemFileEntryLike);
-      return [file];
-    } catch {
-      return [];
-    }
-  }
-  if (!entry.isDirectory) return [];
-  try {
-    const children = await readDirectoryEntries(entry as FileSystemDirectoryEntryLike);
-    const nested = await Promise.all(children.map((child) => collectFilesFromEntry(child)));
-    return nested.flat();
-  } catch {
-    return [];
-  }
-};
-
-const collectDroppedFiles = async (event: DragEvent<HTMLElement>): Promise<File[]> => {
-  const items = Array.from(event.dataTransfer.items ?? []) as DataTransferItemWithEntry[];
-  if (!items.length) {
-    return Array.from(event.dataTransfer.files ?? []);
-  }
-  const entries = items
-    .map((item) => item.webkitGetAsEntry?.())
-    .filter(Boolean) as FileSystemEntryLike[];
-  if (!entries.length) {
-    return Array.from(event.dataTransfer.files ?? []);
-  }
-  const nested = await Promise.all(entries.map((entry) => collectFilesFromEntry(entry)));
-  return nested.flat();
-};
+const describeUploadFile = (file: File) => ({
+  name: file.name,
+  size: file.size,
+  type: file.type,
+  lastModified: file.lastModified,
+  webkitRelativePath: file.webkitRelativePath || "",
+});
 
 const keyForSet = (templateExerciseId: number, setIndex: number) =>
   `${templateExerciseId}-${setIndex}`;
@@ -703,22 +627,6 @@ const UploadFilesIcon = ({ className }: { className?: string }) => (
     aria-hidden="true"
   >
     <path d="M10 12V4m0 0 3 3m-3-3L7 7M4.5 13.5v1.3A1.7 1.7 0 0 0 6.2 16.5h7.6a1.7 1.7 0 0 0 1.7-1.7v-1.3" />
-  </svg>
-);
-
-const UploadFolderIcon = ({ className }: { className?: string }) => (
-  <svg
-    viewBox="0 0 20 20"
-    className={clsx("h-4 w-4", className)}
-    fill="none"
-    stroke="currentColor"
-    strokeWidth={1.8}
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden="true"
-  >
-    <path d="M2.8 6.8h5l1.3 1.4h8a1.2 1.2 0 0 1 1.2 1.2v5.8a1.6 1.6 0 0 1-1.6 1.6H3.8a1.6 1.6 0 0 1-1.6-1.6V8.4a1.6 1.6 0 0 1 1.6-1.6Z" />
-    <path d="M10.2 13.2V9.6m0 0 1.8 1.8m-1.8-1.8-1.8 1.8" />
   </svg>
 );
 
@@ -1166,7 +1074,6 @@ export const Checklist = ({
   const audioContextRef = useRef<AudioContext | null>(null);
   const musicAudioRef = useRef<HTMLAudioElement | null>(null);
   const musicUploadInputRef = useRef<HTMLInputElement | null>(null);
-  const musicUploadFolderInputRef = useRef<HTMLInputElement | null>(null);
   const musicUploadQueueRef = useRef<Array<{ id: string; file: File }>>([]);
   const musicUploadWorkerRef = useRef(false);
   const musicQueueRef = useRef<number[]>([]);
@@ -1867,16 +1774,14 @@ export const Checklist = ({
     setMusicError(null);
     try {
       while (musicUploadQueueRef.current.length) {
-        const batch = musicUploadQueueRef.current.splice(0, 1);
+        const queued = musicUploadQueueRef.current.shift();
+        if (!queued) continue;
         setMusicUploadTasks((prev) =>
-          prev.map((item) =>
-            batch.some((queued) => queued.id === item.id) ? { ...item, status: "uploading", message: undefined } : item,
-          ),
+          prev.map((task) => (task.id === queued.id ? { ...task, status: "uploading", message: undefined } : task)),
         );
         const form = new FormData();
-        batch.forEach((item) => {
-          form.append("files", item.file);
-        });
+        console.warn("music_upload_append", describeUploadFile(queued.file));
+        form.append("file", queued.file);
         try {
           const response = await apiFetch<{ items: MusicTrack[] }>("/api/workouts/music/tracks/upload/", {
             method: "POST",
@@ -1885,10 +1790,8 @@ export const Checklist = ({
           });
           const createdCount = Array.isArray(response.items) ? response.items.length : 0;
           setMusicUploadTasks((prev) =>
-            prev.map((item) =>
-              batch.some((queued) => queued.id === item.id)
-                ? { ...item, status: "done", message: createdCount ? "Загружен" : "Пропущен" }
-                : item,
+            prev.map((task) =>
+              task.id === queued.id ? { ...task, status: "done", message: createdCount ? "Загружен" : "Пропущен" } : task,
             ),
           );
           await refreshMusicTracks();
@@ -1899,9 +1802,7 @@ export const Checklist = ({
           const message = error instanceof Error ? error.message : "Не удалось загрузить треки";
           setMusicError(message);
           setMusicUploadTasks((prev) =>
-            prev.map((item) =>
-              batch.some((queued) => queued.id === item.id) ? { ...item, status: "error", message } : item,
-            ),
+            prev.map((task) => (task.id === queued.id ? { ...task, status: "error", message } : task)),
           );
         }
       }
@@ -1913,6 +1814,7 @@ export const Checklist = ({
 
   const enqueueMusicUploads = useCallback(
     (files: File[]) => {
+      console.warn("music_upload_selected", files.map((file) => describeUploadFile(file)));
       const allowed = files.filter((file) => isAllowedAudioFile(file));
       if (!allowed.length) {
         setMusicError("Поддерживаются только MP3-файлы.");
@@ -1942,11 +1844,11 @@ export const Checklist = ({
   );
 
   const handleMusicDrop = useCallback(
-    async (event: DragEvent<HTMLDivElement>) => {
+    (event: DragEvent<HTMLDivElement>) => {
       event.preventDefault();
       event.stopPropagation();
       setMusicDropActive(false);
-      const files = await collectDroppedFiles(event);
+      const files = Array.from(event.dataTransfer.files ?? []);
       if (!files.length) return;
       enqueueMusicUploads(files);
     },
@@ -4224,17 +4126,6 @@ export const Checklist = ({
               event.currentTarget.value = "";
             }}
           />
-          <input
-            ref={musicUploadFolderInputRef}
-            type="file"
-            multiple
-            className="hidden"
-            onChange={(event) => {
-              handleMusicFilesSelected(event.target.files);
-              event.currentTarget.value = "";
-            }}
-            {...({ webkitdirectory: "true", directory: "true" } as Record<string, string>)}
-          />
           <div className="mb-2 space-y-2">
             <div className="relative">
               <input
@@ -4487,18 +4378,8 @@ export const Checklist = ({
                 >
                   <UploadFilesIcon />
                 </button>
-                <button
-                  type="button"
-                  onClick={() => musicUploadFolderInputRef.current?.click()}
-                  disabled={musicUploading}
-                  title="Загрузить папку"
-                  aria-label="Загрузить папку"
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-primary/35 bg-primary/10 text-primary transition hover:bg-primary/20 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <UploadFolderIcon />
-                </button>
                 <span className="text-xs text-slate-500 dark:text-slate-300">
-                  {musicUploading ? "Идёт фоновая загрузка..." : "Перетащите файлы или папку сюда"}
+                  {musicUploading ? "Идёт фоновая загрузка..." : "Перетащите MP3-файлы сюда"}
                 </span>
               </div>
               {musicUploadTasks.length ? (
