@@ -689,7 +689,7 @@ def test_music_upload_endpoint_extracts_artist_and_title_from_id3v1(tmp_path):
 
 
 @pytest.mark.django_db
-def test_music_upload_endpoint_preserves_original_mp3_bytes(tmp_path):
+def test_music_upload_endpoint_strips_oversized_id3v2_tag_but_keeps_audio_stream(tmp_path):
     user = User.objects.create_user(email="musiccover@example.com", password="pass")
     client = APIClient()
     client.force_authenticate(user=user)
@@ -712,7 +712,9 @@ def test_music_upload_endpoint_preserves_original_mp3_bytes(tmp_path):
     assert created_item["artist"] == "Мельница"
     assert created_item["title"] == "Бес Джиги"
     assert created_item["album"] == "Химера"
-    assert stored == payload
+    assert stored.startswith(b"\xff\xfb")
+    assert b"APIC" not in stored[:1024]
+    assert len(stored) < len(payload)
 
 
 @pytest.mark.django_db

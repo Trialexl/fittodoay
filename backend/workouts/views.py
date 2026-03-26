@@ -5,6 +5,7 @@ import mimetypes
 from pathlib import Path
 from typing import Iterator, Tuple
 
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.http import FileResponse, Http404, StreamingHttpResponse
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework import permissions, viewsets
@@ -65,6 +66,50 @@ def _syncsafe_to_int(raw: bytes) -> int:
     if len(raw) != 4:
         return 0
     return ((raw[0] & 0x7F) << 21) | ((raw[1] & 0x7F) << 14) | ((raw[2] & 0x7F) << 7) | (raw[3] & 0x7F)
+
+
+def _strip_oversized_id3v2_tag_from_mp3(uploaded, min_tag_size: int = 512 * 1024):
+    filename = getattr(uploaded, "name", "") or ""
+    if Path(filename).suffix.lower() != ".mp3":
+        return uploaded
+    try:
+        uploaded.seek(0)
+        raw = uploaded.read()
+    except Exception:
+        try:
+            uploaded.seek(0)
+        except Exception:
+            pass
+        return uploaded
+
+    if len(raw) < 10 or raw[:3] != b"ID3":
+        try:
+            uploaded.seek(0)
+        except Exception:
+            pass
+        return uploaded
+
+    tag_size = _syncsafe_to_int(raw[6:10])
+    tag_end = 10 + tag_size
+    if tag_size < min_tag_size or tag_end > len(raw):
+        try:
+            uploaded.seek(0)
+        except Exception:
+            pass
+        return uploaded
+
+    stripped = raw[tag_end:]
+    try:
+        uploaded.seek(0)
+    except Exception:
+        pass
+    if not stripped.startswith((b"\xff\xfb", b"\xff\xf3", b"\xff\xf2")):
+        return uploaded
+    return SimpleUploadedFile(
+        filename,
+        stripped,
+        content_type=getattr(uploaded, "content_type", None) or "audio/mpeg",
+    )
 
 
 def _extract_metadata_from_id3(head: bytes) -> Tuple[str, str, str]:
@@ -377,6 +422,7 @@ class WorkoutMusicTrackUploadView(APIView):
         for uploaded in uploaded_files:
             fallback_title = Path(uploaded.name).stem
             artist, title, album = extract_track_metadata(uploaded, fallback_title=fallback_title)
+            uploaded = _strip_oversized_id3v2_tag_from_mp3(uploaded)
             payload = {
                 "artist": artist,
                 "album": album,
