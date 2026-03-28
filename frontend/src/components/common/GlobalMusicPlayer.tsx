@@ -360,7 +360,7 @@ export const GlobalMusicPlayer = () => {
     if (activeUrl === expectedUrl) return;
     if (!audio.paused && !audio.ended) return;
     audio.src = expectedUrl;
-    audio.preload = "metadata";
+    audio.preload = "auto";
     sourceUrlRef.current = expectedUrl;
     try {
       audio.load();
@@ -405,6 +405,7 @@ export const GlobalMusicPlayer = () => {
     if (sourceChanged) {
       audio.pause();
       audio.src = trackUrl;
+      audio.preload = "auto";
       sourceUrlRef.current = trackUrl;
       loadingSourceRef.current = trackUrl;
     } else if (loadingSourceRef.current === trackUrl) {
@@ -413,6 +414,7 @@ export const GlobalMusicPlayer = () => {
       return;
     }
     try {
+      audio.preload = "auto";
       if (bufferingTimeoutRef.current !== null) {
         clearTimeout(bufferingTimeoutRef.current);
         bufferingTimeoutRef.current = null;

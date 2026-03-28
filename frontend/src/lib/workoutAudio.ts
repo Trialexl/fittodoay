@@ -6,8 +6,7 @@ export const getSharedWorkoutAudio = () => {
   if (typeof window === "undefined") return null;
   if (!sharedWorkoutAudio) {
     sharedWorkoutAudio = new Audio();
-    sharedWorkoutAudio.preload = "metadata";
+    sharedWorkoutAudio.preload = "auto";
   }
   return sharedWorkoutAudio;
 };
-

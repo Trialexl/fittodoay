@@ -1576,7 +1576,7 @@ export const Checklist = ({
     if (activeUrl === expectedUrl) return;
     if (!audio.paused && !audio.ended) return;
     audio.src = expectedUrl;
-    audio.preload = "metadata";
+    audio.preload = "auto";
     musicTrackUrlRef.current = expectedUrl;
     try {
       audio.load();
@@ -1667,6 +1667,7 @@ export const Checklist = ({
     if (sourceChanged) {
       audio.pause();
       audio.src = trackUrl;
+      audio.preload = "auto";
       musicTrackUrlRef.current = trackUrl;
       musicLoadingTrackUrlRef.current = trackUrl;
     } else if (musicLoadingTrackUrlRef.current === trackUrl) {
@@ -1675,6 +1676,7 @@ export const Checklist = ({
       return;
     }
     try {
+      audio.preload = "auto";
       clearMusicBufferingTimeout(true);
       await audio.play();
       setMusicPlaying(true);
