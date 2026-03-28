@@ -8,6 +8,12 @@ import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { API_BASE_URL, apiFetch } from "@/lib/api";
 import { getSharedWorkoutAudio } from "@/lib/workoutAudio";
+import {
+  WORKOUT_MUSIC_ACTION_EVENT,
+  dispatchWorkoutMusicState,
+  type WorkoutMusicAction,
+  type WorkoutMusicGroupBy,
+} from "@/lib/workoutMusicEvents";
 import { useAuth } from "@/state/AuthContext";
 
 type MusicTrack = {
@@ -162,6 +168,60 @@ const getMusicTrackMetaLine = (track: MusicTrack | null) => {
   return track.name;
 };
 
+const setMediaSessionHandler = (
+  action: MediaSessionAction,
+  handler: MediaSessionActionHandler | null,
+) => {
+  if (typeof navigator === "undefined" || !("mediaSession" in navigator)) return;
+  try {
+    navigator.mediaSession.setActionHandler(action, handler);
+  } catch {
+    // Some browsers expose Media Session partially and throw on unsupported actions.
+  }
+};
+
+const titleCase = (value: string) =>
+  value
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+
+const getTrackPathParts = (track: MusicTrack) =>
+  (track.filename || "")
+    .replace(/\\/g, "/")
+    .split("/")
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+const getTrackFolderLabel = (track: MusicTrack) => {
+  const parts = getTrackPathParts(track);
+  if (!parts.length) return "Без папки";
+  const folderParts = parts.slice(0, -1);
+  if (!folderParts.length) return "Без папки";
+  if (folderParts.length === 1) {
+    if (folderParts[0] === "system") return "Системные";
+    if (/^user_\d+$/i.test(folderParts[0])) return "Мои треки";
+    return titleCase(folderParts[0]);
+  }
+  const technical = folderParts[0];
+  const cleaned =
+    technical === "system" || /^user_\d+$/i.test(technical)
+      ? folderParts.slice(1)
+      : folderParts;
+  return cleaned.length ? cleaned.map((item) => titleCase(item)).join(" / ") : "Без папки";
+};
+
+const getTrackArtistLabel = (track: MusicTrack) => {
+  const artist = (track.artist || "").trim();
+  return artist || "Неизвестный исполнитель";
+};
+
+const getTrackAlbumLabel = (track: MusicTrack) => {
+  const album = (track.album || "").trim();
+  return album || "Без альбома";
+};
+
 const PlayIcon = () => (
   <svg viewBox="0 0 20 20" className="h-4 w-4" fill="currentColor" aria-hidden="true">
     <path d="M6 4.8c0-.8.9-1.3 1.6-.9l7 4.2a1 1 0 0 1 0 1.8l-7 4.2A1 1 0 0 1 6 13.2V4.8Z" />
@@ -230,8 +290,8 @@ const pickRandomIndex = (candidates: number[]) => {
 export const GlobalMusicPlayer = () => {
   const pathname = usePathname();
   const auth = useAuth();
-  const hiddenOnRoute = pathname?.startsWith("/workout");
-  const shouldRender = Boolean(auth.token) && !hiddenOnRoute;
+  const onWorkoutRoute = pathname?.startsWith("/workout");
+  const shouldRender = Boolean(auth.token);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const queueRef = useRef<number[]>([]);
   const recentRef = useRef<number[]>([]);
@@ -245,6 +305,7 @@ export const GlobalMusicPlayer = () => {
   const [playing, setPlaying] = useState(false);
   const [queue, setQueue] = useState<number[]>([]);
   const [shuffle, setShuffle] = useState(false);
+  const [groupBy, setGroupBy] = useState<WorkoutMusicGroupBy>("none");
   const [playlistOpen, setPlaylistOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [currentTime, setCurrentTime] = useState(0);
@@ -268,6 +329,30 @@ export const GlobalMusicPlayer = () => {
 
   const tracks = useMemo(() => tracksData?.items ?? [], [tracksData?.items]);
   const tracksSignature = useMemo(() => tracks.map((track) => track.id).join(","), [tracks]);
+  const trackIndexById = useMemo(() => {
+    const indexById = new Map<number, number>();
+    tracks.forEach((track, index) => {
+      indexById.set(track.id, index);
+    });
+    return indexById;
+  }, [tracks]);
+  const groupedPlaybackTracks = useMemo(() => {
+    if (groupBy === "none") return tracks;
+    const groups = new Map<string, MusicTrack[]>();
+    tracks.forEach((track) => {
+      const label =
+        groupBy === "folder"
+          ? getTrackFolderLabel(track)
+          : groupBy === "artist"
+            ? getTrackArtistLabel(track)
+            : getTrackAlbumLabel(track);
+      const normalized = label.trim() || "Другое";
+      const bucket = groups.get(normalized) ?? [];
+      bucket.push(track);
+      groups.set(normalized, bucket);
+    });
+    return Array.from(groups.values()).flat();
+  }, [groupBy, tracks]);
   const currentTrack = tracks[trackIndex] ?? null;
   const currentMetaLine = useMemo(() => getMusicTrackMetaLine(currentTrack), [currentTrack]);
 
@@ -390,12 +475,25 @@ export const GlobalMusicPlayer = () => {
       });
       return pickRandomIndex(preferredPool.length ? preferredPool : fallbackPool);
     }
+    const orderedIds = groupedPlaybackTracks.map((track) => track.id);
+    const currentTrackId = currentTrack?.id ?? null;
+    const currentOrderedIndex = currentTrackId !== null ? orderedIds.indexOf(currentTrackId) : -1;
+    if (orderedIds.length && currentOrderedIndex >= 0) {
+      for (let offset = 1; offset <= orderedIds.length; offset += 1) {
+        const orderedIdx = (currentOrderedIndex + offset) % orderedIds.length;
+        const candidateId = orderedIds[orderedIdx];
+        if (!candidateId) continue;
+        const sourceIdx = trackIndexById.get(candidateId);
+        if (sourceIdx !== undefined) return sourceIdx;
+      }
+      return null;
+    }
     for (let offset = 1; offset <= tracks.length; offset += 1) {
       const idx = (trackIndex + offset) % tracks.length;
       if (tracks[idx]) return idx;
     }
     return null;
-  }, [currentTrack?.id, shuffle, trackIndex, tracks]);
+  }, [currentTrack?.id, groupedPlaybackTracks, shuffle, trackIndex, trackIndexById, tracks]);
 
   const playTrack = useCallback(async () => {
     const audio = audioRef.current;
@@ -442,6 +540,26 @@ export const GlobalMusicPlayer = () => {
     setPlaying(false);
   }, [currentTrack?.id]);
 
+  const queueTrackNext = useCallback(
+    (trackId: number) => {
+      if (!tracks.some((track) => track.id === trackId)) return;
+      setQueue((prev) => [trackId, ...prev.filter((id) => id !== trackId)]);
+    },
+    [tracks],
+  );
+
+  const queueTrackLater = useCallback(
+    (trackId: number) => {
+      if (!tracks.some((track) => track.id === trackId)) return;
+      setQueue((prev) => (prev.includes(trackId) ? prev : [...prev, trackId]));
+    },
+    [tracks],
+  );
+
+  const clearQueue = useCallback(() => {
+    setQueue([]);
+  }, []);
+
   const playNextTrack = useCallback(() => {
     const nextIdx = pickNextTrackIndex();
     if (nextIdx === null) {
@@ -462,6 +580,138 @@ export const GlobalMusicPlayer = () => {
     },
     [tracks.length],
   );
+
+  useEffect(() => {
+    if (!shouldRender || typeof window === "undefined") return;
+    const handleAction = (event: Event) => {
+      const detail = (event as CustomEvent<WorkoutMusicAction>).detail;
+      if (!detail) return;
+      switch (detail.type) {
+        case "request-state":
+          dispatchWorkoutMusicState({
+            trackId: currentTrack?.id ?? null,
+            playing,
+            queue,
+            shuffle,
+            groupBy,
+            playlistOpen,
+            currentTime,
+            duration,
+            error,
+          });
+          return;
+        case "play":
+          void playTrack();
+          return;
+        case "pause":
+          pauseTrack();
+          return;
+        case "next":
+          playNextTrack();
+          return;
+        case "select-track": {
+          const nextIndex = trackIndexById.get(detail.trackId);
+          if (nextIndex !== undefined) {
+            selectTrack(nextIndex, { play: detail.play });
+          }
+          return;
+        }
+        case "queue-next":
+          queueTrackNext(detail.trackId);
+          return;
+        case "queue-later":
+          queueTrackLater(detail.trackId);
+          return;
+        case "clear-queue":
+          clearQueue();
+          return;
+        case "set-shuffle":
+          setShuffle(detail.enabled);
+          return;
+        case "set-group-by":
+          setGroupBy(detail.value);
+          return;
+        case "toggle-playlist":
+          setPlaylistOpen((prev) => !prev);
+          return;
+        case "set-playlist-open":
+          setPlaylistOpen(detail.open);
+          return;
+      }
+    };
+    window.addEventListener(WORKOUT_MUSIC_ACTION_EVENT, handleAction as EventListener);
+    return () => {
+      window.removeEventListener(WORKOUT_MUSIC_ACTION_EVENT, handleAction as EventListener);
+    };
+  }, [
+    clearQueue,
+    currentTime,
+    currentTrack?.id,
+    duration,
+    error,
+    groupBy,
+    pauseTrack,
+    playNextTrack,
+    playTrack,
+    playing,
+    playlistOpen,
+    queue,
+    queueTrackLater,
+    queueTrackNext,
+    selectTrack,
+    shuffle,
+    shouldRender,
+    trackIndexById,
+  ]);
+
+  useEffect(() => {
+    if (!shouldRender) return;
+    dispatchWorkoutMusicState({
+      trackId: currentTrack?.id ?? null,
+      playing,
+      queue,
+      shuffle,
+      groupBy,
+      playlistOpen,
+      currentTime,
+      duration,
+      error,
+    });
+  }, [currentTime, currentTrack?.id, duration, error, groupBy, playing, playlistOpen, queue, shuffle, shouldRender]);
+
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !("mediaSession" in navigator)) return;
+    const mediaSession = navigator.mediaSession;
+    mediaSession.playbackState = currentTrack ? (playing ? "playing" : "paused") : "none";
+    if (!currentTrack) {
+      mediaSession.metadata = null;
+      setMediaSessionHandler("play", null);
+      setMediaSessionHandler("pause", null);
+      setMediaSessionHandler("nexttrack", null);
+      return;
+    }
+    if ("MediaMetadata" in window) {
+      mediaSession.metadata = new MediaMetadata({
+        title: currentTrack.title?.trim() || currentTrack.name,
+        artist: currentTrack.artist?.trim() || currentTrack.name,
+        album: currentTrack.album?.trim() || "",
+      });
+    }
+    setMediaSessionHandler("play", () => {
+      void playTrack();
+    });
+    setMediaSessionHandler("pause", () => {
+      pauseTrack();
+    });
+    setMediaSessionHandler("nexttrack", () => {
+      playNextTrack();
+    });
+    return () => {
+      setMediaSessionHandler("play", null);
+      setMediaSessionHandler("pause", null);
+      setMediaSessionHandler("nexttrack", null);
+    };
+  }, [currentTrack, pauseTrack, playNextTrack, playTrack, playing]);
 
   const clearBufferingTimeout = useCallback((clearMessage = false) => {
     if (bufferingTimeoutRef.current !== null) {
@@ -757,78 +1007,80 @@ export const GlobalMusicPlayer = () => {
           {error ? <p className="mt-0.5 text-[10px] text-amber-600 dark:text-amber-300">{error}</p> : null}
         </div>
       </section>
-      <Modal
-        open={playlistOpen}
-        onClose={() => setPlaylistOpen(false)}
-        title="Плейлист"
-        className="h-[92vh] max-h-[92vh] sm:h-[94vh] sm:max-h-[94vh] sm:max-w-[96vw]"
-        overlayClassName="bottom-[calc(env(safe-area-inset-bottom)+84px)] sm:bottom-[calc(env(safe-area-inset-bottom)+92px)]"
-        mobileSheet
-      >
-        <div className="flex min-h-0 flex-1 overflow-hidden flex-col">
-          <div className="mb-2">
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(event) => setSearchQuery(event.target.value)}
-              placeholder="Поиск по треку, исполнителю, альбому"
-              className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-700 outline-none ring-primary/40 transition placeholder:text-slate-400 focus:ring dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500"
-            />
-          </div>
-          <div className="min-h-0 max-h-full flex-1 space-y-1.5 overflow-y-auto overscroll-contain pr-1 pb-[110px] sm:pb-[118px]">
-            {filteredTracks.length ? (
-              filteredTracks.map((track) => {
-                const index = tracks.findIndex((item) => item.id === track.id);
-                if (index < 0) return null;
-                const active = currentTrack?.id === track.id;
-                return (
-                  <div
-                    key={track.id}
-                    className={clsx(
-                      "rounded-xl border px-2.5 py-1.5 transition",
-                      active
-                        ? "border-primary/40 bg-primary/10"
-                        : "border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800",
-                    )}
-                  >
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => selectTrack(index, { play: false })}
-                        className="min-w-0 flex-1 text-left"
-                      >
-                        <p className={clsx("truncate text-sm font-medium", active ? "text-primary" : "text-slate-700 dark:text-slate-200")}>
-                          {track.name}
-                        </p>
-                        <p className="truncate text-[11px] text-slate-500 dark:text-slate-400">
-                          {track.artist || track.album || track.filename}
-                        </p>
-                      </button>
-                      {active ? (
-                        <span className="rounded-md bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold text-primary">Сейчас</span>
-                      ) : null}
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        className="h-7 min-w-[36px] px-1.5"
-                        onClick={() => {
-                          selectTrack(index, { play: true });
-                        }}
-                        title="Играть"
-                        aria-label={`Играть: ${track.name}`}
-                      >
-                        <PlayIcon />
-                      </Button>
+      {!onWorkoutRoute ? (
+        <Modal
+          open={playlistOpen}
+          onClose={() => setPlaylistOpen(false)}
+          title="Плейлист"
+          className="h-[92vh] max-h-[92vh] sm:h-[94vh] sm:max-h-[94vh] sm:max-w-[96vw]"
+          overlayClassName="bottom-[calc(env(safe-area-inset-bottom)+84px)] sm:bottom-[calc(env(safe-area-inset-bottom)+92px)]"
+          mobileSheet
+        >
+          <div className="flex min-h-0 flex-1 overflow-hidden flex-col">
+            <div className="mb-2">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Поиск по треку, исполнителю, альбому"
+                className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-700 outline-none ring-primary/40 transition placeholder:text-slate-400 focus:ring dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500"
+              />
+            </div>
+            <div className="min-h-0 max-h-full flex-1 space-y-1.5 overflow-y-auto overscroll-contain pr-1 pb-[110px] sm:pb-[118px]">
+              {filteredTracks.length ? (
+                filteredTracks.map((track) => {
+                  const index = tracks.findIndex((item) => item.id === track.id);
+                  if (index < 0) return null;
+                  const active = currentTrack?.id === track.id;
+                  return (
+                    <div
+                      key={track.id}
+                      className={clsx(
+                        "rounded-xl border px-2.5 py-1.5 transition",
+                        active
+                          ? "border-primary/40 bg-primary/10"
+                          : "border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800",
+                      )}
+                    >
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => selectTrack(index, { play: false })}
+                          className="min-w-0 flex-1 text-left"
+                        >
+                          <p className={clsx("truncate text-sm font-medium", active ? "text-primary" : "text-slate-700 dark:text-slate-200")}>
+                            {track.name}
+                          </p>
+                          <p className="truncate text-[11px] text-slate-500 dark:text-slate-400">
+                            {track.artist || track.album || track.filename}
+                          </p>
+                        </button>
+                        {active ? (
+                          <span className="rounded-md bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold text-primary">Сейчас</span>
+                        ) : null}
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          className="h-7 min-w-[36px] px-1.5"
+                          onClick={() => {
+                            selectTrack(index, { play: true });
+                          }}
+                          title="Играть"
+                          aria-label={`Играть: ${track.name}`}
+                        >
+                          <PlayIcon />
+                        </Button>
+                      </div>
                     </div>
-                  </div>
-                );
-              })
-            ) : (
-              <p className="text-sm text-slate-500 dark:text-slate-300">По запросу ничего не найдено.</p>
-            )}
+                  );
+                })
+              ) : (
+                <p className="text-sm text-slate-500 dark:text-slate-300">По запросу ничего не найдено.</p>
+              )}
+            </div>
           </div>
-        </div>
-      </Modal>
+        </Modal>
+      ) : null}
     </>
   );
 };

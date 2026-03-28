@@ -14,6 +14,12 @@ import { useOfflineWorkoutQueue } from "@/hooks/useOfflineWorkoutQueue";
 import { useRestTimer } from "@/hooks/useRestTimer";
 import { API_BASE_URL, ApiError, apiFetch } from "@/lib/api";
 import { getSharedWorkoutAudio } from "@/lib/workoutAudio";
+import {
+  WORKOUT_MUSIC_STATE_EVENT,
+  dispatchWorkoutMusicAction,
+  type WorkoutMusicGroupBy as SharedWorkoutMusicGroupBy,
+  type WorkoutMusicStateSnapshot,
+} from "@/lib/workoutMusicEvents";
 import { useAuth } from "@/state/AuthContext";
 import {
   CartesianGrid,
@@ -562,17 +568,6 @@ const PlayIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
-const PauseIcon = ({ className }: { className?: string }) => (
-  <svg
-    viewBox="0 0 20 20"
-    className={clsx("h-4 w-4", className)}
-    fill="currentColor"
-    aria-hidden="true"
-  >
-    <path d="M6 4.5h3v11H6zM11 4.5h3v11h-3z" />
-  </svg>
-);
-
 const NextIcon = ({ className }: { className?: string }) => (
   <svg
     viewBox="0 0 20 20"
@@ -585,39 +580,6 @@ const NextIcon = ({ className }: { className?: string }) => (
     aria-hidden="true"
   >
     <path d="M4.5 5.5 11.5 10l-7 4.5v-9ZM13.5 5.5v9" />
-  </svg>
-);
-
-const PlaylistIcon = ({ className }: { className?: string }) => (
-  <svg
-    viewBox="0 0 20 20"
-    className={clsx("h-4 w-4", className)}
-    fill="none"
-    stroke="currentColor"
-    strokeWidth={1.8}
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden="true"
-  >
-    <path d="M4 6h9M4 10h9M4 14h6M15 5v8m0 0-2-2m2 2 2-2" />
-  </svg>
-);
-
-const ShuffleIcon = ({ className }: { className?: string }) => (
-  <svg
-    viewBox="0 0 20 20"
-    className={clsx("h-4 w-4", className)}
-    fill="none"
-    stroke="currentColor"
-    strokeWidth={1.8}
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden="true"
-  >
-    <path d="M4 6h2.5c1.4 0 2.8.6 3.7 1.7l1.1 1.3c.9 1.1 2.3 1.7 3.7 1.7H16" />
-    <path d="m13.2 4.5 2.8 1.5-2.8 1.5" />
-    <path d="M4 14h2.5c1.4 0 2.8-.6 3.7-1.7l1.1-1.3c.9-1.1 2.3-1.7 3.7-1.7H16" />
-    <path d="m13.2 12.5 2.8 1.5-2.8 1.5" />
   </svg>
 );
 
@@ -785,12 +747,16 @@ const normalizeExerciseName = (value: string) =>
 const normalizeDayName = (value: string) =>
   value.toLowerCase().replace(/\s+/g, " ").trim();
 
-const getMusicTrackMetaLine = (track: MusicTrack | null) => {
-  if (!track) return "";
-  const mainTitle = (track.title || track.name || "").trim();
-  const artist = (track.artist || "").trim();
-  if (artist && mainTitle) return `${artist} - ${mainTitle}`;
-  return mainTitle || artist || "";
+const setMediaSessionHandler = (
+  action: MediaSessionAction,
+  handler: MediaSessionActionHandler | null,
+) => {
+  if (typeof navigator === "undefined" || !("mediaSession" in navigator)) return;
+  try {
+    navigator.mediaSession.setActionHandler(action, handler);
+  } catch {
+    // Some browsers expose Media Session partially and throw on unsupported actions.
+  }
 };
 
 const titleCase = (value: string) =>
@@ -1084,6 +1050,8 @@ export const Checklist = ({
   const musicUploadFilesRef = useRef<Map<string, File>>(new Map());
   const musicUploadWorkerRef = useRef(false);
   const musicBufferingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const musicVolumeRestoreTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const musicVolumeBeforeDuckRef = useRef<number | null>(null);
   const musicQueueRef = useRef<number[]>([]);
   const musicRecentTrackIdsRef = useRef<number[]>([]);
   const musicInitialPersistedStateRef = useRef<PersistedMusicState | null>(null);
@@ -1173,16 +1141,28 @@ export const Checklist = ({
   const triggerRestCompletionSignal = useCallback(() => {
     if (typeof window === "undefined") return;
     const musicAudio = musicAudioRef.current;
-    const initialVolume = musicAudio ? musicAudio.volume : 1;
     if (musicAudio && !musicAudio.paused) {
-      musicAudio.volume = Math.max(0.15, initialVolume * 0.35);
+      if (musicVolumeRestoreTimeoutRef.current !== null) {
+        clearTimeout(musicVolumeRestoreTimeoutRef.current);
+        musicVolumeRestoreTimeoutRef.current = null;
+      }
+      if (musicVolumeBeforeDuckRef.current === null) {
+        musicVolumeBeforeDuckRef.current = musicAudio.volume;
+      }
+      const restoreVolume = musicVolumeBeforeDuckRef.current ?? musicAudio.volume;
+      musicAudio.volume = Math.max(0.15, restoreVolume * 0.35);
     }
     unlockAudioContext();
     playCompletionTone("double");
     showSystemNotification("Отдых завершен", "Можно выполнять следующий подход.");
     if (musicAudio) {
-      window.setTimeout(() => {
-        musicAudio.volume = initialVolume;
+      musicVolumeRestoreTimeoutRef.current = window.setTimeout(() => {
+        const restoreVolume = musicVolumeBeforeDuckRef.current;
+        if (restoreVolume !== null) {
+          musicAudio.volume = restoreVolume;
+        }
+        musicVolumeBeforeDuckRef.current = null;
+        musicVolumeRestoreTimeoutRef.current = null;
       }, 1200);
     }
     const vibrate = window.navigator?.vibrate;
@@ -1285,12 +1265,23 @@ export const Checklist = ({
   const [musicUploadTasks, setMusicUploadTasks] = useState<MusicUploadTask[]>([]);
   const [musicError, setMusicError] = useState<string | null>(null);
   const [musicShuffle, setMusicShuffle] = useState(false);
+  const useGlobalMusicPlayerOnly = true;
   const [infoTrendMode, setInfoTrendMode] = useState<ExerciseTrendMode>("load");
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const musicTrackMenuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     musicAudioRef.current = getSharedWorkoutAudio();
+  }, [useGlobalMusicPlayerOnly]);
+
+  useEffect(() => {
+    return () => {
+      if (musicVolumeRestoreTimeoutRef.current !== null) {
+        clearTimeout(musicVolumeRestoreTimeoutRef.current);
+        musicVolumeRestoreTimeoutRef.current = null;
+      }
+      musicVolumeBeforeDuckRef.current = null;
+    };
   }, []);
 
   useEffect(() => {
@@ -1386,6 +1377,33 @@ export const Checklist = ({
       return haystack.includes(query);
     });
   }, [musicSearchQuery, musicTracks]);
+  useEffect(() => {
+    if (!useGlobalMusicPlayerOnly || typeof window === "undefined") return;
+    const handleMusicState = (event: Event) => {
+      const detail = (event as CustomEvent<WorkoutMusicStateSnapshot>).detail;
+      if (!detail) return;
+      const nextIndex =
+        detail.trackId !== null ? musicTracks.findIndex((track) => track.id === detail.trackId) : -1;
+      if (nextIndex >= 0) {
+        setMusicTrackIndex(nextIndex);
+      } else if (detail.trackId === null) {
+        setMusicTrackIndex(0);
+      }
+      setMusicPlaying(detail.playing);
+      setMusicQueue(detail.queue);
+      setMusicShuffle(detail.shuffle);
+      setMusicGroupBy(detail.groupBy as MusicGroupBy);
+      setMusicPlaylistOpen(detail.playlistOpen);
+      setMusicCurrentTime(detail.currentTime);
+      setMusicDuration(detail.duration);
+      setMusicError(detail.error);
+    };
+    window.addEventListener(WORKOUT_MUSIC_STATE_EVENT, handleMusicState as EventListener);
+    dispatchWorkoutMusicAction({ type: "request-state" });
+    return () => {
+      window.removeEventListener(WORKOUT_MUSIC_STATE_EVENT, handleMusicState as EventListener);
+    };
+  }, [musicTracks, useGlobalMusicPlayerOnly]);
   const groupedMusicTracks = useMemo<MusicTrackGroup[]>(() => {
     if (musicGroupBy === "none") {
       return [{ key: "all", label: "", tracks: filteredMusicTracks }];
@@ -1429,9 +1447,8 @@ export const Checklist = ({
     return Array.from(groups.values()).flat();
   }, [musicGroupBy, musicTracks]);
   const currentMusicTrack = musicTracks[musicTrackIndex] ?? null;
-  const currentMusicMetaLine = useMemo(() => getMusicTrackMetaLine(currentMusicTrack), [currentMusicTrack]);
-  const shouldMarqueeMusicMeta = currentMusicMetaLine.length > 30;
   const syncMusicUiFromAudio = useCallback(() => {
+    if (useGlobalMusicPlayerOnly) return;
     const audio = musicAudioRef.current;
     if (!audio) return;
     const currentSource = (audio.currentSrc || audio.src || "").trim();
@@ -1445,11 +1462,12 @@ export const Checklist = ({
     setMusicCurrentTime(safeTime);
     musicTimeSecondRef.current = Math.floor(safeTime);
     setMusicPlaying(!audio.paused && !audio.ended);
-  }, []);
+  }, [useGlobalMusicPlayerOnly]);
 
   useEffect(() => {
+    if (useGlobalMusicPlayerOnly) return;
     syncMusicUiFromAudio();
-  }, [syncMusicUiFromAudio]);
+  }, [syncMusicUiFromAudio, useGlobalMusicPlayerOnly]);
 
   useEffect(() => {
     if (!musicPlaylistOpen) {
@@ -1474,6 +1492,7 @@ export const Checklist = ({
   }, [openMusicTrackMenuId]);
 
   useEffect(() => {
+    if (useGlobalMusicPlayerOnly) return;
     const initialQueue = readPersistedMusicQueue();
     musicQueueRef.current = initialQueue;
     setMusicQueue(initialQueue);
@@ -1481,17 +1500,20 @@ export const Checklist = ({
     musicRecentTrackIdsRef.current = readPersistedMusicRecentTrackIds();
     musicInitialPersistedStateRef.current = readPersistedMusicState();
     musicTrackRestoreReadyRef.current = false;
-  }, []);
+  }, [useGlobalMusicPlayerOnly]);
 
   useEffect(() => {
+    if (useGlobalMusicPlayerOnly) return;
     musicQueueRef.current = musicQueue;
-  }, [musicQueue]);
+  }, [musicQueue, useGlobalMusicPlayerOnly]);
 
   useEffect(() => {
+    if (useGlobalMusicPlayerOnly) return;
     writePersistedMusicShuffle(musicShuffle);
-  }, [musicShuffle]);
+  }, [musicShuffle, useGlobalMusicPlayerOnly]);
 
   useEffect(() => {
+    if (useGlobalMusicPlayerOnly) return;
     const allowedIds = new Set(musicTracks.map((track) => track.id));
     setMusicQueue((prev) => {
       const filtered = prev.filter((id) => allowedIds.has(id));
@@ -1500,17 +1522,19 @@ export const Checklist = ({
       writePersistedMusicQueue(filtered);
       return filtered;
     });
-  }, [musicTracksSignature, musicTracks]);
+  }, [musicTracksSignature, musicTracks, useGlobalMusicPlayerOnly]);
 
   useEffect(() => {
+    if (useGlobalMusicPlayerOnly) return;
     const allowedIds = new Set(musicTracks.map((track) => track.id));
     const filteredRecent = musicRecentTrackIdsRef.current.filter((id) => allowedIds.has(id));
     if (filteredRecent.length === musicRecentTrackIdsRef.current.length) return;
     musicRecentTrackIdsRef.current = filteredRecent;
     writePersistedMusicRecentTrackIds(filteredRecent);
-  }, [musicTracksSignature, musicTracks]);
+  }, [musicTracksSignature, musicTracks, useGlobalMusicPlayerOnly]);
 
   useEffect(() => {
+    if (useGlobalMusicPlayerOnly) return;
     if (!musicTracks.length) return;
     if (musicTrackRestoreReadyRef.current) return;
     const persisted = musicInitialPersistedStateRef.current ?? readPersistedMusicState();
@@ -1526,15 +1550,17 @@ export const Checklist = ({
       }
     }
     musicTrackRestoreReadyRef.current = true;
-  }, [musicTrackIndex, musicTracks]);
+  }, [musicTrackIndex, musicTracks, useGlobalMusicPlayerOnly]);
 
   useEffect(() => {
+    if (useGlobalMusicPlayerOnly) return;
     if (musicTrackIndex < musicTracks.length) return;
     setMusicTrackIndex(0);
-  }, [musicTrackIndex, musicTracks.length]);
+  }, [musicTrackIndex, musicTracks.length, useGlobalMusicPlayerOnly]);
 
   const rememberRecentTrack = useCallback(
     (trackId: number | null) => {
+      if (useGlobalMusicPlayerOnly) return;
       if (!trackId) return;
       const dynamicLimit = Math.max(1, Math.min(MUSIC_SHUFFLE_RECENT_MAX, Math.max(musicTracks.length - 1, 1)));
       const deduped = musicRecentTrackIdsRef.current.filter((id) => id !== trackId);
@@ -1542,10 +1568,11 @@ export const Checklist = ({
       musicRecentTrackIdsRef.current = nextRecent;
       writePersistedMusicRecentTrackIds(nextRecent);
     },
-    [musicTracks.length],
+    [musicTracks.length, useGlobalMusicPlayerOnly],
   );
 
   useEffect(() => {
+    if (useGlobalMusicPlayerOnly) return;
     const currentTrackId = currentMusicTrack?.id ?? null;
     if (!musicTrackRestoreReadyRef.current && musicTracks.length > 0) return;
     if (musicLastTrackIdRef.current === currentTrackId) return;
@@ -1566,9 +1593,10 @@ export const Checklist = ({
         time: persistedTime,
       });
     }
-  }, [currentMusicTrack?.id, musicTracks.length, rememberRecentTrack]);
+  }, [currentMusicTrack?.id, musicTracks.length, rememberRecentTrack, useGlobalMusicPlayerOnly]);
 
   useEffect(() => {
+    if (useGlobalMusicPlayerOnly) return;
     const audio = musicAudioRef.current;
     if (!audio || !currentMusicTrack) return;
     const expectedUrl = buildMusicTrackUrl(currentMusicTrack.url, auth.token).trim();
@@ -1583,9 +1611,10 @@ export const Checklist = ({
     } catch {
       // Ignore load errors here; main playback path will surface a user-friendly message.
     }
-  }, [auth.token, currentMusicTrack]);
+  }, [auth.token, currentMusicTrack, useGlobalMusicPlayerOnly]);
 
   useEffect(() => {
+    if (useGlobalMusicPlayerOnly) return;
     const persistCurrentPosition = () => {
       const currentTrackId = currentMusicTrack?.id;
       if (!currentTrackId) return;
@@ -1612,17 +1641,20 @@ export const Checklist = ({
       window.removeEventListener("pagehide", persistCurrentPosition);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [currentMusicTrack?.id, musicCurrentTime]);
+  }, [currentMusicTrack?.id, musicCurrentTime, useGlobalMusicPlayerOnly]);
 
   useEffect(() => {
+    if (useGlobalMusicPlayerOnly) return;
     syncMusicUiFromAudio();
-  }, [currentMusicTrack?.id, musicTracksSignature, syncMusicUiFromAudio]);
+  }, [currentMusicTrack?.id, musicTracksSignature, syncMusicUiFromAudio, useGlobalMusicPlayerOnly]);
 
   useEffect(() => {
+    if (useGlobalMusicPlayerOnly) return;
     musicFailedTrackIdsRef.current.clear();
-  }, [musicTracksSignature]);
+  }, [musicTracksSignature, useGlobalMusicPlayerOnly]);
 
   const resetAudioSource = useCallback(() => {
+    if (useGlobalMusicPlayerOnly) return;
     const audio = musicAudioRef.current;
     if (!audio) return;
     audio.pause();
@@ -1630,9 +1662,10 @@ export const Checklist = ({
     audio.load();
     musicTrackUrlRef.current = "";
     musicLoadingTrackUrlRef.current = "";
-  }, []);
+  }, [useGlobalMusicPlayerOnly]);
 
   const clearMusicBufferingTimeout = useCallback((clearMessage = false) => {
+    if (useGlobalMusicPlayerOnly) return;
     if (musicBufferingTimeoutRef.current !== null) {
       clearTimeout(musicBufferingTimeoutRef.current);
       musicBufferingTimeoutRef.current = null;
@@ -1644,7 +1677,7 @@ export const Checklist = ({
           : prev,
       );
     }
-  }, []);
+  }, [useGlobalMusicPlayerOnly]);
 
   const scheduleMusicBufferingTimeout = useCallback(
     (trackName: string) => {
@@ -1659,6 +1692,10 @@ export const Checklist = ({
   );
 
   const playMusicTrack = useCallback(async () => {
+    if (useGlobalMusicPlayerOnly) {
+      dispatchWorkoutMusicAction({ type: "play" });
+      return;
+    }
     const audio = musicAudioRef.current;
     if (!audio || !currentMusicTrack) return;
     unlockAudioContext();
@@ -1685,9 +1722,13 @@ export const Checklist = ({
       setMusicPlaying(false);
       setMusicError("Нажмите «Play», чтобы разрешить воспроизведение.");
     }
-  }, [auth.token, clearMusicBufferingTimeout, currentMusicTrack, unlockAudioContext]);
+  }, [auth.token, clearMusicBufferingTimeout, currentMusicTrack, unlockAudioContext, useGlobalMusicPlayerOnly]);
 
   const pauseMusicTrack = useCallback(() => {
+    if (useGlobalMusicPlayerOnly) {
+      dispatchWorkoutMusicAction({ type: "pause" });
+      return;
+    }
     const audio = musicAudioRef.current;
     if (!audio) return;
     if (currentMusicTrack?.id) {
@@ -1699,10 +1740,14 @@ export const Checklist = ({
     }
     audio.pause();
     setMusicPlaying(false);
-  }, [currentMusicTrack?.id]);
+  }, [currentMusicTrack?.id, useGlobalMusicPlayerOnly]);
 
   const queueTrackNext = useCallback(
     (trackId: number) => {
+      if (useGlobalMusicPlayerOnly) {
+        dispatchWorkoutMusicAction({ type: "queue-next", trackId });
+        return;
+      }
       if (!musicTracks.some((track) => track.id === trackId)) return;
       setMusicQueue((prev) => {
         const nextQueue = [trackId, ...prev.filter((id) => id !== trackId)];
@@ -1711,11 +1756,15 @@ export const Checklist = ({
         return nextQueue;
       });
     },
-    [musicTracks],
+    [musicTracks, useGlobalMusicPlayerOnly],
   );
 
   const queueTrackLater = useCallback(
     (trackId: number) => {
+      if (useGlobalMusicPlayerOnly) {
+        dispatchWorkoutMusicAction({ type: "queue-later", trackId });
+        return;
+      }
       if (!musicTracks.some((track) => track.id === trackId)) return;
       setMusicQueue((prev) => {
         if (prev.includes(trackId)) return prev;
@@ -1725,14 +1774,18 @@ export const Checklist = ({
         return nextQueue;
       });
     },
-    [musicTracks],
+    [musicTracks, useGlobalMusicPlayerOnly],
   );
 
   const clearMusicQueue = useCallback(() => {
+    if (useGlobalMusicPlayerOnly) {
+      dispatchWorkoutMusicAction({ type: "clear-queue" });
+      return;
+    }
     musicQueueRef.current = [];
     writePersistedMusicQueue([]);
     setMusicQueue([]);
-  }, []);
+  }, [useGlobalMusicPlayerOnly]);
 
   const popQueuedTrackId = useCallback(() => {
     const queue = musicQueueRef.current;
@@ -1806,16 +1859,29 @@ export const Checklist = ({
   ]);
 
   const playNextTrack = useCallback(() => {
+    if (useGlobalMusicPlayerOnly) {
+      dispatchWorkoutMusicAction({ type: "next" });
+      return;
+    }
     const nextIdx = pickNextTrackIndex();
     if (nextIdx === null) return;
     musicConsecutiveSkipsRef.current = 0;
     setMusicPlaying(true);
     setMusicTrackIndex(nextIdx);
-  }, [pickNextTrackIndex]);
+  }, [pickNextTrackIndex, useGlobalMusicPlayerOnly]);
 
   const selectMusicTrack = useCallback(
     (index: number, options?: { play?: boolean; close?: boolean }) => {
       if (!musicTracks.length || index < 0 || index >= musicTracks.length) return;
+      if (useGlobalMusicPlayerOnly) {
+        const track = musicTracks[index];
+        if (!track) return;
+        dispatchWorkoutMusicAction({ type: "select-track", trackId: track.id, play: options?.play });
+        if (options?.close ?? true) {
+          dispatchWorkoutMusicAction({ type: "set-playlist-open", open: false });
+        }
+        return;
+      }
       musicFailedTrackIdsRef.current.clear();
       setMusicTrackIndex(index);
       if (options?.play) {
@@ -1823,28 +1889,43 @@ export const Checklist = ({
       }
       if (options?.close ?? true) setMusicPlaylistOpen(false);
     },
-    [musicTracks.length],
+    [musicTracks, useGlobalMusicPlayerOnly],
   );
 
-  const handleMusicSeekChange = useCallback((nextValue: number) => {
-    setMusicCurrentTime(nextValue);
-    musicTimeSecondRef.current = Math.floor(nextValue);
-    const audio = musicAudioRef.current;
-    if (audio && Number.isFinite(nextValue)) {
-      audio.currentTime = nextValue;
+  useEffect(() => {
+    if (useGlobalMusicPlayerOnly) return;
+    if (typeof navigator === "undefined" || !("mediaSession" in navigator)) return;
+    const mediaSession = navigator.mediaSession;
+    mediaSession.playbackState = currentMusicTrack ? (musicPlaying ? "playing" : "paused") : "none";
+    if (!currentMusicTrack) {
+      mediaSession.metadata = null;
+      setMediaSessionHandler("play", null);
+      setMediaSessionHandler("pause", null);
+      setMediaSessionHandler("nexttrack", null);
+      return;
     }
-  }, []);
-
-  const applyMusicSeek = useCallback(() => {
-    const audio = musicAudioRef.current;
-    if (!audio) return;
-    audio.currentTime = musicCurrentTime;
-    musicTimeSecondRef.current = Math.floor(musicCurrentTime);
-    if (currentMusicTrack) {
-      writePersistedMusicState({ trackId: currentMusicTrack.id, time: musicCurrentTime });
+    if ("MediaMetadata" in window) {
+      mediaSession.metadata = new MediaMetadata({
+        title: currentMusicTrack.title?.trim() || currentMusicTrack.name,
+        artist: currentMusicTrack.artist?.trim() || currentMusicTrack.name,
+        album: currentMusicTrack.album?.trim() || "",
+      });
     }
-    setMusicSeeking(false);
-  }, [currentMusicTrack, musicCurrentTime]);
+    setMediaSessionHandler("play", () => {
+      void playMusicTrack();
+    });
+    setMediaSessionHandler("pause", () => {
+      pauseMusicTrack();
+    });
+    setMediaSessionHandler("nexttrack", () => {
+      playNextTrack();
+    });
+    return () => {
+      setMediaSessionHandler("play", null);
+      setMediaSessionHandler("pause", null);
+      setMediaSessionHandler("nexttrack", null);
+    };
+  }, [currentMusicTrack, musicPlaying, pauseMusicTrack, playMusicTrack, playNextTrack, useGlobalMusicPlayerOnly]);
 
   const processMusicUploadQueue = useCallback(async () => {
     if (!auth.token) return;
@@ -2021,7 +2102,7 @@ export const Checklist = ({
           writePersistedMusicQueue(nextQueue);
           return nextQueue;
         });
-        if (currentMusicTrack?.id === track.id) {
+        if (!useGlobalMusicPlayerOnly && currentMusicTrack?.id === track.id) {
           resetAudioSource();
           setMusicPlaying(false);
         }
@@ -2033,10 +2114,11 @@ export const Checklist = ({
         setMusicDeletingTrackId(null);
       }
     },
-    [auth.token, currentMusicTrack?.id, refreshMusicTracks, resetAudioSource],
+    [auth.token, currentMusicTrack?.id, refreshMusicTracks, resetAudioSource, useGlobalMusicPlayerOnly],
   );
 
   useEffect(() => {
+    if (useGlobalMusicPlayerOnly) return;
     const audio = musicAudioRef.current;
     if (!musicTracks.length) {
       if (audio && !audio.paused && !audio.ended) {
@@ -2055,18 +2137,23 @@ export const Checklist = ({
       }
     }
     void playMusicTrack();
-  }, [auth.token, currentMusicTrack, musicPlaying, musicTrackIndex, musicTracks.length, playMusicTrack, pauseMusicTrack]);
+  }, [auth.token, currentMusicTrack, musicPlaying, musicTrackIndex, musicTracks.length, playMusicTrack, pauseMusicTrack, useGlobalMusicPlayerOnly]);
 
   const skipToNextTrack = useCallback(() => {
+    if (useGlobalMusicPlayerOnly) {
+      dispatchWorkoutMusicAction({ type: "next" });
+      return;
+    }
     const nextIdx = pickNextTrackIndex();
     if (nextIdx === null) {
       setMusicPlaying(false);
       return;
     }
     setMusicTrackIndex(nextIdx);
-  }, [pickNextTrackIndex]);
+  }, [pickNextTrackIndex, useGlobalMusicPlayerOnly]);
 
   useEffect(() => {
+    if (useGlobalMusicPlayerOnly) return;
     const audio = musicAudioRef.current;
     if (!audio) return;
     const handleLoadedMeta = () => {
@@ -2225,6 +2312,7 @@ export const Checklist = ({
     resetAudioSource,
     scheduleMusicBufferingTimeout,
     skipToNextTrack,
+    useGlobalMusicPlayerOnly,
   ]);
 
   const latestPendingProposal = useMemo(
@@ -3601,128 +3689,6 @@ export const Checklist = ({
           </div>
         </section>
       )}
-      <section
-        className={clsx(
-          "fixed left-3 right-3 rounded-2xl border border-slate-200 bg-white/95 p-1.5 shadow-2xl backdrop-blur dark:border-slate-700 dark:bg-slate-900/95 sm:left-6 sm:right-6 sm:p-2",
-          musicPlaylistOpen ? "z-[60]" : "z-40",
-          "bottom-[calc(env(safe-area-inset-bottom)+2px)] sm:bottom-[calc(env(safe-area-inset-bottom)+6px)]",
-        )}
-      >
-        <div className="rounded-xl border border-slate-200/80 bg-slate-50/70 p-1.5 dark:border-slate-700 dark:bg-slate-800/40">
-          <div className="flex items-center gap-1.5">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => {
-                if (!musicTracks.length) return;
-                musicFailedTrackIdsRef.current.clear();
-                musicConsecutiveSkipsRef.current = 0;
-                if (musicPlaying) {
-                  pauseMusicTrack();
-                } else {
-                  void playMusicTrack();
-                }
-              }}
-              disabled={!musicTracks.length}
-              className="h-8 min-w-[52px] px-2"
-              title={musicPlaying ? "Пауза" : "Воспроизвести"}
-              aria-label={musicPlaying ? "Пауза" : "Воспроизвести"}
-            >
-              {musicPlaying ? <PauseIcon /> : <PlayIcon />}
-            </Button>
-            <button
-              type="button"
-              className="min-w-0 flex-1 text-left"
-              onClick={() => setMusicPlaylistOpen((prev) => !prev)}
-              title="Развернуть в плейлист"
-              aria-label="Развернуть в плейлист"
-            >
-              <div className="flex h-[18px] items-center overflow-hidden">
-                {currentMusicTrack ? (
-                  shouldMarqueeMusicMeta ? (
-                    <div className="ft-music-marquee text-[11px] leading-[18px] text-slate-400 dark:text-slate-300">
-                      <span className="ft-music-marquee__item">{currentMusicMetaLine}</span>
-                      <span className="ft-music-marquee__item" aria-hidden>
-                        {currentMusicMetaLine}
-                      </span>
-                    </div>
-                  ) : (
-                    <p className="truncate text-[11px] leading-[18px] text-slate-400 dark:text-slate-300">{currentMusicMetaLine}</p>
-                  )
-                ) : (
-                  <p className="truncate text-[11px] leading-[18px] text-slate-400 dark:text-slate-300">Выберите трек</p>
-                )}
-              </div>
-            </button>
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={playNextTrack}
-              disabled={musicTracks.length < 2}
-              className="h-8 min-w-[44px] px-2"
-              title="Следующий трек"
-              aria-label="Следующий трек"
-            >
-              <NextIcon />
-            </Button>
-            <Button
-              type="button"
-              variant={musicShuffle ? "primary" : "secondary"}
-              onClick={() => setMusicShuffle((prev) => !prev)}
-              className="h-8 min-w-[44px] px-2"
-              title={musicShuffle ? "Случайный режим включён" : "Случайный режим выключен"}
-              aria-label={musicShuffle ? "Выключить случайный режим" : "Включить случайный режим"}
-            >
-              <ShuffleIcon />
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => setMusicPlaylistOpen((prev) => !prev)}
-              className="h-8 min-w-[44px] px-2"
-              title="Плейлист"
-              aria-label="Плейлист"
-            >
-              <PlaylistIcon />
-            </Button>
-          </div>
-          <div className="mt-1">
-            <input
-              type="range"
-              min={0}
-              max={Math.max(musicDuration, 1)}
-              step={1}
-              value={Math.min(musicCurrentTime, Math.max(musicDuration, 1))}
-              onInput={(event) => {
-                handleMusicSeekChange(Number((event.target as HTMLInputElement).value));
-              }}
-              onChange={(event) => {
-                handleMusicSeekChange(Number(event.target.value));
-              }}
-              onPointerDown={() => setMusicSeeking(true)}
-              onPointerUp={applyMusicSeek}
-              onMouseDown={() => setMusicSeeking(true)}
-              onMouseUp={applyMusicSeek}
-              onTouchStart={() => setMusicSeeking(true)}
-              onTouchEnd={applyMusicSeek}
-              onBlur={applyMusicSeek}
-              onKeyUp={(event) => {
-                if (event.key === "ArrowLeft" || event.key === "ArrowRight" || event.key === "Home" || event.key === "End") {
-                  applyMusicSeek();
-                }
-              }}
-              disabled={!currentMusicTrack}
-              className="h-1.5 w-full cursor-pointer accent-primary disabled:cursor-not-allowed"
-              aria-label="Перемотка трека"
-            />
-            <div className="mt-0.5 flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-300">
-              <span>{formatAudioTime(musicCurrentTime)}</span>
-              <span>{formatAudioTime(musicDuration)}</span>
-            </div>
-          </div>
-          {musicError ? <p className="mt-0.5 text-[10px] text-amber-600 dark:text-amber-300">{musicError}</p> : null}
-        </div>
-      </section>
       <div className="space-y-4 pb-[102px] sm:space-y-5 sm:pb-[110px]">
         {!plan ? (
           <div className="rounded-2xl border border-dashed border-slate-300 bg-white/60 p-6 text-center">
@@ -4289,7 +4255,7 @@ export const Checklist = ({
 
       <Modal
         open={musicPlaylistOpen}
-        onClose={() => setMusicPlaylistOpen(false)}
+        onClose={() => dispatchWorkoutMusicAction({ type: "set-playlist-open", open: false })}
         title="Плейлист"
         className="h-[92vh] max-h-[92vh] sm:h-[94vh] sm:max-h-[94vh] sm:max-w-[96vw]"
         overlayClassName="bottom-[calc(env(safe-area-inset-bottom)+84px)] sm:bottom-[calc(env(safe-area-inset-bottom)+92px)]"
@@ -4334,7 +4300,11 @@ export const Checklist = ({
               <select
                 id="music-group-by"
                 value={musicGroupBy}
-                onChange={(event) => setMusicGroupBy(event.target.value as MusicGroupBy)}
+                onChange={(event) => {
+                  const nextValue = event.target.value as SharedWorkoutMusicGroupBy;
+                  setMusicGroupBy(nextValue as MusicGroupBy);
+                  dispatchWorkoutMusicAction({ type: "set-group-by", value: nextValue });
+                }}
                 className="h-8 rounded-lg border border-slate-300 bg-white px-2 text-xs text-slate-700 outline-none ring-primary/40 transition focus:ring dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
               >
                 <option value="none">Без группировки</option>
