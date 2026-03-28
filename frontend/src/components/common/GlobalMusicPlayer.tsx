@@ -34,6 +34,7 @@ const MUSIC_QUEUE_STORAGE_KEY = "fittodoay:workout:music-queue:v1";
 const MUSIC_SHUFFLE_STORAGE_KEY = "fittodoay:workout:music-shuffle:v1";
 const MUSIC_SHUFFLE_RECENT_STORAGE_KEY = "fittodoay:workout:music-shuffle-recent:v1";
 const MUSIC_SHUFFLE_RECENT_MAX = 12;
+const MUSIC_BUFFERING_TIMEOUT_MS = 15000;
 
 const buildMusicTrackUrl = (path: string, token?: string | null) => {
   const staticBase = API_BASE_URL.replace(/\/$/, "");
@@ -239,6 +240,7 @@ export const GlobalMusicPlayer = () => {
   const initialPersistedStateRef = useRef<PersistedMusicState | null>(null);
   const restoreReadyRef = useRef(false);
   const secondRef = useRef(-1);
+  const bufferingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [trackIndex, setTrackIndex] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [queue, setQueue] = useState<number[]>([]);
@@ -411,6 +413,10 @@ export const GlobalMusicPlayer = () => {
       return;
     }
     try {
+      if (bufferingTimeoutRef.current !== null) {
+        clearTimeout(bufferingTimeoutRef.current);
+        bufferingTimeoutRef.current = null;
+      }
       await audio.play();
       setPlaying(true);
       setError(null);
@@ -455,11 +461,38 @@ export const GlobalMusicPlayer = () => {
     [tracks.length],
   );
 
+  const clearBufferingTimeout = useCallback((clearMessage = false) => {
+    if (bufferingTimeoutRef.current !== null) {
+      clearTimeout(bufferingTimeoutRef.current);
+      bufferingTimeoutRef.current = null;
+    }
+    if (clearMessage) {
+      setError((prev) =>
+        prev && (prev.startsWith("Буферизация:") || prev.startsWith("Сеть слишком медленная"))
+          ? null
+          : prev,
+      );
+    }
+  }, []);
+
+  const scheduleBufferingTimeout = useCallback(
+    (trackName: string) => {
+      clearBufferingTimeout();
+      setError(`Буферизация: ${trackName}. Ждём соединение...`);
+      bufferingTimeoutRef.current = setTimeout(() => {
+        setError(`Сеть слишком медленная для ${trackName}. Воспроизведение продолжится после догрузки.`);
+        bufferingTimeoutRef.current = null;
+      }, MUSIC_BUFFERING_TIMEOUT_MS);
+    },
+    [clearBufferingTimeout],
+  );
+
   useEffect(() => {
     const audio = audioRef.current;
     if (!shouldRender || !audio) return;
 
     const handleLoadedMeta = () => {
+      clearBufferingTimeout(true);
       const trackDuration = Number.isFinite(audio.duration) ? audio.duration : 0;
       setDuration(trackDuration);
       loadingSourceRef.current = "";
@@ -489,10 +522,15 @@ export const GlobalMusicPlayer = () => {
       setPlaying(false);
     };
     const handlePlay = () => {
+      clearBufferingTimeout(true);
       setPlaying(true);
       setError(null);
     };
+    const handleCanPlay = () => {
+      clearBufferingTimeout(true);
+    };
     const handleEnded = () => {
+      clearBufferingTimeout(true);
       console.warn("global_music_ended", { trackId: currentTrack?.id ?? null, trackName: currentTrack?.name ?? null, ...describeAudioDebugState(audio) });
       if (currentTrack) {
         writePersistedMusicState({ trackId: currentTrack.id, time: 0 });
@@ -500,9 +538,27 @@ export const GlobalMusicPlayer = () => {
       playNextTrack();
     };
     const handleError = () => {
+      clearBufferingTimeout();
       console.error("global_music_error", { trackId: currentTrack?.id ?? null, trackName: currentTrack?.name ?? null, ...describeAudioDebugState(audio) });
       setError(currentTrack ? `Не удалось воспроизвести: ${currentTrack.name}` : "Не удалось воспроизвести трек");
       playNextTrack();
+    };
+    const handleAbort = () => {
+      clearBufferingTimeout();
+      loadingSourceRef.current = "";
+    };
+    const handleWaiting = () => {
+      if (!currentTrack || audio.paused || audio.ended) return;
+      scheduleBufferingTimeout(currentTrack.name);
+    };
+    const handleStalled = () => {
+      if (!currentTrack || audio.paused || audio.ended) return;
+      scheduleBufferingTimeout(currentTrack.name);
+    };
+    const handleProgress = () => {
+      if (audio.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) {
+        clearBufferingTimeout(true);
+      }
     };
 
     audio.addEventListener("loadedmetadata", handleLoadedMeta);
@@ -510,19 +566,32 @@ export const GlobalMusicPlayer = () => {
     audio.addEventListener("timeupdate", handleTimeUpdate);
     audio.addEventListener("pause", handlePause);
     audio.addEventListener("play", handlePlay);
+    audio.addEventListener("canplay", handleCanPlay);
+    audio.addEventListener("playing", handleCanPlay);
+    audio.addEventListener("waiting", handleWaiting);
     audio.addEventListener("ended", handleEnded);
     audio.addEventListener("error", handleError);
+    audio.addEventListener("abort", handleAbort);
+    audio.addEventListener("stalled", handleStalled);
+    audio.addEventListener("progress", handleProgress);
     setPlaying(!audio.paused && !audio.ended);
     return () => {
+      clearBufferingTimeout();
       audio.removeEventListener("loadedmetadata", handleLoadedMeta);
       audio.removeEventListener("durationchange", handleLoadedMeta);
       audio.removeEventListener("timeupdate", handleTimeUpdate);
       audio.removeEventListener("pause", handlePause);
       audio.removeEventListener("play", handlePlay);
+      audio.removeEventListener("canplay", handleCanPlay);
+      audio.removeEventListener("playing", handleCanPlay);
+      audio.removeEventListener("waiting", handleWaiting);
       audio.removeEventListener("ended", handleEnded);
       audio.removeEventListener("error", handleError);
+      audio.removeEventListener("abort", handleAbort);
+      audio.removeEventListener("stalled", handleStalled);
+      audio.removeEventListener("progress", handleProgress);
     };
-  }, [currentTrack, playNextTrack, seeking, shouldRender]);
+  }, [clearBufferingTimeout, currentTrack, playNextTrack, scheduleBufferingTimeout, seeking, shouldRender]);
 
   useEffect(() => {
     if (!shouldRender) return;
@@ -573,7 +642,12 @@ export const GlobalMusicPlayer = () => {
 
   return (
     <>
-      <section className="fixed bottom-[calc(env(safe-area-inset-bottom)+2px)] left-3 right-3 z-40 rounded-2xl border border-slate-200 bg-white/95 p-1.5 shadow-2xl backdrop-blur dark:border-slate-700 dark:bg-slate-900/95 sm:bottom-[calc(env(safe-area-inset-bottom)+6px)] sm:left-6 sm:right-6 sm:p-2">
+      <section
+        className={clsx(
+          "fixed bottom-[calc(env(safe-area-inset-bottom)+2px)] left-3 right-3 rounded-2xl border border-slate-200 bg-white/95 p-1.5 shadow-2xl backdrop-blur dark:border-slate-700 dark:bg-slate-900/95 sm:bottom-[calc(env(safe-area-inset-bottom)+6px)] sm:left-6 sm:right-6 sm:p-2",
+          playlistOpen ? "z-[60]" : "z-40",
+        )}
+      >
         <div className="rounded-xl border border-slate-200/80 bg-slate-50/70 p-1.5 dark:border-slate-700 dark:bg-slate-800/40">
           <div className="flex items-center gap-1.5">
             <Button
@@ -629,7 +703,7 @@ export const GlobalMusicPlayer = () => {
             <Button
               type="button"
               variant="secondary"
-              onClick={() => setPlaylistOpen(true)}
+              onClick={() => setPlaylistOpen((prev) => !prev)}
               className="h-8 min-w-[44px] px-2"
               title="Плейлист"
               aria-label="Плейлист"
@@ -686,9 +760,10 @@ export const GlobalMusicPlayer = () => {
         onClose={() => setPlaylistOpen(false)}
         title="Плейлист"
         className="h-[92vh] max-h-[92vh] sm:h-[94vh] sm:max-h-[94vh] sm:max-w-[96vw]"
+        overlayClassName="bottom-[calc(env(safe-area-inset-bottom)+84px)] sm:bottom-[calc(env(safe-area-inset-bottom)+92px)]"
         mobileSheet
       >
-        <div className="flex h-full min-h-0 overflow-hidden flex-col">
+        <div className="flex min-h-0 flex-1 overflow-hidden flex-col">
           <div className="mb-2">
             <input
               type="text"
@@ -698,7 +773,7 @@ export const GlobalMusicPlayer = () => {
               className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-700 outline-none ring-primary/40 transition placeholder:text-slate-400 focus:ring dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500"
             />
           </div>
-          <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto overscroll-contain pr-1">
+          <div className="min-h-0 max-h-full flex-1 space-y-1.5 overflow-y-auto overscroll-contain pr-1 pb-[110px] sm:pb-[118px]">
             {filteredTracks.length ? (
               filteredTracks.map((track) => {
                 const index = tracks.findIndex((item) => item.id === track.id);
@@ -755,4 +830,3 @@ export const GlobalMusicPlayer = () => {
     </>
   );
 };
-

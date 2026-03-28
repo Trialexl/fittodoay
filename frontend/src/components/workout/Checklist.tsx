@@ -266,6 +266,7 @@ const MUSIC_QUEUE_STORAGE_KEY = "fittodoay:workout:music-queue:v1";
 const MUSIC_SHUFFLE_STORAGE_KEY = "fittodoay:workout:music-shuffle:v1";
 const MUSIC_SHUFFLE_RECENT_STORAGE_KEY = "fittodoay:workout:music-shuffle-recent:v1";
 const MUSIC_SHUFFLE_RECENT_MAX = 12;
+const MUSIC_BUFFERING_TIMEOUT_MS = 15000;
 
 type OfflineWeighInEntry = {
   date: string;
@@ -290,11 +291,6 @@ type MusicUploadTask = {
   name: string;
   status: MusicUploadStatus;
   message?: string;
-};
-
-type DirectoryInputElement = HTMLInputElement & {
-  directory?: boolean;
-  webkitdirectory?: boolean;
 };
 
 const readOfflineWeighIns = (): OfflineWeighInEntry[] => {
@@ -1084,10 +1080,10 @@ export const Checklist = ({
   const audioContextRef = useRef<AudioContext | null>(null);
   const musicAudioRef = useRef<HTMLAudioElement | null>(null);
   const musicUploadInputRef = useRef<HTMLInputElement | null>(null);
-  const musicFolderUploadInputRef = useRef<HTMLInputElement | null>(null);
   const musicUploadQueueRef = useRef<Array<{ id: string; file: File }>>([]);
   const musicUploadFilesRef = useRef<Map<string, File>>(new Map());
   const musicUploadWorkerRef = useRef(false);
+  const musicBufferingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const musicQueueRef = useRef<number[]>([]);
   const musicRecentTrackIdsRef = useRef<number[]>([]);
   const musicInitialPersistedStateRef = useRef<PersistedMusicState | null>(null);
@@ -1413,6 +1409,25 @@ export const Checklist = ({
       tracks,
     }));
   }, [filteredMusicTracks, musicGroupBy]);
+  const groupedPlaybackTracks = useMemo(() => {
+    if (musicGroupBy === "none") {
+      return musicTracks;
+    }
+    const groups = new Map<string, MusicTrack[]>();
+    musicTracks.forEach((track) => {
+      const label =
+        musicGroupBy === "folder"
+          ? getTrackFolderLabel(track)
+          : musicGroupBy === "artist"
+            ? getTrackArtistLabel(track)
+            : getTrackAlbumLabel(track);
+      const normalized = label.trim() || "Другое";
+      const bucket = groups.get(normalized) ?? [];
+      bucket.push(track);
+      groups.set(normalized, bucket);
+    });
+    return Array.from(groups.values()).flat();
+  }, [musicGroupBy, musicTracks]);
   const currentMusicTrack = musicTracks[musicTrackIndex] ?? null;
   const currentMusicMetaLine = useMemo(() => getMusicTrackMetaLine(currentMusicTrack), [currentMusicTrack]);
   const shouldMarqueeMusicMeta = currentMusicMetaLine.length > 30;
@@ -1617,6 +1632,32 @@ export const Checklist = ({
     musicLoadingTrackUrlRef.current = "";
   }, []);
 
+  const clearMusicBufferingTimeout = useCallback((clearMessage = false) => {
+    if (musicBufferingTimeoutRef.current !== null) {
+      clearTimeout(musicBufferingTimeoutRef.current);
+      musicBufferingTimeoutRef.current = null;
+    }
+    if (clearMessage) {
+      setMusicError((prev) =>
+        prev && (prev.startsWith("Буферизация:") || prev.startsWith("Сеть слишком медленная"))
+          ? null
+          : prev,
+      );
+    }
+  }, []);
+
+  const scheduleMusicBufferingTimeout = useCallback(
+    (trackName: string) => {
+      clearMusicBufferingTimeout();
+      setMusicError(`Буферизация: ${trackName}. Ждём соединение...`);
+      musicBufferingTimeoutRef.current = setTimeout(() => {
+        setMusicError(`Сеть слишком медленная для ${trackName}. Воспроизведение продолжится после догрузки.`);
+        musicBufferingTimeoutRef.current = null;
+      }, MUSIC_BUFFERING_TIMEOUT_MS);
+    },
+    [clearMusicBufferingTimeout],
+  );
+
   const playMusicTrack = useCallback(async () => {
     const audio = musicAudioRef.current;
     if (!audio || !currentMusicTrack) return;
@@ -1634,6 +1675,7 @@ export const Checklist = ({
       return;
     }
     try {
+      clearMusicBufferingTimeout(true);
       await audio.play();
       setMusicPlaying(true);
       setMusicError(null);
@@ -1641,7 +1683,7 @@ export const Checklist = ({
       setMusicPlaying(false);
       setMusicError("Нажмите «Play», чтобы разрешить воспроизведение.");
     }
-  }, [auth.token, currentMusicTrack, unlockAudioContext]);
+  }, [auth.token, clearMusicBufferingTimeout, currentMusicTrack, unlockAudioContext]);
 
   const pauseMusicTrack = useCallback(() => {
     const audio = musicAudioRef.current;
@@ -1726,15 +1768,40 @@ export const Checklist = ({
       if (!pool.length) return null;
       return pool[Math.floor(Math.random() * pool.length)] ?? null;
     }
+    const orderedIds = groupedPlaybackTracks.map((track) => track.id);
+    const currentTrackId = currentMusicTrack?.id ?? null;
+    const currentOrderedIndex = currentTrackId !== null ? orderedIds.indexOf(currentTrackId) : -1;
+    if (orderedIds.length && currentOrderedIndex >= 0) {
+      for (let offset = 1; offset <= orderedIds.length; offset += 1) {
+        const orderedIdx = (currentOrderedIndex + offset) % orderedIds.length;
+        const candidateId = orderedIds[orderedIdx];
+        if (!candidateId || excludeIds?.has(candidateId)) continue;
+        const sourceIdx = musicTrackIndexById.get(candidateId);
+        if (sourceIdx !== undefined) return sourceIdx;
+      }
+      return null;
+    }
     for (let offset = 1; offset <= musicTracks.length; offset += 1) {
       const idx = (musicTrackIndex + offset) % musicTracks.length;
       const candidateId = musicTracks[idx]?.id;
-      if (!candidateId) continue;
-      if (excludeIds?.has(candidateId)) continue;
+      if (!candidateId || excludeIds?.has(candidateId)) continue;
       return idx;
     }
+    for (const candidateId of orderedIds) {
+      if (excludeIds?.has(candidateId)) continue;
+      const sourceIdx = musicTrackIndexById.get(candidateId);
+      if (sourceIdx !== undefined) return sourceIdx;
+    }
     return null;
-  }, [currentMusicTrack?.id, musicShuffle, musicTrackIndex, musicTracks, popQueuedTrackId]);
+  }, [
+    currentMusicTrack?.id,
+    groupedPlaybackTracks,
+    musicShuffle,
+    musicTrackIndex,
+    musicTrackIndexById,
+    musicTracks,
+    popQueuedTrackId,
+  ]);
 
   const playNextTrack = useCallback(() => {
     const nextIdx = pickNextTrackIndex();
@@ -1826,9 +1893,6 @@ export const Checklist = ({
       if (musicUploadInputRef.current) {
         musicUploadInputRef.current.value = "";
       }
-      if (musicFolderUploadInputRef.current) {
-        musicFolderUploadInputRef.current.value = "";
-      }
     }
   }, [auth.token, musicPlaying, musicTracks.length, refreshMusicTracks]);
 
@@ -1871,6 +1935,30 @@ export const Checklist = ({
     },
     [enqueueMusicUploads],
   );
+
+  const openMusicFolderPicker = useCallback(() => {
+    if (typeof document === "undefined" || musicUploading) return;
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".mp3,audio/mpeg";
+    input.multiple = true;
+    input.setAttribute("directory", "");
+    input.setAttribute("webkitdirectory", "");
+    input.setAttribute("mozdirectory", "");
+    Object.assign(input, {
+      directory: true,
+      webkitdirectory: true,
+      mozdirectory: true,
+    });
+    input.addEventListener(
+      "change",
+      () => {
+        handleMusicFilesSelected(input.files);
+      },
+      { once: true },
+    );
+    input.click();
+  }, [handleMusicFilesSelected, musicUploading]);
 
   const handleMusicDrop = useCallback(
     (event: DragEvent<HTMLDivElement>) => {
@@ -1980,6 +2068,7 @@ export const Checklist = ({
     const audio = musicAudioRef.current;
     if (!audio) return;
     const handleLoadedMeta = () => {
+      clearMusicBufferingTimeout(true);
       const duration = Number.isFinite(audio.duration) ? audio.duration : 0;
       setMusicDuration(duration);
       musicLoadingTrackUrlRef.current = "";
@@ -2011,10 +2100,15 @@ export const Checklist = ({
       setMusicPlaying(false);
     };
     const handlePlay = () => {
+      clearMusicBufferingTimeout(true);
       musicConsecutiveSkipsRef.current = 0;
       setMusicPlaying(true);
     };
+    const handleCanPlay = () => {
+      clearMusicBufferingTimeout(true);
+    };
     const handleEnded = () => {
+      clearMusicBufferingTimeout(true);
       console.warn("workout_music_ended", { trackId: currentMusicTrack?.id ?? null, trackName: currentMusicTrack?.name ?? null, ...describeAudioDebugState(audio) });
       if (!musicTracks.length) {
         setMusicPlaying(false);
@@ -2040,6 +2134,7 @@ export const Checklist = ({
       skipToNextTrack();
     };
     const handleError = () => {
+      clearMusicBufferingTimeout();
       console.error("workout_music_error", { trackId: currentMusicTrack?.id ?? null, trackName: currentMusicTrack?.name ?? null, ...describeAudioDebugState(audio) });
       resetAudioSource();
       if (!currentMusicTrack) {
@@ -2070,39 +2165,65 @@ export const Checklist = ({
       setMusicTrackIndex(nextIdx);
     };
     const handleAbort = () => {
+      clearMusicBufferingTimeout();
       musicLoadingTrackUrlRef.current = "";
+    };
+    const handleWaiting = () => {
+      if (!currentMusicTrack || audio.paused || audio.ended) return;
+      scheduleMusicBufferingTimeout(currentMusicTrack.name);
     };
     const handleStalled = () => {
       console.warn("workout_music_stalled", { trackId: currentMusicTrack?.id ?? null, trackName: currentMusicTrack?.name ?? null, ...describeAudioDebugState(audio) });
-      resetAudioSource();
-      if (!currentMusicTrack) return;
-      setMusicError(`Трек ${currentMusicTrack.name} загружается слишком долго. Нажмите Next или выберите другой трек.`);
-      setMusicPlaying(false);
+      if (!currentMusicTrack || audio.paused || audio.ended) return;
+      scheduleMusicBufferingTimeout(currentMusicTrack.name);
+    };
+    const handleProgress = () => {
+      if (audio.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) {
+        clearMusicBufferingTimeout(true);
+      }
     };
     audio.addEventListener("loadedmetadata", handleLoadedMeta);
     audio.addEventListener("durationchange", handleLoadedMeta);
     audio.addEventListener("timeupdate", handleTimeUpdate);
     audio.addEventListener("pause", handlePause);
     audio.addEventListener("play", handlePlay);
+    audio.addEventListener("canplay", handleCanPlay);
+    audio.addEventListener("playing", handleCanPlay);
+    audio.addEventListener("waiting", handleWaiting);
     audio.addEventListener("ended", handleEnded);
     audio.addEventListener("error", handleError);
     audio.addEventListener("abort", handleAbort);
     audio.addEventListener("stalled", handleStalled);
+    audio.addEventListener("progress", handleProgress);
     handleLoadedMeta();
     handleTimeUpdate();
     setMusicPlaying(!audio.paused && !audio.ended);
     return () => {
+      clearMusicBufferingTimeout();
       audio.removeEventListener("loadedmetadata", handleLoadedMeta);
       audio.removeEventListener("durationchange", handleLoadedMeta);
       audio.removeEventListener("timeupdate", handleTimeUpdate);
       audio.removeEventListener("pause", handlePause);
       audio.removeEventListener("play", handlePlay);
+      audio.removeEventListener("canplay", handleCanPlay);
+      audio.removeEventListener("playing", handleCanPlay);
+      audio.removeEventListener("waiting", handleWaiting);
       audio.removeEventListener("ended", handleEnded);
       audio.removeEventListener("error", handleError);
       audio.removeEventListener("abort", handleAbort);
       audio.removeEventListener("stalled", handleStalled);
+      audio.removeEventListener("progress", handleProgress);
     };
-  }, [currentMusicTrack, musicSeeking, musicTracks, pickNextTrackIndex, resetAudioSource, skipToNextTrack]);
+  }, [
+    clearMusicBufferingTimeout,
+    currentMusicTrack,
+    musicSeeking,
+    musicTracks,
+    pickNextTrackIndex,
+    resetAudioSource,
+    scheduleMusicBufferingTimeout,
+    skipToNextTrack,
+  ]);
 
   const latestPendingProposal = useMemo(
     () =>
@@ -2364,16 +2485,6 @@ export const Checklist = ({
       window.removeEventListener("keydown", onFirstInteraction);
     };
   }, [unlockAudioContext]);
-
-  useEffect(() => {
-    const input = musicFolderUploadInputRef.current as DirectoryInputElement | null;
-    if (!input) return;
-    input.directory = true;
-    input.webkitdirectory = true;
-    input.setAttribute("directory", "");
-    input.setAttribute("webkitdirectory", "");
-    input.multiple = true;
-  }, []);
 
   useEffect(() => {
     if (!plan || typeof window === "undefined") return;
@@ -3490,7 +3601,8 @@ export const Checklist = ({
       )}
       <section
         className={clsx(
-          "fixed left-3 right-3 z-40 rounded-2xl border border-slate-200 bg-white/95 p-1.5 shadow-2xl backdrop-blur dark:border-slate-700 dark:bg-slate-900/95 sm:left-6 sm:right-6 sm:p-2",
+          "fixed left-3 right-3 rounded-2xl border border-slate-200 bg-white/95 p-1.5 shadow-2xl backdrop-blur dark:border-slate-700 dark:bg-slate-900/95 sm:left-6 sm:right-6 sm:p-2",
+          musicPlaylistOpen ? "z-[60]" : "z-40",
           "bottom-[calc(env(safe-area-inset-bottom)+2px)] sm:bottom-[calc(env(safe-area-inset-bottom)+6px)]",
         )}
       >
@@ -3519,7 +3631,7 @@ export const Checklist = ({
             <button
               type="button"
               className="min-w-0 flex-1 text-left"
-              onClick={() => setMusicPlaylistOpen(true)}
+              onClick={() => setMusicPlaylistOpen((prev) => !prev)}
               title="Развернуть в плейлист"
               aria-label="Развернуть в плейлист"
             >
@@ -3564,7 +3676,7 @@ export const Checklist = ({
             <Button
               type="button"
               variant="secondary"
-              onClick={() => setMusicPlaylistOpen(true)}
+              onClick={() => setMusicPlaylistOpen((prev) => !prev)}
               className="h-8 min-w-[44px] px-2"
               title="Плейлист"
               aria-label="Плейлист"
@@ -4178,21 +4290,12 @@ export const Checklist = ({
         onClose={() => setMusicPlaylistOpen(false)}
         title="Плейлист"
         className="h-[92vh] max-h-[92vh] sm:h-[94vh] sm:max-h-[94vh] sm:max-w-[96vw]"
+        overlayClassName="bottom-[calc(env(safe-area-inset-bottom)+84px)] sm:bottom-[calc(env(safe-area-inset-bottom)+92px)]"
         mobileSheet
       >
-        <div className="flex h-full min-h-0 overflow-hidden flex-col">
+        <div className="flex min-h-0 flex-1 overflow-hidden flex-col">
           <input
             ref={musicUploadInputRef}
-            type="file"
-            accept=".mp3,audio/mpeg"
-            multiple
-            className="hidden"
-            onChange={(event) => {
-              handleMusicFilesSelected(event.target.files);
-            }}
-          />
-          <input
-            ref={musicFolderUploadInputRef}
             type="file"
             accept=".mp3,audio/mpeg"
             multiple
@@ -4239,7 +4342,7 @@ export const Checklist = ({
               </select>
             </div>
           </div>
-          <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain pr-1">
+          <div className="min-h-0 max-h-full flex-1 space-y-2 overflow-y-auto overscroll-contain pr-1 pb-[110px] sm:pb-[118px]">
             {musicQueue.length ? (
               <div className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 dark:border-amber-400/40 dark:bg-amber-500/10">
                 <div className="flex items-center justify-between gap-2">
@@ -4456,7 +4559,7 @@ export const Checklist = ({
                 </button>
                 <button
                   type="button"
-                  onClick={() => musicFolderUploadInputRef.current?.click()}
+                  onClick={openMusicFolderPicker}
                   disabled={musicUploading}
                   title="Выбрать папку"
                   aria-label="Выбрать папку"

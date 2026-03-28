@@ -9,6 +9,7 @@ type ModalProps = {
   description?: string;
   onClose: () => void;
   className?: string;
+  overlayClassName?: string;
   children: ReactNode;
   footer?: ReactNode;
   mobileSheet?: boolean;
@@ -21,6 +22,7 @@ export const Modal = ({
   onClose,
   children,
   className,
+  overlayClassName,
   footer,
   mobileSheet = false,
 }: ModalProps) => {
@@ -30,6 +32,7 @@ export const Modal = ({
       className={clsx(
         "fixed inset-0 z-50 bg-slate-900/45 dark:bg-black/70",
         mobileSheet ? "flex items-end justify-center px-0 py-0 sm:items-center sm:px-4 sm:py-6" : "flex items-center justify-center px-3 py-4 sm:px-4 sm:py-6",
+        overlayClassName,
       )}
       style={{ animation: "modalOverlayIn 160ms ease-out" }}
     >
@@ -53,7 +56,12 @@ export const Modal = ({
         </button>
         {title && <h2 className="pr-10 text-xl font-semibold text-slate-900 dark:text-slate-100 sm:text-2xl">{title}</h2>}
         {description && <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{description}</p>}
-        <div className={clsx("mt-4 min-h-0 flex-1 pr-1", mobileSheet ? "overflow-hidden" : "overflow-y-auto")}>
+        <div
+          className={clsx(
+            "mt-4 min-h-0 flex-1 pr-1",
+            mobileSheet ? "flex min-h-0 flex-1 flex-col overflow-hidden" : "overflow-y-auto",
+          )}
+        >
           {children}
         </div>
         {footer && <div className="mt-4 flex flex-wrap justify-end gap-2 sm:mt-6 sm:gap-3">{footer}</div>}
