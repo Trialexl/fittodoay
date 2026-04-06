@@ -32,9 +32,9 @@ docker compose up -d backend db redis
 ### Переменные окружения
 Создайте файл `frontend/.env` (или `.env.local` для разработки) и укажите в нём все переменные, влияющие на фронтенд. Они должны начинаться с `NEXT_PUBLIC_`, чтобы попасть в браузер. Сейчас требуется только URL API:
 ```
-NEXT_PUBLIC_API_URL=http://backend:8000
+NEXT_PUBLIC_API_URL=https://api.example.com
 ```
-Для публичных окружений передавайте HTTPS-URL через `.env` или переменные Compose (`NEXT_PUBLIC_API_URL=https://api.example.com`).
+Для VPS указывайте публичный URL backend (например `http://<SERVER_IP>:8000` или домен c HTTPS), иначе браузер не сможет достучаться до API.
 
 ### Docker-образ
 ```bash
@@ -57,9 +57,9 @@ npm run build && npm run start   # прод-сборка
 ### Совместный запуск (backend + frontend + db + redis)
 Корневой `docker-compose.yml` включает все сервисы. Достаточно одной команды:
 ```bash
-NEXT_PUBLIC_API_URL=http://backend:8000 docker compose up -d backend frontend db redis
+docker compose up -d backend frontend db redis
 ```
-По умолчанию фронт внутри сети обращается к `http://backend:8000`. Извне приложение доступно на `http://localhost:3000`.
+`NEXT_PUBLIC_API_URL` берётся из `frontend/.env`, поэтому не нужно передавать его префиксом при каждом запуске.
 
 ## 4. Мониторинг и офлайн-синхронизация
 - Включить health-checkи для backend контейнера (endpoints `/admin/`, `/api/analytics/days/`).
