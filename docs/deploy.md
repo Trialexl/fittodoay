@@ -2,95 +2,102 @@
 
 ## 1. Зависимости
 - Docker / Docker Compose
-- PostgreSQL 15 и Redis 7 (используются в корневом `docker-compose.yml`)
-- Файл конфигурации `backend/.env` (см. `backend/.env.example`), где настраиваются:
-  - `DJANGO_*`, ключ Django
-  - OpenRouter (`OPENROUTER_API_KEY`, `OPENROUTER_MODEL`, `OPENROUTER_BASE_URL`, `OPENROUTER_REFERRER`, `OPENROUTER_APP_NAME`)
-- Для фронтенда обязательно указать `NEXT_PUBLIC_API_URL` (URL backend API)
+- DNS-запись `A`/`AAAA` для домена, указывающая на VPS
+- Открытые порты `80` и `443` (для TLS от Let's Encrypt)
+- `backend/.env` (см. `backend/.env.example`) с `DJANGO_*`, OpenRouter и БД
+- корневой `.env` (см. `.env.example`) с настройками HTTPS/proxy
 
-## 2. Бэкенд (Django + DRF)
+## 2. Production: Docker + HTTPS (Caddy)
 
-### Docker-образ
+Важно: production-режим из этого раздела требует домен и действующий TLS-сертификат (выпускается автоматически через Let's Encrypt).
+
+### 2.1 Подготовка переменных
+Создайте корневой `.env`:
+
 ```bash
-docker build -t fittodoey-backend -f backend/Dockerfile .
+cp .env.example .env
 ```
 
-### Быстрый запуск (SQLite внутри контейнера)
+Минимально заполните:
+- `DOMAIN` (например, `app.example.com`)
+- `PUBLIC_APP_URL` (например, `https://app.example.com`)
+- `LETSENCRYPT_EMAIL`
+- `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY` (стабильный ключ, не менять между рестартами)
+- `DJANGO_ALLOWED_HOSTS`
+- `DJANGO_CORS_ALLOWED_ORIGINS`
+
+Создайте `backend/.env`:
+
 ```bash
-docker run --rm -p 8000:8000 --env-file backend/.env fittodoey-backend
+cp backend/.env.example backend/.env
 ```
-`entrypoint.sh` применит миграции; API будет доступен по `http://localhost:8000`.
 
-### Docker Compose (Postgres + Redis)
+И заполните продовые секреты/ключи (`DJANGO_SECRET_KEY`, `OPENROUTER_API_KEY`, БД и т.д.).
+
+### 2.2 Запуск
+Запуск прод-контура с HTTPS:
+
 ```bash
-docker compose up -d backend db redis
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 ```
-`docker-compose.yml` пробрасывает порт `8000`, а БД и Redis живут в отдельных контейнерах. Для override‑ов используйте `.env` рядом с файлом Compose (см. переменные внутри файла).
 
-## 3. Фронтенд (Next.js)
+Проверка:
 
-### Переменные окружения
-Создайте файл `frontend/.env` (или `.env.local` для разработки) и укажите в нём все переменные, влияющие на фронтенд. Они должны начинаться с `NEXT_PUBLIC_`, чтобы попасть в браузер. Сейчас требуется только URL API:
-```
-NEXT_PUBLIC_API_URL=https://api.example.com
-```
-Для VPS указывайте публичный URL backend (например `http://<SERVER_IP>:8000` или домен c HTTPS), иначе браузер не сможет достучаться до API.
-
-### Docker-образ
 ```bash
-docker build -t fittodoey-frontend -f frontend/Dockerfile .
-```
-```bash
-docker run --rm -p 3000:3000 \
-  -e NEXT_PUBLIC_API_URL=http://localhost:8000 \
-  fittodoey-frontend
+docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
+docker compose -f docker-compose.yml -f docker-compose.prod.yml logs -f --tail=100 caddy backend frontend
 ```
 
-### Локальная разработка
+В этой схеме:
+- внешний трафик идёт только в `caddy` (`80/443`)
+- `backend` и `frontend` слушают только `127.0.0.1` на хосте
+- Caddy сам выпускает и обновляет TLS-сертификаты
+- `frontend` собирается с `NEXT_PUBLIC_API_URL=${PUBLIC_APP_URL}` (через build arg)
+
+### 2.3 Firewall (рекомендуется)
+Оставить снаружи только SSH + HTTP/HTTPS:
+
 ```bash
-cd frontend
-npm install
-npm run dev            # дев-сервер
-npm run build && npm run start   # прод-сборка
+sudo ufw allow 22/tcp
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+sudo ufw deny 3000/tcp
+sudo ufw deny 8000/tcp
+sudo ufw enable
+sudo ufw status verbose
 ```
 
-### Совместный запуск (backend + frontend + db + redis)
-Корневой `docker-compose.yml` включает все сервисы. Достаточно одной команды:
+## 3. Локальная разработка
+
+Локально можно запускать базовый compose без production override:
+
 ```bash
 docker compose up -d backend frontend db redis
 ```
-`NEXT_PUBLIC_API_URL` берётся из `frontend/.env`, поэтому не нужно передавать его префиксом при каждом запуске.
 
-## 4. Мониторинг и офлайн-синхронизация
-- Включить health-checkи для backend контейнера (endpoints `/admin/`, `/api/analytics/days/`).
-- Логи Redis мониторить на предмет очередей таймера (в будущем).
-- Таймер отдыха и чеклист работают офлайн: при восстановлении сети фронт повторно вызывает `/api/workouts/plan/` и `/api/workouts/logs/`. Рекомендуется подключить APM (Sentry/Datadog) для отслеживания времени отклика этих эндпоинтов.
+## 4. Мониторинг и устойчивость
+- В `docker-compose.prod.yml` включена ротация логов Docker (`20m x 5`) для всех сервисов.
+- Проверяйте логи:
 
-## 5. CI/CD
-- GitHub Actions (`.github/workflows/ci.yml`) прогоняет линтеры и pytest.
-- Для деплоя можно добавить отдельный job, который пушит образы в регистр и дергает сервер (SSH/Webhook).
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --since=30m backend frontend caddy
+```
 
+- Проверяйте место на диске:
 
-чистка места после частых билдов контейнеров
-
+```bash
 df -h
-
-sudo du -xh --max-depth=1 / | sort -h
-
-sudo du -xh --max-depth=1 /var | sort -h
-
 sudo du -xh --max-depth=1 /var/lib/docker | sort -h
-
 docker system df
+```
 
+## 5. Чистка места (при необходимости)
+
+```bash
 docker system prune
-
 docker volume prune
-
 sudo journalctl --disk-usage
-
 sudo journalctl --vacuum-time=7d
-
 sudo find / -type f -size +500M -exec ls -lh {} \; 2>/dev/null
-
 sudo rm -rf /tmp/*
+```

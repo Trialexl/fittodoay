@@ -1,0 +1,18 @@
+{
+  email {$LETSENCRYPT_EMAIL}
+}
+
+{$DOMAIN} {
+  encode gzip zstd
+
+  header {
+    -Server
+    X-Content-Type-Options nosniff
+    Referrer-Policy strict-origin-when-cross-origin
+  }
+
+  @backend path /api /api/* /admin /admin/* /static/* /media/*
+  reverse_proxy @backend backend:8000
+
+  reverse_proxy frontend:3000
+}
