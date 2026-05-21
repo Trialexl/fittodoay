@@ -54,10 +54,12 @@ fi
 if [ "$1" = "gunicorn" ]; then
   shift
   GUNICORN_WORKERS="${GUNICORN_WORKERS:-1}"
-  GUNICORN_THREADS="${GUNICORN_THREADS:-2}"
+  GUNICORN_THREADS="${GUNICORN_THREADS:-1}"
   GUNICORN_TIMEOUT="${GUNICORN_TIMEOUT:-180}"
   GUNICORN_GRACEFUL_TIMEOUT="${GUNICORN_GRACEFUL_TIMEOUT:-30}"
   GUNICORN_KEEPALIVE="${GUNICORN_KEEPALIVE:-5}"
+  GUNICORN_MAX_REQUESTS="${GUNICORN_MAX_REQUESTS:-0}"
+  GUNICORN_MAX_REQUESTS_JITTER="${GUNICORN_MAX_REQUESTS_JITTER:-0}"
 
   exec gunicorn "$@" \
     --workers "$GUNICORN_WORKERS" \
@@ -65,6 +67,8 @@ if [ "$1" = "gunicorn" ]; then
     --timeout "$GUNICORN_TIMEOUT" \
     --graceful-timeout "$GUNICORN_GRACEFUL_TIMEOUT" \
     --keep-alive "$GUNICORN_KEEPALIVE" \
+    --max-requests "$GUNICORN_MAX_REQUESTS" \
+    --max-requests-jitter "$GUNICORN_MAX_REQUESTS_JITTER" \
     --access-logfile - \
     --error-logfile -
 fi

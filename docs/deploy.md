@@ -34,11 +34,40 @@ cp backend/.env.example backend/.env
 
 И заполните продовые секреты/ключи (`DJANGO_SECRET_KEY`, `OPENROUTER_API_KEY`, БД и т.д.).
 
-### 2.2 Запуск
-Запуск прод-контура с HTTPS:
+### 2.2 Сборка и публикация образов
+Если хочешь собирать быстрее локально и выкатывать через Docker Hub, используй:
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+./build-and-push-images.sh
+```
+
+Скрипт:
+- читает `BACKEND_IMAGE`, `FRONTEND_IMAGE`, `PUBLIC_APP_URL`, `FRONTEND_NODE_OPTIONS` из корневого `.env`
+- локально собирает backend/frontend образы
+- пушит их в registry
+
+Важно:
+- перед этим нужно сделать `docker login`
+- `BACKEND_IMAGE` и `FRONTEND_IMAGE` должны быть полными registry refs, например `docker.io/your-user/fittodoay-backend:latest`
+
+### 2.3 Запуск на сервере
+Запуск прод-контура с HTTPS из уже опубликованных образов:
+
+```bash
+./update-server.sh
+```
+
+Скрипт:
+- делает `git pull --ff-only`
+- делает `docker compose pull`
+- поднимает стек через `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --remove-orphans`
+- чистит dangling images
+
+Ручной эквивалент:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml pull
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --remove-orphans
 ```
 
 Проверка:
@@ -52,7 +81,7 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml logs -f --tail=1
 - внешний трафик идёт только в `caddy` (`80/443`)
 - `backend` и `frontend` слушают только `127.0.0.1` на хосте
 - Caddy сам выпускает и обновляет TLS-сертификаты
-- `frontend` собирается с `NEXT_PUBLIC_API_URL=${PUBLIC_APP_URL}` (через build arg)
+- `frontend` собирается локально с `NEXT_PUBLIC_API_URL=${PUBLIC_APP_URL}` и затем выкатывается как готовый image
 
 ### 2.3 Firewall (рекомендуется)
 Оставить снаружи только SSH + HTTP/HTTPS:

@@ -11,7 +11,9 @@ COPY frontend/package*.json ./
 RUN npm install
 COPY frontend ./
 ARG NEXT_PUBLIC_API_URL=http://localhost:8000
+ARG NODE_OPTIONS=--max-old-space-size=128
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+ENV NODE_OPTIONS=${NODE_OPTIONS}
 RUN npm run build
 
 FROM node:20-alpine AS runner
