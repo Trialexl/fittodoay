@@ -13,6 +13,7 @@ from pgvector.django import VectorField
 
 User = settings.AUTH_USER_MODEL
 ALLOWED_MUSIC_EXTENSIONS = ["mp3", "wav", "ogg", "m4a", "aac", "webm"]
+ALLOWED_TECHNIQUE_VIDEO_EXTENSIONS = ["mp4", "mov", "webm", "m4v"]
 
 
 class MusicStorage(FileSystemStorage):
@@ -35,6 +36,15 @@ def music_upload_to(instance: "WorkoutMusicTrack", filename: str) -> str:
     suffix = uuid4().hex[:8]
     owner_folder = f"user_{instance.owner_id}" if instance.owner_id else "system"
     return f"{owner_folder}/{stem}-{suffix}{ext}"
+
+
+def technique_video_upload_to(instance: "TechniqueReview", filename: str) -> str:
+    source = Path(filename)
+    ext = source.suffix.lower()
+    stem = slugify(source.stem) or "technique"
+    suffix = uuid4().hex[:12]
+    owner_folder = f"user_{instance.user_id}" if instance.user_id else "user_unknown"
+    return f"technique_reviews/{owner_folder}/{stem}-{suffix}{ext}"
 
 
 class TimestampedModel(models.Model):
@@ -69,7 +79,9 @@ class Exercise_DB(TimestampedModel):
     default_sets = models.PositiveIntegerField(default=3)
     default_reps = models.PositiveIntegerField(default=10)
     default_rest = models.PositiveIntegerField(default=60, help_text="Отдых в секундах")
-    embedding = VectorField(dimensions=384, null=True, blank=True)  # вектор для подбора похожих упражнений
+    embedding = VectorField(
+        dimensions=384, null=True, blank=True
+    )  # вектор для подбора похожих упражнений
     default_time = models.PositiveIntegerField(
         null=True, blank=True, help_text="Время в секундах"
     )
@@ -104,10 +116,14 @@ class Exercise_DB(TimestampedModel):
 
     @property
     def description(self) -> str:
-        ru_steps = list(self.instructions.order_by("order").values_list("text_ru", flat=True))
+        ru_steps = list(
+            self.instructions.order_by("order").values_list("text_ru", flat=True)
+        )
         if ru_steps:
             return " ".join(step.strip() for step in ru_steps if step).strip()
-        en_steps = list(self.instructions.order_by("order").values_list("text_en", flat=True))
+        en_steps = list(
+            self.instructions.order_by("order").values_list("text_en", flat=True)
+        )
         return " ".join(step.strip() for step in en_steps if step).strip()
 
     @property
@@ -181,9 +197,13 @@ class WorkoutDay(TimestampedModel):
         PENDING = "pending", "В процессе"
         COMPLETED = "completed", "Завершено"
 
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="workout_days")
+    user = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="workout_days"
+    )
     date = models.DateField()
-    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
+    status = models.CharField(
+        max_length=20, choices=Status.choices, default=Status.PENDING
+    )
     source_folder_ids = models.JSONField(default=list, blank=True)
     source_template_ids = models.JSONField(default=list, blank=True)
     plan_snapshot = models.JSONField(default=dict, blank=True)
@@ -205,7 +225,9 @@ class WorkoutSetLog(TimestampedModel):
     )
     set_index = models.PositiveIntegerField()
     actual_reps = models.PositiveIntegerField(null=True, blank=True)
-    actual_weight = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
+    actual_weight = models.DecimalField(
+        max_digits=6, decimal_places=2, null=True, blank=True
+    )
     actual_time = models.PositiveIntegerField(null=True, blank=True)
 
     class Meta:
@@ -217,7 +239,9 @@ class WorkoutSetLog(TimestampedModel):
 
 
 class WorkoutWeighIn(TimestampedModel):
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="workout_weigh_ins")
+    user = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="workout_weigh_ins"
+    )
     date = models.DateField()
     weight_kg = models.DecimalField(max_digits=5, decimal_places=2)
     note = models.CharField(max_length=255, blank=True, default="")
@@ -228,6 +252,57 @@ class WorkoutWeighIn(TimestampedModel):
 
     def __str__(self):
         return f"{self.user} — {self.date} — {self.weight_kg} кг"
+
+
+class TechniqueReview(TimestampedModel):
+    class Status(models.TextChoices):
+        PROCESSING = "processing", "Обрабатывается"
+        NEEDS_CONFIRMATION = "needs_confirmation", "Требует подтверждения"
+        COMPLETED = "completed", "Готово"
+        FAILED = "failed", "Ошибка"
+
+    user = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="technique_reviews"
+    )
+    exercise = models.ForeignKey(
+        Exercise_DB,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="technique_reviews",
+    )
+    detected_exercise_name = models.CharField(max_length=255, blank=True, default="")
+    detected_exercise_confidence = models.FloatField(null=True, blank=True)
+    video_file = models.FileField(
+        upload_to=technique_video_upload_to,
+        validators=[
+            FileExtensionValidator(
+                allowed_extensions=ALLOWED_TECHNIQUE_VIDEO_EXTENSIONS
+            )
+        ],
+    )
+    status = models.CharField(
+        max_length=32,
+        choices=Status.choices,
+        default=Status.PROCESSING,
+    )
+    score = models.PositiveSmallIntegerField(null=True, blank=True)
+    result_json = models.JSONField(default=dict, blank=True)
+    summary = models.TextField(blank=True, default="")
+    error_code = models.CharField(max_length=64, blank=True, default="")
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["user", "-created_at"]),
+            models.Index(fields=["status", "-created_at"]),
+        ]
+
+    def __str__(self):
+        exercise_name = (
+            self.exercise.name if self.exercise_id else self.detected_exercise_name
+        )
+        return f"Technique review {self.id} — {exercise_name or self.status}"
 
 
 class WorkoutMusicTrack(TimestampedModel):
@@ -245,7 +320,9 @@ class WorkoutMusicTrack(TimestampedModel):
     file = models.FileField(
         upload_to=music_upload_to,
         storage=music_storage,
-        validators=[FileExtensionValidator(allowed_extensions=ALLOWED_MUSIC_EXTENSIONS)],
+        validators=[
+            FileExtensionValidator(allowed_extensions=ALLOWED_MUSIC_EXTENSIONS)
+        ],
     )
     is_active = models.BooleanField(default=True)
 
@@ -280,5 +357,6 @@ class WorkoutMusicTrack(TimestampedModel):
                 stored_file.delete(save=False)
             except Exception:
                 pass
+
 
 # Create your models here.

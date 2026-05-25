@@ -1,6 +1,12 @@
 from django.contrib import admin
 
-from .models import WorkoutDay, WorkoutMusicTrack, WorkoutSetLog, WorkoutWeighIn
+from .models import (
+    TechniqueReview,
+    WorkoutDay,
+    WorkoutMusicTrack,
+    WorkoutSetLog,
+    WorkoutWeighIn,
+)
 
 
 @admin.register(WorkoutDay)
@@ -25,9 +31,42 @@ class WorkoutWeighInAdmin(admin.ModelAdmin):
 
 @admin.register(WorkoutMusicTrack)
 class WorkoutMusicTrackAdmin(admin.ModelAdmin):
-    list_display = ("id", "display_name", "artist", "album", "title", "owner", "file", "is_active", "created_at")
+    list_display = (
+        "id",
+        "display_name",
+        "artist",
+        "album",
+        "title",
+        "owner",
+        "file",
+        "is_active",
+        "created_at",
+    )
     list_filter = ("is_active", "owner", "created_at")
     search_fields = ("artist", "album", "title", "file", "owner__email")
     readonly_fields = ("created_at", "updated_at")
+
+
+@admin.register(TechniqueReview)
+class TechniqueReviewAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "user",
+        "exercise",
+        "status",
+        "score",
+        "detected_exercise_confidence",
+        "error_code",
+        "created_at",
+    )
+    list_filter = ("status", "error_code", "created_at")
+    search_fields = (
+        "user__email",
+        "exercise__name_ru",
+        "exercise__name_en",
+        "detected_exercise_name",
+    )
+    readonly_fields = ("created_at", "updated_at")
+
 
 # Register your models here.

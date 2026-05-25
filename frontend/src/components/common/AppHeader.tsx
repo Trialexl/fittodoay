@@ -14,6 +14,7 @@ const links = [
   { href: "/programs", label: "Программы" },
   { href: "/workout", label: "Чеклист" },
   { href: "/analytics", label: "Аналитика" },
+  { href: "/technique-review", label: "Техника" },
   { href: "/assistant", label: "Помощник" },
 ];
 
@@ -25,7 +26,7 @@ const accentOptions = [
   { value: "#ef4444", label: "Красный" },
 ];
 
-const MenuIcon = ({ name }: { name: "programs" | "workout" | "analytics" | "assistant" | "appearance" }) => {
+const MenuIcon = ({ name }: { name: "programs" | "workout" | "analytics" | "technique" | "assistant" | "appearance" }) => {
   if (name === "programs") {
     return (
       <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8} aria-hidden="true">
@@ -52,6 +53,14 @@ const MenuIcon = ({ name }: { name: "programs" | "workout" | "analytics" | "assi
       <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8} aria-hidden="true">
         <rect x="4" y="6" width="12" height="10" rx="2" />
         <path d="M10 3.5v2M7.5 10h.01M12.5 10h.01M7.5 13h5" />
+      </svg>
+    );
+  }
+  if (name === "technique") {
+    return (
+      <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8} aria-hidden="true">
+        <path d="M4 6.5h12M6 4.5h8a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2Z" />
+        <path d="m8.5 8 4 2-4 2V8Z" />
       </svg>
     );
   }
@@ -189,7 +198,9 @@ export const AppHeader = () => {
                               ? "workout"
                               : link.href === "/analytics"
                                 ? "analytics"
-                                : "assistant"
+                                : link.href === "/technique-review"
+                                  ? "technique"
+                                  : "assistant"
                         }
                       />
                       <span>{link.label}</span>

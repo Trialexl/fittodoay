@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import date
 import logging
 import mimetypes
 from pathlib import Path
@@ -18,9 +17,19 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from workouts.models import WorkoutDay, WorkoutMusicTrack, WorkoutSetLog, WorkoutWeighIn
+from workouts.models import (
+    Exercise_DB,
+    TechniqueReview,
+    WorkoutDay,
+    WorkoutMusicTrack,
+    WorkoutSetLog,
+    WorkoutWeighIn,
+)
 from workouts.serializers import (
     RecommendationApplySerializer,
+    TechniqueReviewConfirmExerciseSerializer,
+    TechniqueReviewCreateSerializer,
+    TechniqueReviewSerializer,
     WorkoutWeighInSerializer,
     WorkoutWeighInUpsertSerializer,
     WorkoutDaySerializer,
@@ -28,8 +37,12 @@ from workouts.serializers import (
     WorkoutPlanRequestSerializer,
     WorkoutSetLogSerializer,
 )
-from workouts.recommendations import apply_recommendations, generate_recommendations_for_day
+from workouts.recommendations import (
+    apply_recommendations,
+    generate_recommendations_for_day,
+)
 from workouts.services import generate_daily_plan, update_workout_status
+from workouts.technique import TechniqueReviewAnalysisService
 
 logger = logging.getLogger(__name__)
 
@@ -91,7 +104,12 @@ def _decode_text_frame(payload: bytes) -> str:
 def _syncsafe_to_int(raw: bytes) -> int:
     if len(raw) != 4:
         return 0
-    return ((raw[0] & 0x7F) << 21) | ((raw[1] & 0x7F) << 14) | ((raw[2] & 0x7F) << 7) | (raw[3] & 0x7F)
+    return (
+        ((raw[0] & 0x7F) << 21)
+        | ((raw[1] & 0x7F) << 14)
+        | ((raw[2] & 0x7F) << 7)
+        | (raw[3] & 0x7F)
+    )
 
 
 def _strip_oversized_id3v2_tag_from_mp3(uploaded, min_tag_size: int = 512 * 1024):
@@ -198,7 +216,8 @@ def normalize_uploaded_audio(uploaded):
                     return SimpleUploadedFile(
                         filename,
                         normalized,
-                        content_type=getattr(uploaded, "content_type", None) or "audio/mpeg",
+                        content_type=getattr(uploaded, "content_type", None)
+                        or "audio/mpeg",
                     )
     except Exception:
         pass
@@ -228,7 +247,11 @@ def _extract_metadata_from_id3(head: bytes) -> Tuple[str, str, str]:
         if not frame_id.strip("\x00"):
             break
         size_raw = head[pos + 4 : pos + 8]
-        frame_size = _syncsafe_to_int(size_raw) if version >= 4 else int.from_bytes(size_raw, "big", signed=False)
+        frame_size = (
+            _syncsafe_to_int(size_raw)
+            if version >= 4
+            else int.from_bytes(size_raw, "big", signed=False)
+        )
         if frame_size <= 0:
             pos += 10
             continue
@@ -291,7 +314,11 @@ def extract_track_metadata(uploaded, fallback_title: str) -> Tuple[str, str, str
             uploaded.seek(0)
         except Exception:
             pass
-    return (artist or "").strip(), (title or fallback_title).strip(), (album or "").strip()
+    return (
+        (artist or "").strip(),
+        (title or fallback_title).strip(),
+        (album or "").strip(),
+    )
 
 
 def _backfill_track_metadata_if_missing(track: WorkoutMusicTrack) -> None:
@@ -303,7 +330,9 @@ def _backfill_track_metadata_if_missing(track: WorkoutMusicTrack) -> None:
     fallback_title = track.title or Path(track.file.name).stem.replace("_", " ")
     try:
         with track.file.open("rb") as file_obj:
-            artist, title, album = extract_track_metadata(file_obj, fallback_title=fallback_title)
+            artist, title, album = extract_track_metadata(
+                file_obj, fallback_title=fallback_title
+            )
     except Exception:
         return
     update_fields: list[str] = []
@@ -324,7 +353,9 @@ class _RangeNotSatisfiable(Exception):
     pass
 
 
-def _parse_byte_range(range_header: str | None, file_size: int) -> tuple[int, int] | None:
+def _parse_byte_range(
+    range_header: str | None, file_size: int
+) -> tuple[int, int] | None:
     if not range_header:
         return None
     if file_size <= 0:
@@ -373,7 +404,9 @@ def _parse_byte_range(range_header: str | None, file_size: int) -> tuple[int, in
     return start, end
 
 
-def _iter_file_chunk(file_obj, remaining: int, chunk_size: int = 64 * 1024) -> Iterator[bytes]:
+def _iter_file_chunk(
+    file_obj, remaining: int, chunk_size: int = 64 * 1024
+) -> Iterator[bytes]:
     try:
         bytes_left = remaining
         while bytes_left > 0:
@@ -395,7 +428,9 @@ class WorkoutPlanView(APIView):
         target_date = serializer.get_date()
         day = generate_daily_plan(request.user, target_date=target_date)
         payload = WorkoutDaySerializer(day).data
-        weigh_in = WorkoutWeighIn.objects.filter(user=request.user, date=target_date).first()
+        weigh_in = WorkoutWeighIn.objects.filter(
+            user=request.user, date=target_date
+        ).first()
         payload["weigh_in"] = (
             WorkoutWeighInSerializer(weigh_in).data
             if weigh_in
@@ -411,9 +446,13 @@ class WorkoutWeighInView(APIView):
         serializer = WorkoutPlanRequestSerializer(data=request.query_params)
         serializer.is_valid(raise_exception=True)
         target_date = serializer.get_date()
-        weigh_in = WorkoutWeighIn.objects.filter(user=request.user, date=target_date).first()
+        weigh_in = WorkoutWeighIn.objects.filter(
+            user=request.user, date=target_date
+        ).first()
         if not weigh_in:
-            return Response({"date": target_date.isoformat(), "weight_kg": None, "note": ""})
+            return Response(
+                {"date": target_date.isoformat(), "weight_kg": None, "note": ""}
+            )
         return Response(WorkoutWeighInSerializer(weigh_in).data)
 
     def put(self, request, *args, **kwargs):
@@ -436,9 +475,9 @@ class WorkoutSetLogViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        return WorkoutSetLog.objects.filter(workout_day__user=self.request.user).order_by(
-            "-created_at"
-        )
+        return WorkoutSetLog.objects.filter(
+            workout_day__user=self.request.user
+        ).order_by("-created_at")
 
     def perform_create(self, serializer):
         log = serializer.save()
@@ -448,6 +487,80 @@ class WorkoutSetLogViewSet(viewsets.ModelViewSet):
         day = instance.workout_day
         super().perform_destroy(instance)
         update_workout_status(day)
+
+
+class TechniqueReviewListCreateView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def get(self, request, *args, **kwargs):
+        reviews = TechniqueReview.objects.filter(user=request.user).select_related(
+            "exercise"
+        )[:20]
+        return Response({"items": TechniqueReviewSerializer(reviews, many=True).data})
+
+    def post(self, request, *args, **kwargs):
+        data = request.data.copy()
+        if "video_file" not in data and "video" in request.FILES:
+            data["video_file"] = request.FILES["video"]
+        serializer = TechniqueReviewCreateSerializer(
+            data=data, context={"request": request}
+        )
+        serializer.is_valid(raise_exception=True)
+        review = serializer.save()
+        TechniqueReviewAnalysisService(review).analyze()
+        review.refresh_from_db()
+        return Response(TechniqueReviewSerializer(review).data, status=201)
+
+
+class TechniqueReviewDetailView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, review_id: int, *args, **kwargs):
+        try:
+            review = TechniqueReview.objects.select_related("exercise").get(
+                id=review_id,
+                user=request.user,
+            )
+        except TechniqueReview.DoesNotExist as exc:
+            raise Http404("Technique review not found") from exc
+        return Response(TechniqueReviewSerializer(review).data)
+
+
+class TechniqueReviewConfirmExerciseView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, review_id: int, *args, **kwargs):
+        try:
+            review = TechniqueReview.objects.select_related("exercise").get(
+                id=review_id,
+                user=request.user,
+            )
+        except TechniqueReview.DoesNotExist as exc:
+            raise Http404("Technique review not found") from exc
+        serializer = TechniqueReviewConfirmExerciseSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        exercise = serializer.validated_data["exercise_id"]
+        if not isinstance(exercise, Exercise_DB):
+            raise ValidationError("Упражнение не найдено")
+        review.exercise = exercise
+        review.detected_exercise_name = exercise.name
+        review.detected_exercise_confidence = 1.0
+        review.status = TechniqueReview.Status.PROCESSING
+        review.error_code = ""
+        review.save(
+            update_fields=[
+                "exercise",
+                "detected_exercise_name",
+                "detected_exercise_confidence",
+                "status",
+                "error_code",
+                "updated_at",
+            ]
+        )
+        TechniqueReviewAnalysisService(review).analyze(forced_exercise=exercise)
+        review.refresh_from_db()
+        return Response(TechniqueReviewSerializer(review).data)
 
 
 class WorkoutRecommendationsView(APIView):
@@ -485,7 +598,9 @@ class WorkoutMusicTracksView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request, *args, **kwargs):
-        tracks = list(WorkoutMusicTrack.objects.filter(is_active=True).order_by("title", "id"))
+        tracks = list(
+            WorkoutMusicTrack.objects.filter(is_active=True).order_by("title", "id")
+        )
         for track in tracks:
             _backfill_track_metadata_if_missing(track)
         items = [
@@ -523,7 +638,9 @@ class WorkoutMusicTrackUploadView(APIView):
             original_content_type = getattr(uploaded, "content_type", None) or ""
             original_size, original_head = _safe_upload_debug(uploaded)
             fallback_title = Path(uploaded.name).stem
-            artist, title, album = extract_track_metadata(uploaded, fallback_title=fallback_title)
+            artist, title, album = extract_track_metadata(
+                uploaded, fallback_title=fallback_title
+            )
             uploaded = normalize_uploaded_audio(uploaded)
             normalized_size, normalized_head = _safe_upload_debug(uploaded)
             logger.warning(
@@ -570,7 +687,7 @@ class WorkoutMusicTrackDetailView(APIView):
     def delete(self, request, track_id: int, *args, **kwargs):
         try:
             track = WorkoutMusicTrack.objects.get(id=track_id, owner=request.user)
-        except WorkoutMusicTrack.DoesNotExist as exc:
+        except WorkoutMusicTrack.DoesNotExist:
             raise Http404("Track not found")
         track.delete()
         return Response(status=204)
@@ -584,14 +701,18 @@ class WorkoutMusicTrackFileView(APIView):
         if user is None:
             token_key = request.query_params.get("token")
             if token_key:
-                token = Token.objects.filter(key=token_key).select_related("user").first()
+                token = (
+                    Token.objects.filter(key=token_key).select_related("user").first()
+                )
                 if token:
                     user = token.user
         if user is None:
-            return Response({"detail": "Authentication credentials were not provided."}, status=403)
+            return Response(
+                {"detail": "Authentication credentials were not provided."}, status=403
+            )
         try:
             track = WorkoutMusicTrack.objects.get(id=track_id, is_active=True)
-        except WorkoutMusicTrack.DoesNotExist as exc:
+        except WorkoutMusicTrack.DoesNotExist:
             raise Http404("Track not found")
         if not track.file:
             raise Http404("Track not found")
@@ -614,7 +735,10 @@ class WorkoutMusicTrackFileView(APIView):
             file_head = ""
 
         if byte_range is None:
-            response = FileResponse(track.file.open("rb"), content_type=content_type or "application/octet-stream")
+            response = FileResponse(
+                track.file.open("rb"),
+                content_type=content_type or "application/octet-stream",
+            )
             if file_size > 0:
                 response["Content-Length"] = str(file_size)
         else:

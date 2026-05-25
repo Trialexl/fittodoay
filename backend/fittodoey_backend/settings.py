@@ -124,6 +124,10 @@ MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
 MUSIC_ROOT = Path(os.environ.get("DJANGO_MUSIC_ROOT", BASE_DIR.parent / "music"))
 MUSIC_UPLOAD_MAX_MB = int(os.environ.get("DJANGO_MUSIC_UPLOAD_MAX_MB", "130"))
+TECHNIQUE_VIDEO_MAX_MB = int(os.environ.get("DJANGO_TECHNIQUE_VIDEO_MAX_MB", "80"))
+TECHNIQUE_ANALYSIS_TIMEOUT_SECONDS = int(
+    os.environ.get("DJANGO_TECHNIQUE_ANALYSIS_TIMEOUT_SECONDS", "45")
+)
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 

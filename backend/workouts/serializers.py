@@ -6,12 +6,25 @@ from decimal import Decimal
 from rest_framework import serializers
 from django.conf import settings
 
-from workouts.models import WorkoutDay, WorkoutMusicTrack, WorkoutSetLog, WorkoutWeighIn
+from workouts.models import (
+    Exercise_DB,
+    TechniqueReview,
+    WorkoutDay,
+    WorkoutMusicTrack,
+    WorkoutSetLog,
+    WorkoutWeighIn,
+)
+
 
 def _syncsafe_to_int(raw: bytes) -> int:
     if len(raw) != 4:
         return 0
-    return ((raw[0] & 0x7F) << 21) | ((raw[1] & 0x7F) << 14) | ((raw[2] & 0x7F) << 7) | (raw[3] & 0x7F)
+    return (
+        ((raw[0] & 0x7F) << 21)
+        | ((raw[1] & 0x7F) << 14)
+        | ((raw[2] & 0x7F) << 7)
+        | (raw[3] & 0x7F)
+    )
 
 
 def _has_invalid_mp3_id3_header(value) -> bool:
@@ -31,7 +44,6 @@ def _has_invalid_mp3_id3_header(value) -> bool:
         return False
     tag_size = _syncsafe_to_int(head[6:10])
     return 10 + tag_size > total_size
-
 
 
 class WorkoutSetLogSerializer(serializers.ModelSerializer):
@@ -55,7 +67,9 @@ class WorkoutSetLogSerializer(serializers.ModelSerializer):
         if day is None:
             raise serializers.ValidationError("Не указан день тренировки")
         if day.user != user:
-            raise serializers.ValidationError("Нельзя записывать подходы другого пользователя")
+            raise serializers.ValidationError(
+                "Нельзя записывать подходы другого пользователя"
+            )
         template_exercise = attrs.get("template_exercise") or getattr(
             self.instance, "template_exercise", None
         )
@@ -113,9 +127,74 @@ class WorkoutWeighInUpsertSerializer(serializers.Serializer):
         return self.validated_data.get("date") or date.today()
 
 
+class TechniqueExerciseSerializer(serializers.ModelSerializer):
+    name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Exercise_DB
+        fields = ["id", "name", "name_en", "name_ru"]
+
+    def get_name(self, obj):
+        return obj.name
+
+
+class TechniqueReviewSerializer(serializers.ModelSerializer):
+    exercise = TechniqueExerciseSerializer(read_only=True)
+    video_filename = serializers.SerializerMethodField()
+
+    class Meta:
+        model = TechniqueReview
+        fields = [
+            "id",
+            "status",
+            "exercise",
+            "detected_exercise_name",
+            "detected_exercise_confidence",
+            "video_filename",
+            "score",
+            "result_json",
+            "summary",
+            "error_code",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = fields
+
+    def get_video_filename(self, obj):
+        return obj.video_file.name.rsplit("/", 1)[-1] if obj.video_file else ""
+
+
+class TechniqueReviewCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TechniqueReview
+        fields = ["video_file"]
+
+    def validate_video_file(self, value):
+        max_size_mb = max(int(getattr(settings, "TECHNIQUE_VIDEO_MAX_MB", 80)), 1)
+        max_size = max_size_mb * 1024 * 1024
+        if value.size > max_size:
+            raise serializers.ValidationError(
+                f"Видео слишком большое (максимум {max_size_mb}MB)."
+            )
+        return value
+
+    def create(self, validated_data):
+        return TechniqueReview.objects.create(
+            user=self.context["request"].user,
+            status=TechniqueReview.Status.PROCESSING,
+            **validated_data,
+        )
+
+
+class TechniqueReviewConfirmExerciseSerializer(serializers.Serializer):
+    exercise_id = serializers.PrimaryKeyRelatedField(queryset=Exercise_DB.objects.all())
+
+
 class RecommendationItemSerializer(serializers.Serializer):
     template_exercise_id = serializers.IntegerField()
-    rep_override = serializers.IntegerField(required=False, allow_null=True, min_value=1)
+    rep_override = serializers.IntegerField(
+        required=False, allow_null=True, min_value=1
+    )
     weight_override = serializers.DecimalField(
         required=False, allow_null=True, max_digits=6, decimal_places=2
     )
@@ -134,7 +213,16 @@ class RecommendationApplySerializer(serializers.Serializer):
 class WorkoutMusicTrackUploadSerializer(serializers.ModelSerializer):
     class Meta:
         model = WorkoutMusicTrack
-        fields = ["id", "artist", "album", "title", "file", "is_active", "created_at", "updated_at"]
+        fields = [
+            "id",
+            "artist",
+            "album",
+            "title",
+            "file",
+            "is_active",
+            "created_at",
+            "updated_at",
+        ]
         read_only_fields = ["id", "created_at", "updated_at", "is_active"]
 
     def validate_file(self, value):
@@ -148,5 +236,7 @@ class WorkoutMusicTrackUploadSerializer(serializers.ModelSerializer):
                 f"Файл слишком большой (максимум {max_size_mb}MB)."
             )
         if _has_invalid_mp3_id3_header(value):
-            raise serializers.ValidationError("MP3-файл поврежден: некорректный ID3-заголовок.")
+            raise serializers.ValidationError(
+                "MP3-файл поврежден: некорректный ID3-заголовок."
+            )
         return value
