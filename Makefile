@@ -16,14 +16,14 @@ build-frontend:
 test-docker:
 	cd $(ROOT) && docker compose up -d db redis
 	cd $(ROOT) && docker compose run --rm backend pytest -q
-	cd $(ROOT) && docker compose run --rm --no-deps frontend npm run lint
+	cd $(ROOT)/frontend && npm run lint
 
 # Запуск всех сервисов
 up:
-	cd $(ROOT) && docker compose up --build backend frontend db redis
+	cd $(ROOT) && docker compose up --build backend technique-worker frontend db redis
 
 down:
 	cd $(ROOT) && docker compose down
 
 logs:
-	cd $(ROOT) && docker compose logs -f --tail=200 backend frontend db redis
+	cd $(ROOT) && docker compose logs -f --tail=200 backend technique-worker frontend db redis

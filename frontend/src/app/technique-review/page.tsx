@@ -106,6 +106,7 @@ export default function TechniqueReviewPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [exerciseOptions, setExerciseOptions] = useState<ExerciseOption[]>([]);
   const [selectedExerciseId, setSelectedExerciseId] = useState("");
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -120,9 +121,35 @@ export default function TechniqueReviewPage() {
     setSelectedReview((current) => current ?? data.items[0] ?? null);
   }, [token]);
 
+  const applyReviewUpdate = useCallback((review: TechniqueReview) => {
+    setSelectedReview(review);
+    setReviews((prev) => [review, ...prev.filter((item) => item.id !== review.id)]);
+  }, []);
+
   useEffect(() => {
     loadReviews().catch(() => null);
   }, [loadReviews]);
+
+  useEffect(() => {
+    if (!token || !selectedReview || selectedReview.status !== "processing") return;
+    let stopped = false;
+    const refreshReview = async () => {
+      try {
+        const review = await apiFetch<TechniqueReview>(`/api/technique-reviews/${selectedReview.id}/`, { token });
+        if (!stopped) {
+          applyReviewUpdate(review);
+        }
+      } catch {
+        // Keep the visible processing state; the next manual refresh or poll can recover.
+      }
+    };
+    const intervalId = window.setInterval(refreshReview, 3000);
+    refreshReview();
+    return () => {
+      stopped = true;
+      window.clearInterval(intervalId);
+    };
+  }, [applyReviewUpdate, selectedReview, token]);
 
   useEffect(() => {
     if (!token || searchQuery.trim().length < 2) {
@@ -162,8 +189,7 @@ export default function TechniqueReviewPage() {
         body: formData,
         token,
       });
-      setSelectedReview(review);
-      setReviews((prev) => [review, ...prev.filter((item) => item.id !== review.id)]);
+      applyReviewUpdate(review);
       setSelectedFile(null);
     } catch (err) {
       setError(extractMessage(err, "Не удалось загрузить видео"));
@@ -185,8 +211,7 @@ export default function TechniqueReviewPage() {
           token,
         },
       );
-      setSelectedReview(review);
-      setReviews((prev) => [review, ...prev.filter((item) => item.id !== review.id)]);
+      applyReviewUpdate(review);
       setSelectedExerciseId("");
       setSearchQuery("");
       setExerciseOptions([]);
@@ -194,6 +219,27 @@ export default function TechniqueReviewPage() {
       setError(extractMessage(err, "Не удалось подтвердить упражнение"));
     } finally {
       setConfirming(false);
+    }
+  };
+
+  const deleteSelectedReview = async () => {
+    if (!selectedReview || !token) return;
+    const confirmed = window.confirm("Удалить эту проверку и загруженное видео?");
+    if (!confirmed) return;
+    setDeleting(true);
+    setError(null);
+    try {
+      await apiFetch<unknown>(`/api/technique-reviews/${selectedReview.id}/`, {
+        method: "DELETE",
+        token,
+      });
+      const nextReviews = reviews.filter((item) => item.id !== selectedReview.id);
+      setReviews(nextReviews);
+      setSelectedReview(nextReviews[0] ?? null);
+    } catch (err) {
+      setError(extractMessage(err, "Не удалось удалить проверку"));
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -314,12 +360,22 @@ export default function TechniqueReviewPage() {
                     </p>
                   )}
                 </div>
-                {selectedReview.score !== null && (
-                  <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-center">
-                    <p className="text-xs uppercase tracking-wide text-emerald-700">Оценка</p>
-                    <p className="text-3xl font-bold text-emerald-700">{selectedReview.score}</p>
-                  </div>
-                )}
+                <div className="flex shrink-0 flex-col gap-3 sm:items-end">
+                  {selectedReview.score !== null && (
+                    <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-center">
+                      <p className="text-xs uppercase tracking-wide text-emerald-700">Оценка</p>
+                      <p className="text-3xl font-bold text-emerald-700">{selectedReview.score}</p>
+                    </div>
+                  )}
+                  <Button
+                    variant="ghost"
+                    className="text-red-600 hover:bg-red-50"
+                    loading={deleting}
+                    onClick={deleteSelectedReview}
+                  >
+                    Удалить
+                  </Button>
+                </div>
               </div>
 
               {selectedReview.summary && (

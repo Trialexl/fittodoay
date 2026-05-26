@@ -23,7 +23,7 @@ class DailyAnalyticsView(APIView):
         serializer.is_valid(raise_exception=True)
         start, end = serializer.get_range()
         payload = aggregate_daily_loads(request.user, start, end)
-        return Response({"start": start, "end": end, "items": payload})
+        return Response({"start": start.isoformat(), "end": end.isoformat(), "items": payload})
 
 
 class ExerciseAnalyticsView(APIView):
@@ -34,7 +34,7 @@ class ExerciseAnalyticsView(APIView):
         serializer.is_valid(raise_exception=True)
         start, end = serializer.get_range()
         payload = aggregate_exercise_loads(request.user, start, end)
-        return Response({"start": start, "end": end, "items": payload})
+        return Response({"start": start.isoformat(), "end": end.isoformat(), "items": payload})
 
 
 class BodyWeightAnalyticsView(APIView):
@@ -54,7 +54,7 @@ class BodyWeightAnalyticsView(APIView):
             if first_weigh_in_date:
                 start = first_weigh_in_date
         payload = aggregate_body_weight(request.user, start, end)
-        return Response({"start": start, "end": end, "items": payload})
+        return Response({"start": start.isoformat(), "end": end.isoformat(), "items": payload})
 
 
 class AIRecommendationsPlaceholderView(APIView):

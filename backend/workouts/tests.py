@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
 import shutil
@@ -9,10 +9,12 @@ from uuid import uuid4
 
 import pytest
 from django.contrib.auth import get_user_model
+from django.core.management import call_command
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
 from django.test import override_settings
+from django.utils import timezone
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APIClient
 
@@ -626,6 +628,7 @@ def test_music_track_file_endpoint_uses_explicit_audio_content_types(tmp_path):
             assert response["Content-Type"] == expected_type
 
 
+@pytest.mark.django_db
 def test_music_track_file_endpoint_returns_416_for_invalid_range(tmp_path):
     user = User.objects.create_user(
         email="musicrangeinvalid@example.com", password="pass"
@@ -1100,7 +1103,7 @@ def test_technique_review_upload_creates_review_and_runs_analysis(
         "workouts.views.TechniqueReviewAnalysisService.analyze", fake_analyze
     )
 
-    with override_settings(MEDIA_ROOT=tmp_path):
+    with override_settings(MEDIA_ROOT=tmp_path, TECHNIQUE_ANALYSIS_MODE="sync"):
         response = client.post(
             "/api/technique-reviews/",
             {
@@ -1150,7 +1153,7 @@ def test_technique_review_confirm_exercise_reruns_analysis(monkeypatch, tmp_path
         "workouts.views.TechniqueReviewAnalysisService.analyze", fake_analyze
     )
 
-    with override_settings(MEDIA_ROOT=tmp_path):
+    with override_settings(MEDIA_ROOT=tmp_path, TECHNIQUE_ANALYSIS_MODE="sync"):
         response = client.post(
             f"/api/technique-reviews/{review.id}/confirm-exercise/",
             {"exercise_id": exercise.id},
@@ -1194,3 +1197,204 @@ def test_technique_review_list_is_scoped_to_current_user(tmp_path):
     assert response.status_code == 200
     assert len(response.data["items"]) == 1
     assert response.data["items"][0]["video_filename"].startswith("mine")
+
+
+@pytest.mark.django_db
+def test_technique_review_upload_can_return_processing_in_async_mode(
+    monkeypatch, tmp_path
+):
+    user = User.objects.create_user(email="technique-async@example.com", password="pass")
+    client = APIClient()
+    client.force_authenticate(user=user)
+
+    def fail_if_called(self, *, forced_exercise=None):
+        raise AssertionError("analysis must be handled by the worker")
+
+    monkeypatch.setattr(
+        "workouts.views.TechniqueReviewAnalysisService.analyze", fail_if_called
+    )
+
+    with override_settings(MEDIA_ROOT=tmp_path, TECHNIQUE_ANALYSIS_MODE="async"):
+        response = client.post(
+            "/api/technique-reviews/",
+            {
+                "video": SimpleUploadedFile(
+                    "async.mp4", b"fake-video", content_type="video/mp4"
+                )
+            },
+            format="multipart",
+        )
+
+    assert response.status_code == 201
+    assert response.data["status"] == "processing"
+    assert TechniqueReview.objects.filter(
+        user=user, status=TechniqueReview.Status.PROCESSING
+    ).exists()
+
+
+@pytest.mark.django_db
+def test_technique_review_upload_rejects_oversized_video(tmp_path):
+    user = User.objects.create_user(email="technique-size@example.com", password="pass")
+    client = APIClient()
+    client.force_authenticate(user=user)
+
+    with override_settings(MEDIA_ROOT=tmp_path, TECHNIQUE_VIDEO_MAX_MB=1):
+        response = client.post(
+            "/api/technique-reviews/",
+            {
+                "video": SimpleUploadedFile(
+                    "large.mp4",
+                    b"0" * (1024 * 1024 + 1),
+                    content_type="video/mp4",
+                )
+            },
+            format="multipart",
+        )
+
+    assert response.status_code == 400
+    assert response.data["error_code"] == "video_too_large"
+    assert TechniqueReview.objects.filter(user=user).count() == 0
+
+
+@pytest.mark.django_db
+def test_technique_review_upload_rejects_long_video(monkeypatch, tmp_path):
+    user = User.objects.create_user(
+        email="technique-duration@example.com", password="pass"
+    )
+    client = APIClient()
+    client.force_authenticate(user=user)
+    monkeypatch.setattr(
+        "workouts.serializers._probe_video_duration_seconds", lambda value: 31.5
+    )
+
+    with override_settings(MEDIA_ROOT=tmp_path, TECHNIQUE_VIDEO_MAX_SECONDS=30):
+        response = client.post(
+            "/api/technique-reviews/",
+            {
+                "video": SimpleUploadedFile(
+                    "long.mp4", b"fake-video", content_type="video/mp4"
+                )
+            },
+            format="multipart",
+        )
+
+    assert response.status_code == 400
+    assert response.data["error_code"] == "video_too_long"
+    assert TechniqueReview.objects.filter(user=user).count() == 0
+
+
+@pytest.mark.django_db
+def test_technique_review_upload_respects_daily_limit(tmp_path):
+    user = User.objects.create_user(email="technique-limit@example.com", password="pass")
+    client = APIClient()
+    client.force_authenticate(user=user)
+    with override_settings(MEDIA_ROOT=tmp_path):
+        TechniqueReview.objects.create(
+            user=user,
+            status=TechniqueReview.Status.FAILED,
+            video_file=SimpleUploadedFile(
+                "already.mp4", b"fake-video", content_type="video/mp4"
+            ),
+        )
+
+    with override_settings(MEDIA_ROOT=tmp_path, TECHNIQUE_REVIEW_DAILY_LIMIT=1):
+        response = client.post(
+            "/api/technique-reviews/",
+            {
+                "video": SimpleUploadedFile(
+                    "next.mp4", b"fake-video", content_type="video/mp4"
+                )
+            },
+            format="multipart",
+        )
+
+    assert response.status_code == 429
+    assert response.data["error_code"] == "rate_limited"
+    assert TechniqueReview.objects.filter(user=user).count() == 1
+
+
+@pytest.mark.django_db
+def test_technique_review_delete_removes_review_and_video(tmp_path):
+    user = User.objects.create_user(email="technique-delete@example.com", password="pass")
+    client = APIClient()
+    client.force_authenticate(user=user)
+    with override_settings(MEDIA_ROOT=tmp_path):
+        review = TechniqueReview.objects.create(
+            user=user,
+            status=TechniqueReview.Status.FAILED,
+            video_file=SimpleUploadedFile(
+                "delete-me.mp4", b"fake-video", content_type="video/mp4"
+            ),
+        )
+        video_path = Path(review.video_file.path)
+        assert video_path.exists()
+        response = client.delete(f"/api/technique-reviews/{review.id}/")
+
+    assert response.status_code == 204
+    assert not TechniqueReview.objects.filter(id=review.id).exists()
+    assert not video_path.exists()
+
+
+@pytest.mark.django_db
+def test_cleanup_technique_reviews_deletes_expired_files(tmp_path):
+    user = User.objects.create_user(email="technique-cleanup@example.com", password="pass")
+    with override_settings(MEDIA_ROOT=tmp_path):
+        old_review = TechniqueReview.objects.create(
+            user=user,
+            status=TechniqueReview.Status.FAILED,
+            video_file=SimpleUploadedFile(
+                "old.mp4", b"old-video", content_type="video/mp4"
+            ),
+        )
+        fresh_review = TechniqueReview.objects.create(
+            user=user,
+            status=TechniqueReview.Status.FAILED,
+            video_file=SimpleUploadedFile(
+                "fresh.mp4", b"fresh-video", content_type="video/mp4"
+            ),
+        )
+        TechniqueReview.objects.filter(id=old_review.id).update(
+            created_at=timezone.now() - timedelta(days=40)
+        )
+        old_path = Path(old_review.video_file.path)
+        fresh_path = Path(fresh_review.video_file.path)
+        call_command("cleanup_technique_reviews", days=30)
+
+    assert not TechniqueReview.objects.filter(id=old_review.id).exists()
+    assert TechniqueReview.objects.filter(id=fresh_review.id).exists()
+    assert not old_path.exists()
+    assert fresh_path.exists()
+
+
+@pytest.mark.django_db
+def test_process_technique_reviews_command_processes_pending_review(
+    monkeypatch, tmp_path
+):
+    user = User.objects.create_user(email="technique-worker@example.com", password="pass")
+    exercise = _build_exercise()
+    with override_settings(MEDIA_ROOT=tmp_path):
+        review = TechniqueReview.objects.create(
+            user=user,
+            status=TechniqueReview.Status.PROCESSING,
+            exercise=exercise,
+            video_file=SimpleUploadedFile(
+                "worker.mp4", b"fake-video", content_type="video/mp4"
+            ),
+        )
+
+    def fake_analyze(self, *, forced_exercise=None):
+        assert forced_exercise == exercise
+        self.review.status = TechniqueReview.Status.COMPLETED
+        self.review.summary = "Разбор готов."
+        self.review.save(update_fields=["status", "summary", "updated_at"])
+        return self.review
+
+    monkeypatch.setattr(
+        "workouts.technique.TechniqueReviewAnalysisService.analyze", fake_analyze
+    )
+
+    call_command("process_technique_reviews", once=True)
+
+    review.refresh_from_db()
+    assert review.status == TechniqueReview.Status.COMPLETED
+    assert review.summary == "Разбор готов."

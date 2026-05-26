@@ -35,9 +35,16 @@ python manage.py check
 |------------------------|----------------------------------------------------------------------------|
 | `OPENROUTER_API_KEY`   | Ключ OpenRouter. Хранится только на бэкенде, никогда не уходит на фронт.   |
 | `OPENROUTER_MODEL`     | Идентификатор модели (например, `anthropic/claude-3.5-sonnet`).           |
+| `OPENROUTER_VISION_MODEL` | Vision-модель для проверки техники по видео; если пусто, используется `OPENROUTER_MODEL`. |
 | `OPENROUTER_BASE_URL`  | Базовый URL API OpenRouter (`https://openrouter.ai/api/v1`).               |
 | `OPENROUTER_REFERRER`  | URL приложения, передаётся в `HTTP-Referer` (требование OpenRouter).       |
 | `OPENROUTER_APP_NAME`  | Название проекта для заголовка `X-Title`.                                  |
+| `DJANGO_TECHNIQUE_VIDEO_MAX_MB` | Максимальный размер видео для проверки техники. |
+| `DJANGO_TECHNIQUE_VIDEO_MAX_SECONDS` | Максимальная длительность видео, если backend может прочитать метаданные через `ffprobe`. |
+| `DJANGO_TECHNIQUE_ANALYSIS_MODE` | `sync` для анализа в HTTP-запросе или `async` для обработки через worker. |
+| `DJANGO_MEDIA_ROOT` | Общая директория медиафайлов; в Docker backend и worker используют `/data/media`. |
+| `DJANGO_TECHNIQUE_VIDEO_RETENTION_DAYS` | Срок хранения видео для команды `cleanup_technique_reviews`. |
+| `DJANGO_TECHNIQUE_REVIEW_DAILY_LIMIT` | Суточный лимит проверок техники на пользователя. |
 
 Поддерживаются два варианта БД:
 
@@ -54,7 +61,7 @@ docker build -t fittodoey-backend -f backend/Dockerfile .
 
 # запуск с Postgres (пример через docker compose)
 cd backend
-docker compose up -d backend db redis
+docker compose up -d backend technique-worker db redis
 ```
 
 ## API
@@ -65,6 +72,7 @@ docker compose up -d backend db redis
 - `GET /api/exercises/`, `GET/POST /api/exercises/custom/`
 - `GET/POST /api/programs/folders/`, `GET/POST /api/programs/templates/`, `GET/POST /api/programs/template-exercises/` (для каждого пользователя автоматически создаётся папка «Основные»)
 - `GET /api/workouts/plan/`, `POST /api/workouts/logs/`
+- `GET/POST /api/technique-reviews/`, `GET/DELETE /api/technique-reviews/<id>/`, `POST /api/technique-reviews/<id>/confirm-exercise/`
 - `GET /api/analytics/days/`, `/exercises/`, `/ai-feed/`
 
 Каждый эндпоинт возвращает JSON и требует `Authorization: Token <token>` (кроме регистрации/логина).

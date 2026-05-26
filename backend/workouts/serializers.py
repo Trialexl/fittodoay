@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
+from pathlib import Path
+import shutil
+import subprocess
+import tempfile
 
 from rest_framework import serializers
 from django.conf import settings
@@ -44,6 +48,52 @@ def _has_invalid_mp3_id3_header(value) -> bool:
         return False
     tag_size = _syncsafe_to_int(head[6:10])
     return 10 + tag_size > total_size
+
+
+def _probe_video_duration_seconds(value) -> float | None:
+    ffprobe_path = shutil.which("ffprobe")
+    if not ffprobe_path:
+        return None
+    suffix = Path(getattr(value, "name", "") or "").suffix or ".mp4"
+    try:
+        value.seek(0)
+        raw = value.read()
+    except Exception:
+        return None
+    finally:
+        try:
+            value.seek(0)
+        except Exception:
+            pass
+    if not raw:
+        return None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=suffix) as tmp_file:
+            tmp_file.write(raw)
+            tmp_file.flush()
+            completed = subprocess.run(
+                [
+                    ffprobe_path,
+                    "-v",
+                    "error",
+                    "-show_entries",
+                    "format=duration",
+                    "-of",
+                    "default=noprint_wrappers=1:nokey=1",
+                    tmp_file.name,
+                ],
+                check=False,
+                capture_output=True,
+                timeout=10,
+            )
+    except Exception:
+        return None
+    if completed.returncode != 0:
+        return None
+    try:
+        return float(completed.stdout.decode("utf-8", errors="ignore").strip())
+    except ValueError:
+        return None
 
 
 class WorkoutSetLogSerializer(serializers.ModelSerializer):
@@ -169,14 +219,31 @@ class TechniqueReviewCreateSerializer(serializers.ModelSerializer):
         model = TechniqueReview
         fields = ["video_file"]
 
-    def validate_video_file(self, value):
+    def validate(self, attrs):
+        value = attrs.get("video_file")
+        if not value:
+            return attrs
         max_size_mb = max(int(getattr(settings, "TECHNIQUE_VIDEO_MAX_MB", 80)), 1)
         max_size = max_size_mb * 1024 * 1024
         if value.size > max_size:
             raise serializers.ValidationError(
-                f"Видео слишком большое (максимум {max_size_mb}MB)."
+                {
+                    "message": f"Видео слишком большое (максимум {max_size_mb}MB).",
+                    "error_code": "video_too_large",
+                }
             )
-        return value
+        max_seconds = max(
+            int(getattr(settings, "TECHNIQUE_VIDEO_MAX_SECONDS", 30)), 1
+        )
+        duration_seconds = _probe_video_duration_seconds(value)
+        if duration_seconds and duration_seconds > max_seconds:
+            raise serializers.ValidationError(
+                {
+                    "message": f"Видео слишком длинное (максимум {max_seconds} секунд).",
+                    "error_code": "video_too_long",
+                }
+            )
+        return attrs
 
     def create(self, validated_data):
         return TechniqueReview.objects.create(

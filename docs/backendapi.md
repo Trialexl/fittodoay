@@ -279,7 +279,142 @@
 
 ---
 
-## 5. Analytics & AI
+## 5. Проверка техники по видео
+
+Раздел использует загруженное пользователем видео и vision-модель OpenRouter. Фронтенд работает с `/technique-review`, весь анализ и ключи остаются на backend.
+
+### GET `/api/technique-reviews/`
+Возвращает последние проверки текущего пользователя.
+
+**Ответ:**
+```json
+{
+  "items": [
+    {
+      "id": 14,
+      "status": "completed",
+      "exercise": {
+        "id": "Bodyweight_Squat",
+        "name": "Приседания",
+        "name_en": "Bodyweight Squat",
+        "name_ru": "Приседания"
+      },
+      "detected_exercise_name": "Приседания",
+      "detected_exercise_confidence": 0.91,
+      "video_filename": "squat-8377a37bc502.mp4",
+      "score": 72,
+      "summary": "Колени уходят внутрь в нижней фазе.",
+      "error_code": "",
+      "created_at": "2026-05-26T12:00:00Z",
+      "updated_at": "2026-05-26T12:00:04Z"
+    }
+  ]
+}
+```
+
+### POST `/api/technique-reviews/`
+Создаёт проверку. В режиме `DJANGO_TECHNIQUE_ANALYSIS_MODE=sync` backend сразу запускает анализ в HTTP-запросе; в режиме `async` возвращает `processing`, а результат подхватывает worker `process_technique_reviews`.
+
+**Content-Type:** `multipart/form-data`
+
+| Поле | Тип | Описание |
+|------|-----|----------|
+| `video` или `video_file` | file | `mp4`, `mov`, `webm` или `m4v`; лимиты задаются `DJANGO_TECHNIQUE_VIDEO_MAX_MB` и `DJANGO_TECHNIQUE_VIDEO_MAX_SECONDS` |
+
+Если пользователь превысил `DJANGO_TECHNIQUE_REVIEW_DAILY_LIMIT`, endpoint возвращает `429`:
+```json
+{
+  "message": "Дневной лимит проверок техники исчерпан. Попробуйте завтра.",
+  "error_code": "rate_limited"
+}
+```
+
+**Ответ `201`:**
+```json
+{
+  "id": 15,
+  "status": "needs_confirmation",
+  "exercise": null,
+  "detected_exercise_name": "Приседания",
+  "detected_exercise_confidence": 0.62,
+  "video_filename": "squat-8377a37bc502.mp4",
+  "score": 58,
+  "summary": "Похоже на приседание, но нужно подтвердить упражнение.",
+  "error_code": "",
+  "result_json": {
+    "score": 58,
+    "summary": "Похоже на приседание, но нужно подтвердить упражнение.",
+    "issues": [
+      {
+        "title": "Колени заваливаются внутрь",
+        "severity": "medium",
+        "evidence": "В нижней фазе колени смещаются к центру.",
+        "fix": "Разводите колени по линии носков."
+      }
+    ],
+    "next_set_focus": [
+      "Поставьте стопы чуть шире плеч.",
+      "Сохраняйте корпус напряжённым перед спуском."
+    ],
+    "positive_notes": [],
+    "camera_feedback": [],
+    "detected_exercise": {
+      "name": "Приседания",
+      "catalog_exercise_id": "Bodyweight_Squat",
+      "confidence": 0.62,
+      "alternatives": []
+    }
+  },
+  "created_at": "2026-05-26T12:00:00Z",
+  "updated_at": "2026-05-26T12:00:04Z"
+}
+```
+
+Возможные `status`:
+- `processing` — запись создана, анализ ещё не завершён;
+- `needs_confirmation` — упражнение определено с низкой уверенностью, пользователю нужно подтвердить;
+- `completed` — анализ готов;
+- `failed` — анализ недоступен, `error_code` содержит причину.
+
+### GET `/api/technique-reviews/{id}/`
+Возвращает одну проверку текущего пользователя. Чужие проверки не доступны.
+
+### DELETE `/api/technique-reviews/{id}/`
+Удаляет проверку текущего пользователя и связанный видеофайл.
+
+**Ответ:** `204 No Content`.
+
+### POST `/api/technique-reviews/{id}/confirm-exercise/`
+Переанализирует видео после ручного подтверждения упражнения.
+
+**Запрос:**
+```json
+{
+  "exercise_id": "Bodyweight_Squat"
+}
+```
+
+**Ответ:** актуальный объект проверки, как в `POST /api/technique-reviews/`.
+
+Для очистки старых видео есть management command:
+```bash
+python manage.py cleanup_technique_reviews --days 30
+python manage.py cleanup_technique_reviews --days 30 --dry-run
+```
+
+`--days` по умолчанию берётся из `DJANGO_TECHNIQUE_VIDEO_RETENTION_DAYS`.
+
+Для async-режима анализа:
+```bash
+python manage.py process_technique_reviews
+python manage.py process_technique_reviews --once
+```
+
+В Docker `backend` и `technique-worker` должны использовать общий `DJANGO_MEDIA_ROOT` (`/data/media`), иначе worker не сможет открыть загруженное видео.
+
+---
+
+## 6. Analytics & AI
 
 ### GET `/api/analytics/days/?start=2024-06-01&end=2024-06-07`
 ```json

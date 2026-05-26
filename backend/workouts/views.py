@@ -8,10 +8,12 @@ import subprocess
 import tempfile
 from typing import Iterator, Tuple
 
+from django.conf import settings
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.http import FileResponse, Http404, StreamingHttpResponse
+from django.utils import timezone
 from rest_framework.parsers import FormParser, MultiPartParser
-from rest_framework import permissions, viewsets
+from rest_framework import permissions, status, viewsets
 from rest_framework.authtoken.models import Token
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
@@ -74,6 +76,12 @@ def _safe_upload_debug(uploaded) -> tuple[int | None, str]:
         except Exception:
             pass
     return size, _audio_head_hex(raw)
+
+
+def _first_error_value(value):
+    if isinstance(value, (list, tuple)):
+        return str(value[0]) if value else ""
+    return str(value)
 
 
 def _resolve_audio_content_type(filename: str) -> str:
@@ -500,14 +508,40 @@ class TechniqueReviewListCreateView(APIView):
         return Response({"items": TechniqueReviewSerializer(reviews, many=True).data})
 
     def post(self, request, *args, **kwargs):
+        daily_limit = max(int(getattr(settings, "TECHNIQUE_REVIEW_DAILY_LIMIT", 10)), 1)
+        since = timezone.now() - timezone.timedelta(hours=24)
+        recent_count = TechniqueReview.objects.filter(
+            user=request.user,
+            created_at__gte=since,
+        ).count()
+        if recent_count >= daily_limit:
+            return Response(
+                {
+                    "message": "Дневной лимит проверок техники исчерпан. Попробуйте завтра.",
+                    "error_code": "rate_limited",
+                },
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
         data = request.data.copy()
         if "video_file" not in data and "video" in request.FILES:
             data["video_file"] = request.FILES["video"]
         serializer = TechniqueReviewCreateSerializer(
             data=data, context={"request": request}
         )
-        serializer.is_valid(raise_exception=True)
+        if not serializer.is_valid():
+            errors = serializer.errors
+            if "error_code" in errors:
+                return Response(
+                    {
+                        "message": _first_error_value(errors.get("message")),
+                        "error_code": _first_error_value(errors.get("error_code")),
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            raise ValidationError(errors)
         review = serializer.save()
+        if getattr(settings, "TECHNIQUE_ANALYSIS_MODE", "sync") == "async":
+            return Response(TechniqueReviewSerializer(review).data, status=201)
         TechniqueReviewAnalysisService(review).analyze()
         review.refresh_from_db()
         return Response(TechniqueReviewSerializer(review).data, status=201)
@@ -525,6 +559,17 @@ class TechniqueReviewDetailView(APIView):
         except TechniqueReview.DoesNotExist as exc:
             raise Http404("Technique review not found") from exc
         return Response(TechniqueReviewSerializer(review).data)
+
+    def delete(self, request, review_id: int, *args, **kwargs):
+        try:
+            review = TechniqueReview.objects.get(id=review_id, user=request.user)
+        except TechniqueReview.DoesNotExist as exc:
+            raise Http404("Technique review not found") from exc
+        video_file = review.video_file
+        review.delete()
+        if video_file:
+            video_file.delete(save=False)
+        return Response(status=204)
 
 
 class TechniqueReviewConfirmExerciseView(APIView):
@@ -558,6 +603,8 @@ class TechniqueReviewConfirmExerciseView(APIView):
                 "updated_at",
             ]
         )
+        if getattr(settings, "TECHNIQUE_ANALYSIS_MODE", "sync") == "async":
+            return Response(TechniqueReviewSerializer(review).data)
         TechniqueReviewAnalysisService(review).analyze(forced_exercise=exercise)
         review.refresh_from_db()
         return Response(TechniqueReviewSerializer(review).data)
