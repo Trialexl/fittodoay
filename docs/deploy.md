@@ -20,7 +20,7 @@ cp .env.example .env
 
 Минимально заполните:
 - `DOMAIN` (например, `app.example.com`)
-- `PUBLIC_APP_URL` (например, `https://app.example.com`)
+- `PUBLIC_APP_URL=/` для production same-origin API через Caddy
 - `LETSENCRYPT_EMAIL`
 - `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY` (стабильный ключ, не менять между рестартами)
 - `DJANGO_ALLOWED_HOSTS`
@@ -51,6 +51,7 @@ Production-деплой работает по правилу: **образы с�
 Важно:
 - перед этим нужно сделать `docker login`
 - `BACKEND_IMAGE` и `FRONTEND_IMAGE` должны быть полными registry refs, например `docker.io/your-user/fittodoay-backend:latest`
+- `PUBLIC_APP_URL=/`, чтобы frontend вызывал `/api/...` на текущем домене; абсолютный URL нужен только для нестандартного split-domain деплоя
 - `FRONTEND_NODE_OPTIONS` по умолчанию `--max-old-space-size=512`, иначе production-сборка Next.js может упереться в heap limit
 
 ### 2.3 Запуск на сервере
@@ -85,7 +86,7 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml logs -f --tail=1
 - `backend` и `frontend` слушают только `127.0.0.1` на хосте
 - `redis` не публикует порт наружу в production override
 - Caddy сам выпускает и обновляет TLS-сертификаты
-- `frontend` собирается локально с `NEXT_PUBLIC_API_URL=${PUBLIC_APP_URL}` и затем выкатывается как готовый image
+- `frontend` собирается локально с `NEXT_PUBLIC_API_URL=${PUBLIC_APP_URL}`; в стандартном production это `/`, поэтому API-запросы идут на текущий домен через Caddy
 - `docker-compose.prod.yml` сбрасывает `build` для app-сервисов; серверный `up --no-build` не собирает код
 
 ### 2.3 Firewall (рекомендуется)
