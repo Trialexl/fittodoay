@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import clsx from "clsx";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
-import { API_BASE_URL, apiFetch } from "@/lib/api";
+import { apiFetch, resolveApiUrl, resolveApiUrlWithParams } from "@/lib/api";
 import { getSharedWorkoutAudio } from "@/lib/workoutAudio";
 import {
   WORKOUT_MUSIC_ACTION_EVENT,
@@ -43,14 +43,8 @@ const MUSIC_SHUFFLE_RECENT_MAX = 12;
 const MUSIC_BUFFERING_TIMEOUT_MS = 15000;
 
 const buildMusicTrackUrl = (path: string, token?: string | null) => {
-  const staticBase = API_BASE_URL.replace(/\/$/, "");
-  const raw = path.startsWith("http://") || path.startsWith("https://")
-    ? path
-    : `${staticBase}${path.startsWith("/") ? path : `/${path}`}`;
-  if (!token) return raw;
-  const url = new URL(raw, staticBase);
-  url.searchParams.set("token", token);
-  return url.toString();
+  if (!token) return resolveApiUrl(path);
+  return resolveApiUrlWithParams(path, { token });
 };
 
 const describeAudioDebugState = (audio: HTMLAudioElement | null) => ({

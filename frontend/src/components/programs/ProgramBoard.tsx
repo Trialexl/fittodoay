@@ -16,7 +16,7 @@ import { CSS } from "@dnd-kit/utilities";
 import useSWR from "swr";
 import { useRouter } from "next/navigation";
 
-import { API_BASE_URL, apiFetch } from "@/lib/api";
+import { apiFetch, resolveApiUrl } from "@/lib/api";
 import { useAuth } from "@/state/AuthContext";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -108,12 +108,11 @@ type ExerciseOption = {
   difficulty?: string | null;
 };
 
-const STATIC_BASE_URL = API_BASE_URL.replace(/\/$/, "");
 const buildExerciseImageUrl = (path: string) =>
-  `${STATIC_BASE_URL}/static/${path
+  resolveApiUrl(`/static/${path
     .split("/")
     .map((segment) => encodeURIComponent(segment))
-    .join("/")}`;
+    .join("/")}`);
 
 type TemplateDetailResponse = {
   id: number;

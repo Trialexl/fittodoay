@@ -12,7 +12,7 @@ import { RestTimerOverlay } from "@/components/workout/RestTimerOverlay";
 import { ExecutionTimerOverlay } from "@/components/workout/ExecutionTimerOverlay";
 import { useOfflineWorkoutQueue } from "@/hooks/useOfflineWorkoutQueue";
 import { useRestTimer } from "@/hooks/useRestTimer";
-import { API_BASE_URL, ApiError, apiFetch } from "@/lib/api";
+import { ApiError, apiFetch, resolveApiUrl, resolveApiUrlWithParams } from "@/lib/api";
 import { getSharedWorkoutAudio } from "@/lib/workoutAudio";
 import {
   WORKOUT_MUSIC_STATE_EVENT,
@@ -414,22 +414,16 @@ const parseTargetMuscles = (value?: string | null) =>
 const getExerciseMuscles = (exercise: ExercisePayload) =>
   parseTargetMuscles(exercise.source.target_muscles);
 
-const STATIC_BASE_URL = API_BASE_URL.replace(/\/$/, "");
 const buildExerciseImageUrl = (path: string) => {
   const encodedPath = path
     .split("/")
     .map((segment) => encodeURIComponent(segment))
     .join("/");
-  return `${STATIC_BASE_URL}/static/${encodedPath}`;
+  return resolveApiUrl(`/static/${encodedPath}`);
 };
 const buildMusicTrackUrl = (path: string, token?: string | null) => {
-  const raw = path.startsWith("http://") || path.startsWith("https://")
-    ? path
-    : `${STATIC_BASE_URL}${path.startsWith("/") ? path : `/${path}`}`;
-  if (!token) return raw;
-  const url = new URL(raw, STATIC_BASE_URL);
-  url.searchParams.set("token", token);
-  return url.toString();
+  if (!token) return resolveApiUrl(path);
+  return resolveApiUrlWithParams(path, { token });
 };
 
 const describeAudioDebugState = (audio: HTMLAudioElement | null) => ({
