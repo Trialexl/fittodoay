@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from django.contrib.auth import login
 from rest_framework import generics, permissions, status
 from rest_framework.authtoken.models import Token
 from rest_framework.response import Response
@@ -19,6 +18,7 @@ from .serializers import (
 
 
 class RegisterView(APIView):
+    authentication_classes = []
     permission_classes = [permissions.AllowAny]
 
     def post(self, request, *args, **kwargs):
@@ -33,13 +33,13 @@ class RegisterView(APIView):
 
 
 class LoginView(APIView):
+    authentication_classes = []
     permission_classes = [permissions.AllowAny]
 
     def post(self, request, *args, **kwargs):
         serializer = LoginSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
         user = serializer.validated_data["user"]
-        login(request, user)
         token, _ = Token.objects.get_or_create(user=user)
         return Response({"token": token.key, "user": UserSerializer(user).data})
 
