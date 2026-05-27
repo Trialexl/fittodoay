@@ -35,20 +35,23 @@ cp backend/.env.example backend/.env
 И заполните продовые секреты/ключи (`DJANGO_SECRET_KEY`, `OPENROUTER_API_KEY`, БД и т.д.).
 
 ### 2.2 Сборка и публикация образов
-Если хочешь собирать быстрее локально и выкатывать через Docker Hub, используй:
+Production-деплой работает по правилу: **образы собираются локально, сервер только скачивает и поднимает готовые images**.
 
 ```bash
 ./build-and-push-images.sh
 ```
 
 Скрипт:
-- читает `BACKEND_IMAGE`, `FRONTEND_IMAGE`, `PUBLIC_APP_URL`, `FRONTEND_NODE_OPTIONS` из корневого `.env`
-- локально собирает backend/frontend образы
-- пушит их в registry
+- читает `BACKEND_IMAGE`, `FRONTEND_IMAGE`, `PUBLIC_APP_URL`, `FRONTEND_NODE_OPTIONS`, `DOCKER_PLATFORM` из корневого `.env`
+- локально собирает backend/frontend образы через `docker buildx build --load --provenance=false --sbom=false`
+- пушит их в registry обычным `docker push` под platform из `DOCKER_PLATFORM` (по умолчанию `linux/amd64`)
+- backend image также используется сервисом `technique-worker`
+- backend production image собирается без dev-зависимостей (`INSTALL_DEV_DEPS=false`)
 
 Важно:
 - перед этим нужно сделать `docker login`
 - `BACKEND_IMAGE` и `FRONTEND_IMAGE` должны быть полными registry refs, например `docker.io/your-user/fittodoay-backend:latest`
+- `FRONTEND_NODE_OPTIONS` по умолчанию `--max-old-space-size=512`, иначе production-сборка Next.js может упереться в heap limit
 
 ### 2.3 Запуск на сервере
 Запуск прод-контура с HTTPS из уже опубликованных образов:
@@ -60,28 +63,30 @@ cp backend/.env.example backend/.env
 Скрипт:
 - делает `git pull --ff-only`
 - делает `docker compose pull`
-- поднимает стек через `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --remove-orphans`
+- поднимает стек через `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --no-build --remove-orphans`
 - чистит dangling images
 
 Ручной эквивалент:
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.prod.yml pull
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --remove-orphans
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --no-build --remove-orphans
 ```
 
 Проверка:
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
-docker compose -f docker-compose.yml -f docker-compose.prod.yml logs -f --tail=100 caddy backend frontend
+docker compose -f docker-compose.yml -f docker-compose.prod.yml logs -f --tail=100 caddy backend technique-worker frontend
 ```
 
 В этой схеме:
 - внешний трафик идёт только в `caddy` (`80/443`)
 - `backend` и `frontend` слушают только `127.0.0.1` на хосте
+- `redis` не публикует порт наружу в production override
 - Caddy сам выпускает и обновляет TLS-сертификаты
 - `frontend` собирается локально с `NEXT_PUBLIC_API_URL=${PUBLIC_APP_URL}` и затем выкатывается как готовый image
+- `docker-compose.prod.yml` сбрасывает `build` для app-сервисов; серверный `up --no-build` не собирает код
 
 ### 2.3 Firewall (рекомендуется)
 Оставить снаружи только SSH + HTTP/HTTPS:
@@ -109,7 +114,7 @@ docker compose up -d backend frontend db redis
 - Проверяйте логи:
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --since=30m backend frontend caddy
+docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --since=30m backend technique-worker frontend caddy
 ```
 
 - Проверяйте место на диске:

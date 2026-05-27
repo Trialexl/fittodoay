@@ -2,6 +2,13 @@
 
 Docker-first команды для разработки и проверки.
 
+Production-деплой: локально собрать и запушить images, на сервере только `pull` + `up --no-build`.
+
+```bash
+./build-and-push-images.sh
+./update-server.sh
+```
+
 ## Пересборка backend контейнера
 
 ```bash

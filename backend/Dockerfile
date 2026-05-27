@@ -6,16 +6,27 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+ARG INSTALL_DEV_DEPS=true
+
 RUN apt-get update -o Acquire::Retries=5 \
     || (sed -i 's|http://deb.debian.org|http://ftp.us.debian.org|g' /etc/apt/sources.list.d/debian.sources \
         && apt-get update -o Acquire::Retries=5) \
-    && apt-get install -y --no-install-recommends --fix-missing build-essential libpq-dev ffmpeg \
+    && if [ "$INSTALL_DEV_DEPS" = "true" ]; then \
+        apt-get install -y --no-install-recommends --fix-missing build-essential libpq-dev ffmpeg; \
+      else \
+        apt-get install -y --no-install-recommends --fix-missing ffmpeg; \
+      fi \
     && rm -rf /var/lib/apt/lists/*
 
 COPY backend/requirements.txt ./requirements.txt
 COPY backend/requirements-dev.txt ./requirements-dev.txt
 COPY pyproject.toml ./pyproject.toml
-RUN pip install --upgrade pip && pip install -r requirements.txt -r requirements-dev.txt
+RUN pip install --upgrade pip \
+    && if [ "$INSTALL_DEV_DEPS" = "true" ]; then \
+        pip install -r requirements.txt -r requirements-dev.txt; \
+      else \
+        pip install -r requirements.txt; \
+      fi
 
 COPY backend /app
 COPY docs/exercises /docs/exercises

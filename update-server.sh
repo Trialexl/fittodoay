@@ -16,7 +16,9 @@ if [ ! -f "docker-compose.yml" ] || [ ! -f "docker-compose.prod.yml" ]; then
 fi
 
 if [ ! -f ".env" ]; then
-  echo "ERROR: .env was not found. Create it from .env.example before deploy." >&2
+  echo "ERROR: .env was not found. Create it from .env.example before deploy:" >&2
+  echo "  cp .env.example .env" >&2
+  echo "  edit .env: DOMAIN, PUBLIC_APP_URL, LETSENCRYPT_EMAIL, BACKEND_IMAGE, FRONTEND_IMAGE, NEXT_SERVER_ACTIONS_ENCRYPTION_KEY, DJANGO_ALLOWED_HOSTS, DJANGO_CORS_ALLOWED_ORIGINS" >&2
   exit 1
 fi
 
@@ -54,8 +56,8 @@ run_git_pull
 echo "==> Pulling Docker images"
 compose pull
 
-echo "==> Starting services"
-compose up -d --remove-orphans
+echo "==> Starting services without building on server"
+compose up -d --no-build --remove-orphans
 
 echo "==> Pruning dangling Docker images"
 $SUDO docker image prune -f

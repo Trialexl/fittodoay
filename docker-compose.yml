@@ -83,7 +83,7 @@ services:
       context: .
       dockerfile: frontend/Dockerfile
       args:
-        NODE_OPTIONS: ${FRONTEND_NODE_OPTIONS:---max-old-space-size=128}
+        NODE_OPTIONS: ${FRONTEND_NODE_OPTIONS:---max-old-space-size=512}
     restart: unless-stopped
     mem_limit: ${FRONTEND_MEMORY_LIMIT:-192m}
     mem_reservation: ${FRONTEND_MEMORY_RESERVATION:-96m}
@@ -92,7 +92,7 @@ services:
       - frontend/.env
     environment:
       NEXT_SERVER_ACTIONS_ENCRYPTION_KEY: ${NEXT_SERVER_ACTIONS_ENCRYPTION_KEY:-change-me-to-a-stable-32-byte-base64-key}
-      NODE_OPTIONS: ${FRONTEND_NODE_OPTIONS:---max-old-space-size=128}
+      NODE_OPTIONS: ${FRONTEND_NODE_OPTIONS:---max-old-space-size=512}
       PORT: 3000
     ports:
       - "3000:3000"

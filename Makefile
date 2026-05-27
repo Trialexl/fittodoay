@@ -2,7 +2,7 @@ SHELL := /bin/zsh
 
 ROOT := /Users/alexseyalfimov/git/FitTodoay
 
-.PHONY: build-backend build-frontend test-docker up down logs
+.PHONY: build-backend build-frontend publish-images server-update test-docker up down logs
 
 # Команда на пересборку backend контейнера
 build-backend:
@@ -11,6 +11,14 @@ build-backend:
 # Команда на пересборку frontend контейнера
 build-frontend:
 	cd $(ROOT) && docker compose build frontend
+
+# Локальная сборка и публикация production images в registry
+publish-images:
+	cd $(ROOT) && ./build-and-push-images.sh
+
+# На сервере: pull готовых images и запуск без build
+server-update:
+	cd $(ROOT) && ./update-server.sh
 
 # Запуск тестов в docker-окружении (backend pytest + frontend lint)
 test-docker:

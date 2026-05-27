@@ -19,7 +19,8 @@ fi
 BACKEND_IMAGE="${BACKEND_IMAGE:-}"
 FRONTEND_IMAGE="${FRONTEND_IMAGE:-}"
 PUBLIC_APP_URL="${PUBLIC_APP_URL:-}"
-FRONTEND_NODE_OPTIONS="${FRONTEND_NODE_OPTIONS:---max-old-space-size=128}"
+FRONTEND_NODE_OPTIONS="${FRONTEND_NODE_OPTIONS:---max-old-space-size=512}"
+DOCKER_PLATFORM="${DOCKER_PLATFORM:-linux/amd64}"
 
 if [ -z "$BACKEND_IMAGE" ]; then
   echo "ERROR: BACKEND_IMAGE is not set. Put it in .env or export it before running." >&2
@@ -36,21 +37,30 @@ if [ -z "$PUBLIC_APP_URL" ]; then
   exit 1
 fi
 
-echo "==> Building backend image: $BACKEND_IMAGE"
-docker build \
+echo "==> Building backend image: $BACKEND_IMAGE ($DOCKER_PLATFORM)"
+docker buildx build \
+  --platform "$DOCKER_PLATFORM" \
+  --provenance=false \
+  --sbom=false \
   -f backend/Dockerfile \
+  --build-arg INSTALL_DEV_DEPS=false \
   -t "$BACKEND_IMAGE" \
+  --load \
   .
 
 echo "==> Pushing backend image: $BACKEND_IMAGE"
 docker push "$BACKEND_IMAGE"
 
-echo "==> Building frontend image: $FRONTEND_IMAGE"
-docker build \
+echo "==> Building frontend image: $FRONTEND_IMAGE ($DOCKER_PLATFORM)"
+docker buildx build \
+  --platform "$DOCKER_PLATFORM" \
+  --provenance=false \
+  --sbom=false \
   -f frontend/Dockerfile \
   --build-arg NEXT_PUBLIC_API_URL="$PUBLIC_APP_URL" \
   --build-arg NODE_OPTIONS="$FRONTEND_NODE_OPTIONS" \
   -t "$FRONTEND_IMAGE" \
+  --load \
   .
 
 echo "==> Pushing frontend image: $FRONTEND_IMAGE"
