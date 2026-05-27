@@ -16,7 +16,11 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Core security
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", get_random_secret_key())
 DEBUG = os.environ.get("DJANGO_DEBUG", "false").lower() == "true"
-ALLOWED_HOSTS = os.environ.get("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
+def split_env_list(name: str, default: str) -> list[str]:
+    return [item.strip() for item in os.environ.get(name, default).split(",") if item.strip()]
+
+
+ALLOWED_HOSTS = split_env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1")
 
 # Applications
 INSTALLED_APPS = [
@@ -156,6 +160,10 @@ REST_FRAMEWORK = {
 AUTH_USER_MODEL = "accounts.User"
 
 CORS_ALLOW_CREDENTIALS = True
-CORS_ALLOWED_ORIGINS = os.environ.get(
+CORS_ALLOWED_ORIGINS = split_env_list(
     "DJANGO_CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000"
-).split(",")
+)
+CSRF_TRUSTED_ORIGINS = split_env_list(
+    "DJANGO_CSRF_TRUSTED_ORIGINS",
+    ",".join(CORS_ALLOWED_ORIGINS),
+)

@@ -25,6 +25,7 @@ cp .env.example .env
 - `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY` (стабильный ключ, не менять между рестартами)
 - `DJANGO_ALLOWED_HOSTS`
 - `DJANGO_CORS_ALLOWED_ORIGINS`
+- `DJANGO_CSRF_TRUSTED_ORIGINS`
 
 Создайте `backend/.env`:
 
@@ -52,6 +53,7 @@ Production-деплой работает по правилу: **образы с�
 - перед этим нужно сделать `docker login`
 - `BACKEND_IMAGE` и `FRONTEND_IMAGE` должны быть полными registry refs, например `docker.io/your-user/fittodoay-backend:latest`
 - `PUBLIC_APP_URL=/`, чтобы frontend вызывал `/api/...` на текущем домене; абсолютный URL нужен только для нестандартного split-domain деплоя
+- `DJANGO_CSRF_TRUSTED_ORIGINS` должен включать origin с протоколом, например `https://app.example.com`
 - `FRONTEND_NODE_OPTIONS` по умолчанию `--max-old-space-size=512`, иначе production-сборка Next.js может упереться в heap limit
 
 ### 2.3 Запуск на сервере
