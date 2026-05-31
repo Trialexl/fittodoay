@@ -32,6 +32,7 @@ from workouts.models import (
 from workouts.recommendations import generate_recommendations_for_day
 from workouts.serializers import TechniqueReviewCreateSerializer
 from workouts.services import generate_daily_plan, template_matches_date
+from workouts.technique import TechniqueAnalysisError, TechniqueReviewAnalysisService
 
 User = get_user_model()
 TEST_DATE = date(2024, 6, 3)  # Monday
@@ -1166,6 +1167,85 @@ def test_technique_review_confirm_exercise_reruns_analysis(monkeypatch, tmp_path
     assert response.data["exercise"]["id"] == exercise.id
     review.refresh_from_db()
     assert review.exercise == exercise
+
+
+@pytest.mark.django_db
+def test_technique_review_extracts_frames_across_video_duration(
+    monkeypatch, tmp_path
+):
+    user = User.objects.create_user(
+        email="technique-frame-sampling@example.com", password="pass"
+    )
+    with override_settings(MEDIA_ROOT=tmp_path):
+        review = TechniqueReview.objects.create(
+            user=user,
+            status=TechniqueReview.Status.PROCESSING,
+            video_file=SimpleUploadedFile(
+                "long-setup.mp4", b"fake-video", content_type="video/mp4"
+            ),
+        )
+
+        monkeypatch.setattr("workouts.technique.shutil.which", lambda name: name)
+        seeks = []
+        frame_size = 64 * 64
+        phase_values = [30, 70, 130, 190, 130, 70]
+        frame_values = [0, 12, 28, 54, 96, 145] + phase_values + phase_values
+        raw_candidates = b"".join(bytes([value]) * frame_size for value in frame_values)
+
+        def fake_run(args, **kwargs):
+            if args[0] == "ffprobe":
+                return subprocess.CompletedProcess(args, 0, b"6.0\n", b"")
+            if args[-1] == "pipe:1":
+                return subprocess.CompletedProcess(args, 0, raw_candidates, b"")
+            seeks.append(float(args[args.index("-ss") + 1]))
+            Path(args[-1]).write_bytes(b"fake-jpeg")
+            return subprocess.CompletedProcess(args, 0, b"", b"")
+
+        monkeypatch.setattr("workouts.technique.subprocess.run", fake_run)
+
+        frames = TechniqueReviewAnalysisService(review)._extract_frames()
+
+    assert len(frames) == 8
+    assert seeks == pytest.approx(
+        [2.2, 2.733, 3.267, 3.8, 4.2, 4.733, 5.267, 5.8],
+        abs=0.001,
+    )
+
+
+@pytest.mark.django_db
+def test_technique_review_rejects_video_without_repeated_reps(monkeypatch, tmp_path):
+    user = User.objects.create_user(
+        email="technique-no-reps@example.com", password="pass"
+    )
+    with override_settings(MEDIA_ROOT=tmp_path):
+        review = TechniqueReview.objects.create(
+            user=user,
+            status=TechniqueReview.Status.PROCESSING,
+            video_file=SimpleUploadedFile(
+                "approach-only.mp4", b"fake-video", content_type="video/mp4"
+            ),
+        )
+
+        monkeypatch.setattr("workouts.technique.shutil.which", lambda name: name)
+        frame_size = 64 * 64
+        frame_values = [index * 12 for index in range(18)]
+        raw_candidates = b"".join(bytes([value]) * frame_size for value in frame_values)
+
+        def fake_run(args, **kwargs):
+            if args[0] == "ffprobe":
+                return subprocess.CompletedProcess(args, 0, b"6.0\n", b"")
+            if args[-1] == "pipe:1":
+                return subprocess.CompletedProcess(args, 0, raw_candidates, b"")
+            Path(args[-1]).write_bytes(b"fake-jpeg")
+            return subprocess.CompletedProcess(args, 0, b"", b"")
+
+        monkeypatch.setattr("workouts.technique.subprocess.run", fake_run)
+
+        service = TechniqueReviewAnalysisService(review)
+        with pytest.raises(TechniqueAnalysisError) as exc_info:
+            service._extract_frames()
+
+    assert exc_info.value.code == "insufficient_repetitions"
 
 
 @pytest.mark.django_db
