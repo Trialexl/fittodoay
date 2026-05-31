@@ -3047,6 +3047,8 @@ export const Checklist = ({
   const activeSetKey = restOverlay
     ? keyForSet(restOverlay.templateExerciseId, restOverlay.setIndex)
     : null;
+  const shouldHideCollapsedRestOverlay =
+    Boolean(infoExercise) || Boolean(editState) || chatState.open || musicPlaylistOpen;
 
   const editModalFooter = editState ? (
     <>
@@ -4740,6 +4742,7 @@ export const Checklist = ({
         onSkip={skipRest}
         onClose={closeRestOverlay}
         onCollapsedChange={setIsRestOverlayCollapsed}
+        hideCollapsed={shouldHideCollapsedRestOverlay}
         error={restError}
       />
       <ExecutionTimerOverlay

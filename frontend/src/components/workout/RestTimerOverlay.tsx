@@ -18,6 +18,7 @@ type Props = {
   onSkip: () => void;
   onClose: () => void;
   onCollapsedChange?: (collapsed: boolean) => void;
+  hideCollapsed?: boolean;
   error?: string | null;
 };
 
@@ -32,6 +33,7 @@ export const RestTimerOverlay = ({
   onSkip,
   onClose,
   onCollapsedChange,
+  hideCollapsed = false,
   error,
 }: Props) => {
   const [mounted, setMounted] = useState(false);
@@ -90,6 +92,8 @@ export const RestTimerOverlay = ({
   if (!pending || !mounted) return null;
 
   if (collapsed) {
+    if (hideCollapsed) return null;
+
     const bar = (
       <div className="pointer-events-none fixed inset-0 z-50">
         <div className="pointer-events-auto fixed bottom-[calc(env(safe-area-inset-bottom)+114px)] left-3 right-3 rounded-2xl border border-white/30 bg-slate-900/90 px-4 py-3 text-white shadow-lg backdrop-blur sm:bottom-[calc(env(safe-area-inset-bottom)+122px)] sm:left-6 sm:right-6">
