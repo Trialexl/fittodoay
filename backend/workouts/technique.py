@@ -38,6 +38,10 @@ class TechniqueAnalysisError(Exception):
 SUPPORTED_EXERCISE_QUERIES = [
     ("squat", ("присед", "squat")),
     ("push_up", ("отжим", "push-up", "push up")),
+    (
+        "pull_up",
+        ("подтяг", "pull-up", "pull up", "pullup", "pullups", "chin-up", "chin up"),
+    ),
     ("plank", ("планк", "plank")),
     ("lunge", ("выпад", "lunge")),
     ("dumbbell_press", ("жим гант", "dumbbell press", "shoulder press")),
@@ -534,6 +538,11 @@ class TechniqueReviewAnalysisService:
             headers["HTTP-Referer"] = referrer
         headers["X-Title"] = os.environ.get("OPENROUTER_APP_NAME", "fitTODOay")
 
+        selected_timestamps = [
+            frame.get("timestamp_seconds")
+            for frame in frames
+            if frame.get("timestamp_seconds") is not None
+        ]
         user_payload = {
             "catalog_candidates": candidates,
             "forced_exercise": (
@@ -552,11 +561,7 @@ class TechniqueReviewAnalysisService:
                 "фазы этих повторов в исходном видео. Если forced_exercise передан, анализируй именно его. "
                 "Верни только JSON."
             ),
-            "selected_frame_timestamps_seconds": [
-                frame.get("timestamp_seconds")
-                for frame in frames
-                if frame.get("timestamp_seconds") is not None
-            ],
+            "selected_frame_timestamps_seconds": selected_timestamps,
         }
         content: list[dict[str, Any]] = [
             {"type": "text", "text": json.dumps(user_payload, ensure_ascii=False)}
@@ -590,6 +595,11 @@ class TechniqueReviewAnalysisService:
             "response_format": {"type": "json_object"},
             "messages": messages,
         }
+        log_payload = {
+            **payload,
+            "image_count": len(frames),
+            "selected_frame_timestamps_seconds": selected_timestamps,
+        }
         timeout = httpx.Timeout(
             connect=10.0,
             read=float(
@@ -613,12 +623,12 @@ class TechniqueReviewAnalysisService:
             raw_text = data["choices"][0]["message"]["content"]
             parsed = json.loads(raw_text.strip())
             self._log_llm(
-                payload=messages, response=parsed, success=True, status="technique_ok"
+                payload=log_payload, response=parsed, success=True, status="technique_ok"
             )
             return parsed
         except httpx.TimeoutException as exc:
             self._log_llm(
-                payload=messages,
+                payload=log_payload,
                 response=None,
                 success=False,
                 status="analysis_timeout",
@@ -627,9 +637,24 @@ class TechniqueReviewAnalysisService:
             raise TechniqueAnalysisError(
                 "analysis_timeout", "OpenRouter timeout"
             ) from exc
+        except httpx.HTTPStatusError as exc:
+            response_text = exc.response.text[:1000] if exc.response is not None else ""
+            error_message = (
+                f"{exc}; response={response_text}" if response_text else str(exc)
+            )
+            self._log_llm(
+                payload=log_payload,
+                response=None,
+                success=False,
+                status="llm_unavailable",
+                error=error_message,
+            )
+            raise TechniqueAnalysisError(
+                "llm_unavailable", "OpenRouter request failed"
+            ) from exc
         except httpx.HTTPError as exc:
             self._log_llm(
-                payload=messages,
+                payload=log_payload,
                 response=None,
                 success=False,
                 status="llm_unavailable",
@@ -640,7 +665,7 @@ class TechniqueReviewAnalysisService:
             ) from exc
         except (KeyError, TypeError, json.JSONDecodeError) as exc:
             self._log_llm(
-                payload=messages,
+                payload=log_payload,
                 response={"raw": raw_text} if raw_text else None,
                 success=False,
                 status="invalid_llm_response",

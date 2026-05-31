@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 from decimal import Decimal
+import json
 from pathlib import Path
 import shutil
 import subprocess
@@ -18,6 +19,7 @@ from django.utils import timezone
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APIClient
 
+from agents.models import LLMRequestLog
 from programs.models import DayTemplate, ProgramFolder, TemplateExercise
 from workouts.models import (
     Exercise_DB,
@@ -1246,6 +1248,157 @@ def test_technique_review_rejects_video_without_repeated_reps(monkeypatch, tmp_p
             service._extract_frames()
 
     assert exc_info.value.code == "insufficient_repetitions"
+
+
+@pytest.mark.django_db
+def test_technique_review_catalog_candidates_include_pullups(tmp_path):
+    user = User.objects.create_user(
+        email="technique-pullup-catalog@example.com", password="pass"
+    )
+    pullup = Exercise_DB.objects.create(
+        id="Pullups",
+        name_en="Pullups",
+        name_ru="Подтягивания на перекладине",
+        force_en="pull",
+        force_ru="",
+        level_en="intermediate",
+        level_ru="средний",
+        mechanic_en="compound",
+        mechanic_ru="",
+        equipment_en="body only",
+        equipment_ru="собственный вес",
+        category_en="strength",
+        category_ru="Силовая",
+    )
+    Exercise_DB.objects.create(
+        id="Bench_Press",
+        name_en="Bench Press",
+        name_ru="Жим лежа",
+        force_en="push",
+        force_ru="",
+        level_en="beginner",
+        level_ru="начальный",
+        mechanic_en="compound",
+        mechanic_ru="",
+        equipment_en="barbell",
+        equipment_ru="штанга",
+        category_en="strength",
+        category_ru="Силовая",
+    )
+    with override_settings(MEDIA_ROOT=tmp_path):
+        review = TechniqueReview.objects.create(
+            user=user,
+            status=TechniqueReview.Status.PROCESSING,
+            video_file=SimpleUploadedFile(
+                "pullups.mp4", b"fake-video", content_type="video/mp4"
+            ),
+        )
+
+    candidates = TechniqueReviewAnalysisService(review)._catalog_candidates()
+
+    assert any(candidate["id"] == pullup.id for candidate in candidates)
+
+
+@pytest.mark.django_db
+def test_technique_review_sends_images_to_llm_and_logs_placeholders(
+    monkeypatch, tmp_path
+):
+    user = User.objects.create_user(
+        email="technique-vision-payload@example.com", password="pass"
+    )
+    with override_settings(MEDIA_ROOT=tmp_path):
+        review = TechniqueReview.objects.create(
+            user=user,
+            status=TechniqueReview.Status.PROCESSING,
+            video_file=SimpleUploadedFile(
+                "vision.mp4", b"fake-video", content_type="video/mp4"
+            ),
+        )
+    service = TechniqueReviewAnalysisService(review)
+    frames = [
+        {
+            "mime_type": "image/jpeg",
+            "data": "YWJj",
+            "timestamp_seconds": 1.25,
+        },
+        {
+            "mime_type": "image/jpeg",
+            "data": "ZGVm",
+            "timestamp_seconds": 2.5,
+        },
+    ]
+    candidates = [
+        {
+            "id": "Pullups",
+            "name": "Подтягивания на перекладине",
+            "name_en": "Pullups",
+            "name_ru": "Подтягивания на перекладине",
+            "equipment": "собственный вес",
+        }
+    ]
+    captured_payload = {}
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "detected_exercise": {
+                                        "name": "Подтягивания на перекладине",
+                                        "catalog_exercise_id": "Pullups",
+                                        "confidence": 0.9,
+                                        "alternatives": [],
+                                    },
+                                    "score": 70,
+                                    "summary": "Видео распознано.",
+                                    "issues": [],
+                                    "positive_notes": [],
+                                    "next_set_focus": [],
+                                    "camera_feedback": [],
+                                }
+                            )
+                        }
+                    }
+                ]
+            }
+
+    def fake_post(url, *, json, headers, timeout):
+        captured_payload["url"] = url
+        captured_payload["json"] = json
+        return FakeResponse()
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setenv("OPENROUTER_VISION_MODEL", "openai/gpt-4o-mini")
+    monkeypatch.setattr("workouts.technique.httpx.post", fake_post)
+
+    result = service._call_vision_llm(frames, candidates, forced_exercise=None)
+
+    content = captured_payload["json"]["messages"][1]["content"]
+    sent_images = [item for item in content if item["type"] == "image_url"]
+    assert result["detected_exercise"]["catalog_exercise_id"] == "Pullups"
+    assert len(sent_images) == 2
+    assert sent_images[0]["image_url"]["url"].startswith(
+        "data:image/jpeg;base64,YWJj"
+    )
+
+    log = LLMRequestLog.objects.filter(user=user, status="technique_ok").first()
+    assert log is not None
+    assert log.payload["model"] == "openai/gpt-4o-mini"
+    assert log.payload["image_count"] == 2
+    assert log.payload["selected_frame_timestamps_seconds"] == [1.25, 2.5]
+    logged_content = log.payload["messages"][1]["content"]
+    logged_images = [item for item in logged_content if item["type"] == "image_url"]
+    assert logged_images == [
+        {"type": "image_url", "image_url": {"url": "[base64-image]"}},
+        {"type": "image_url", "image_url": {"url": "[base64-image]"}},
+    ]
+    assert "YWJj" not in json.dumps(log.payload)
 
 
 @pytest.mark.django_db
