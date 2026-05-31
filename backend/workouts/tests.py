@@ -10,7 +10,7 @@ from uuid import uuid4
 import pytest
 from django.contrib.auth import get_user_model
 from django.core.management import call_command
-from django.core.files.uploadedfile import SimpleUploadedFile
+from django.core.files.uploadedfile import SimpleUploadedFile, TemporaryUploadedFile
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
 from django.test import override_settings
@@ -30,6 +30,7 @@ from workouts.models import (
     WorkoutWeighIn,
 )
 from workouts.recommendations import generate_recommendations_for_day
+from workouts.serializers import TechniqueReviewCreateSerializer
 from workouts.services import generate_daily_plan, template_matches_date
 
 User = get_user_model()
@@ -1230,6 +1231,56 @@ def test_technique_review_upload_can_return_processing_in_async_mode(
     assert TechniqueReview.objects.filter(
         user=user, status=TechniqueReview.Status.PROCESSING
     ).exists()
+
+
+@pytest.mark.django_db
+def test_technique_review_upload_accepts_temporary_uploaded_file(
+    monkeypatch, tmp_path
+):
+    user = User.objects.create_user(
+        email="technique-temp-upload@example.com", password="pass"
+    )
+    client = APIClient()
+    client.force_authenticate(user=user)
+
+    def fail_if_called(self, *, forced_exercise=None):
+        raise AssertionError("analysis must be handled by the worker")
+
+    seen_upload_types = []
+    original_validate = TechniqueReviewCreateSerializer.validate
+
+    def capture_upload_type(self, attrs):
+        seen_upload_types.append(type(attrs["video_file"]))
+        return original_validate(self, attrs)
+
+    monkeypatch.setattr(
+        "workouts.views.TechniqueReviewAnalysisService.analyze", fail_if_called
+    )
+    monkeypatch.setattr(
+        TechniqueReviewCreateSerializer, "validate", capture_upload_type
+    )
+
+    with override_settings(
+        FILE_UPLOAD_MAX_MEMORY_SIZE=1,
+        MEDIA_ROOT=tmp_path,
+        TECHNIQUE_ANALYSIS_MODE="async",
+    ):
+        response = client.post(
+            "/api/technique-reviews/",
+            {
+                "video": SimpleUploadedFile(
+                    "temporary-upload.mp4",
+                    b"fake-video-bytes" * 512,
+                    content_type="video/mp4",
+                )
+            },
+            format="multipart",
+        )
+
+    assert response.status_code == 201, response.content
+    assert response.data["status"] == "processing"
+    assert seen_upload_types == [TemporaryUploadedFile]
+    assert TechniqueReview.objects.filter(user=user).exists()
 
 
 @pytest.mark.django_db

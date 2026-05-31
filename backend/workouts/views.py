@@ -522,11 +522,14 @@ class TechniqueReviewListCreateView(APIView):
                 },
                 status=status.HTTP_429_TOO_MANY_REQUESTS,
             )
-        data = request.data.copy()
-        if "video_file" not in data and "video" in request.FILES:
-            data["video_file"] = request.FILES["video"]
+        upload = (
+            request.FILES.get("video_file")
+            or request.FILES.get("video")
+            or request.data.get("video_file")
+            or request.data.get("video")
+        )
         serializer = TechniqueReviewCreateSerializer(
-            data=data, context={"request": request}
+            data={"video_file": upload}, context={"request": request}
         )
         if not serializer.is_valid():
             errors = serializer.errors
