@@ -14,6 +14,7 @@ from django.db.models import Prefetch
 
 from django.utils import timezone
 
+from exercises.models import CustomExercise
 from programs.models import DayTemplate, ProgramFolder, TemplateExercise
 from agents.models import LLMRequestLog, LLMProgramMessage, LLMProgramThread
 from workouts.models import Exercise_DB, ExerciseMuscle
@@ -573,6 +574,9 @@ class LLMProgramChatService:
             "add_exercise": "add_exercise",
             "create_exercise": "add_exercise",
             "create_exercise_in_day": "add_exercise",
+            "create_custom_exercise": "create_custom_exercise",
+            "create_user_exercise": "create_custom_exercise",
+            "add_custom_exercise": "create_custom_exercise",
             "replace_exercise_in_day": "replace_exercise",
             "replace_exercise": "replace_exercise",
             "remove_exercise_from_day": "remove_exercise",
@@ -587,6 +591,8 @@ class LLMProgramChatService:
             raise LLMInvalidResponse("invalid_action_type")
         if action_type == "add_exercise":
             return self._add_exercise(action)
+        if action_type == "create_custom_exercise":
+            return self._create_custom_exercise(action)
         if action_type == "replace_exercise":
             return self._replace_exercise(action)
         if action_type == "remove_exercise":
@@ -618,6 +624,44 @@ class LLMProgramChatService:
             is_active=True,
         )
         return {"type": "add_exercise", "template_exercise_id": new_te.id}
+
+    def _create_custom_exercise(self, action: Dict[str, Any]) -> Dict[str, Any]:
+        day = self._resolve_day(action)
+        if not day:
+            raise LLMInvalidResponse(
+                "create_custom_exercise requires valid day_id/day_name"
+            )
+
+        exact_system_exercise = self._resolve_exact_system_exercise(action)
+        if exact_system_exercise:
+            system_action = dict(action)
+            system_action["exercise_id"] = exact_system_exercise.id
+            return self._add_exercise(system_action)
+
+        custom = self._build_or_get_custom_exercise(action)
+        defaults = self._build_custom_exercise_defaults(custom, action)
+        sort_order = (
+            day.template_exercises.aggregate(models.Max("sort_order")).get("sort_order__max")
+            or 0
+        ) + 1
+        new_te = TemplateExercise.objects.create(
+            template=day,
+            exercise=None,
+            custom_exercise=custom,
+            sort_order=sort_order,
+            set_override=defaults["sets"],
+            rep_override=defaults["reps"],
+            weight_override=defaults["weight"],
+            time_override=defaults["time"],
+            rest_override=defaults["rest"],
+            note=action.get("note") or "",
+            is_active=True,
+        )
+        return {
+            "type": "create_custom_exercise",
+            "custom_exercise_id": custom.id,
+            "template_exercise_id": new_te.id,
+        }
 
     def _replace_exercise(self, action: Dict[str, Any]) -> Dict[str, Any]:
         deactivate_id = action.get("deactivate_exercise_id")
@@ -742,6 +786,131 @@ class LLMProgramChatService:
             "rest": rest if rest is not None else exercise.default_rest,
         }
 
+    def _build_custom_exercise_defaults(
+        self, exercise: CustomExercise, action: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        sets = action.get("sets", action.get("default_sets"))
+        reps = action.get("reps", action.get("default_reps"))
+        weight = action.get("weight", action.get("default_weight"))
+        time = action.get("time", action.get("default_time"))
+        rest = action.get("rest", action.get("default_rest"))
+        return {
+            "sets": sets if sets is not None else exercise.default_sets,
+            "reps": reps if reps is not None else (exercise.default_reps if not exercise.has_time else None),
+            "weight": weight if weight is not None else (exercise.default_weight if exercise.has_weight else None),
+            "time": time if time is not None else (exercise.default_time if exercise.has_time else None),
+            "rest": rest if rest is not None else exercise.default_rest,
+        }
+
+    def _build_or_get_custom_exercise(self, action: Dict[str, Any]) -> CustomExercise:
+        name = self._clean_text(
+            action.get("custom_exercise_name")
+            or action.get("exercise_name")
+            or action.get("name"),
+            max_length=150,
+        )
+        target_muscles = self._clean_text(
+            action.get("target_muscles")
+            or action.get("muscles")
+            or action.get("muscle_groups"),
+            max_length=120,
+        )
+        if not name or not target_muscles:
+            raise LLMInvalidResponse(
+                "create_custom_exercise requires name and target_muscles"
+            )
+
+        has_weight = self._coerce_bool(action.get("has_weight"))
+        has_time = self._coerce_bool(action.get("has_time"))
+        if has_weight is None and has_time is None:
+            raise LLMInvalidResponse(
+                "create_custom_exercise requires has_weight or has_time"
+            )
+        has_weight = bool(has_weight) if has_weight is not None else False
+        has_time = bool(has_time) if has_time is not None else False
+
+        default_sets = self._positive_int(action.get("default_sets", action.get("sets")))
+        default_rest = self._positive_int(action.get("default_rest", action.get("rest")))
+        default_reps = self._positive_int(action.get("default_reps", action.get("reps")))
+        default_time = self._positive_int(action.get("default_time", action.get("time")))
+        default_weight = self._nullable_number(action.get("default_weight", action.get("weight")))
+
+        if default_sets is None or default_rest is None:
+            raise LLMInvalidResponse(
+                "create_custom_exercise requires default_sets and default_rest"
+            )
+        if has_time:
+            if default_time is None:
+                raise LLMInvalidResponse(
+                    "create_custom_exercise requires default_time for timed exercise"
+                )
+        elif default_reps is None:
+            raise LLMInvalidResponse(
+                "create_custom_exercise requires default_reps for rep-based exercise"
+            )
+
+        existing = next(
+            (
+                exercise
+                for exercise in CustomExercise.objects.filter(user=self.thread.user)
+                if exercise.name.casefold() == name.casefold()
+            ),
+            None,
+        )
+        if existing:
+            return existing
+
+        description = self._clean_text(action.get("description"), max_length=None) or ""
+        return CustomExercise.objects.create(
+            user=self.thread.user,
+            name=name,
+            description=description,
+            target_muscles=target_muscles,
+            has_weight=has_weight,
+            has_time=has_time,
+            default_weight=default_weight if has_weight else None,
+            default_time=default_time if has_time else None,
+            default_reps=default_reps or 10,
+            default_sets=default_sets,
+            default_rest=default_rest,
+        )
+
+    def _clean_text(self, value: Any, *, max_length: int | None) -> str:
+        text = str(value or "").strip()
+        if not text:
+            return ""
+        text = re.sub(r"\s+", " ", text)
+        return text[:max_length] if max_length else text
+
+    def _coerce_bool(self, value: Any) -> bool | None:
+        if isinstance(value, bool):
+            return value
+        if value is None:
+            return None
+        normalized = str(value).strip().lower()
+        if normalized in {"true", "1", "yes", "y", "да"}:
+            return True
+        if normalized in {"false", "0", "no", "n", "нет"}:
+            return False
+        return None
+
+    def _positive_int(self, value: Any) -> int | None:
+        if value is None or value == "":
+            return None
+        try:
+            number = int(float(value))
+        except (TypeError, ValueError):
+            return None
+        return number if number > 0 else None
+
+    def _nullable_number(self, value: Any) -> float | None:
+        if value is None or value == "":
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
     def _build_messages(
         self,
         user_message: str,
@@ -783,6 +952,10 @@ class LLMProgramChatService:
                 "В action передавай только параметры, которые действительно нужно изменить (не дублируй неизменные sets/reps/weight/time/rest). "
                 "Если пользователь указывает день недели (например, 'среда'), используй это как day_name. "
                 "Если такого дня в программе нет, все равно формируй действия с этим day_name — система создаст день автоматически. "
+                "Если пользователь просит добавить упражнение, которого нет в available_exercises, не подменяй его похожим молча. "
+                "Предложи создать пользовательское упражнение и верни action create_custom_exercise только когда пользователь явно согласился. "
+                "Для create_custom_exercise обязательны: day_id/day_name, exercise_name, target_muscles, has_weight, has_time, default_sets, default_rest, "
+                "а также default_reps для упражнений на повторы или default_time для timed/static упражнений. "
                 "Если пользователь просит помочь с выбором упражнения, обязательно предложи 2-4 варианта и коротко объясни, чем они отличаются и кому подходят. "
                 "Если пользователь просит 'как делать', дай краткую технику выполнения: исходное положение, движение, дыхание, типичные ошибки и безопасный диапазон нагрузки. "
                 "Не отказывай в таком объяснении по общим причинам, если запрос относится к обычным упражнениям из фитнес-каталога. "
@@ -796,18 +969,22 @@ class LLMProgramChatService:
                 " Сформируй действия в строгом JSON без Markdown: "
                 "{\"assistant_reply\": string, "
                 "\"actions\": [{"
-                "\"type\": \"add_exercise\"|\"replace_exercise\"|\"update_weight\", "
+                "\"type\": \"add_exercise\"|\"replace_exercise\"|\"update_weight\"|\"create_custom_exercise\", "
                 "\"day_id\": number?, \"day_name\": string?, "
                 "\"deactivate_exercise_id\": number?, "
                 "\"template_exercise_id\": number?, "
                 "\"exercise_id\": string?, \"exercise_name\": string?, "
                 "\"sets\": number|null?, \"reps\": number|null?, \"weight\": number|null?, "
-                "\"time\": number|null?, \"rest\": number|null?, \"note\": string?"
+                "\"time\": number|null?, \"rest\": number|null?, \"target_muscles\": string?, "
+                "\"has_weight\": boolean?, \"has_time\": boolean?, \"default_sets\": number?, "
+                "\"default_reps\": number?, \"default_time\": number?, \"default_rest\": number?, "
+                "\"default_weight\": number|null?, \"description\": string?, \"note\": string?"
                 "}]} "
                 "assistant_reply — кратко для человека (что предлагаешь, зачем). "
                 "Всегда заполняй exercise_name на русском для каждого action. "
                 "Передавай только действительно изменяемые параметры (не дублируй поля, которые должны остаться без изменений). "
-                "Используй exercise_id только из списка available_exercises; если даешь exercise_name, она должна совпадать с каталогом."
+                "Используй exercise_id только из списка available_exercises; если даешь exercise_name для системного упражнения, она должна совпадать с каталогом. "
+                "create_custom_exercise используй только для упражнения, которого нет в available_exercises, и только после явного согласия пользователя."
             )
         context = {
             "program": self._serialize_program(),
@@ -838,7 +1015,10 @@ class LLMProgramChatService:
             "comment": folder.comment,
             "days": [],
         }
-        templates = folder.templates.all().order_by("sort_order", "id").prefetch_related("template_exercises__exercise")
+        templates = folder.templates.all().order_by("sort_order", "id").prefetch_related(
+            "template_exercises__exercise",
+            "template_exercises__custom_exercise",
+        )
         for day in templates:
             day_entry = {
                 "id": day.id,
@@ -850,13 +1030,30 @@ class LLMProgramChatService:
                 "exercises": [],
             }
             for te in day.template_exercises.order_by("sort_order", "id"):
-                if not te.exercise:
+                source = te.exercise or te.custom_exercise
+                if not source:
                     continue
+                if te.exercise:
+                    source_name = (
+                        te.exercise.name_ru
+                        or te.exercise.english_name
+                        or te.exercise.name_en
+                    )
+                    exercise_id = te.exercise.id
+                    custom_exercise_id = None
+                    source_type = "system"
+                else:
+                    source_name = te.custom_exercise.name
+                    exercise_id = None
+                    custom_exercise_id = te.custom_exercise.id
+                    source_type = "custom"
                 day_entry["exercises"].append(
                     {
                         "id": te.id,
-                        "exercise_id": te.exercise.id,
-                        "name": te.exercise.name_ru or te.exercise.english_name or te.exercise.name_en,
+                        "exercise_id": exercise_id,
+                        "custom_exercise_id": custom_exercise_id,
+                        "name": source_name,
+                        "source": source_type,
                         "is_active": te.is_active,
                         "sets": te.set_override,
                         "reps": te.rep_override,
@@ -1269,6 +1466,9 @@ class LLMProgramChatService:
             "add_exercise": "add_exercise",
             "create_exercise": "add_exercise",
             "create_exercise_in_day": "add_exercise",
+            "create_custom_exercise": "create_custom_exercise",
+            "create_user_exercise": "create_custom_exercise",
+            "add_custom_exercise": "create_custom_exercise",
             "replace_exercise_in_day": "replace_exercise",
             "replace_exercise": "replace_exercise",
             "remove_exercise_from_day": "remove_exercise",
@@ -1294,7 +1494,8 @@ class LLMProgramChatService:
                 continue
             if normalized_type:
                 action["type"] = normalized_type
-            self._attach_localized_exercise_name(action)
+            if normalized_type != "create_custom_exercise":
+                self._attach_localized_exercise_name(action)
             self._attach_day_name(action)
             self._drop_unchanged_action_fields(action)
             if action.get("type") == "update_weight":
@@ -1524,6 +1725,28 @@ class LLMProgramChatService:
             ).first()
             if relaxed_from_id:
                 return relaxed_from_id
+        return None
+
+    def _resolve_exact_system_exercise(self, action: Dict[str, Any]) -> Exercise_DB | None:
+        candidates = [
+            action.get("exercise_id"),
+            action.get("exercise_name"),
+            action.get("custom_exercise_name"),
+            action.get("name"),
+        ]
+        for raw in candidates:
+            raw_value = str(raw or "").strip()
+            value = raw_value.replace("_", " ").strip()
+            if not raw_value:
+                continue
+            exact = Exercise_DB.objects.filter(
+                models.Q(id__iexact=raw_value)
+                | models.Q(id__iexact=value)
+                | models.Q(name_ru__iexact=value)
+                | models.Q(name_en__iexact=value)
+            ).first()
+            if exact:
+                return exact
         return None
 
     def _resolve_exercise_by_tokens(self, raw: str) -> Exercise_DB | None:

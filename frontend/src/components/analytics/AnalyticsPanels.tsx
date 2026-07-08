@@ -9,6 +9,15 @@ import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YA
 import clsx from "clsx";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
+import { describeSimpleAgentAction } from "@/components/agents/actionText";
+import { ExerciseInfoModal } from "@/components/exercises/ExerciseInfoModal";
+import { ExerciseMentionText } from "@/components/exercises/ExerciseMentionText";
+import {
+  ExerciseCatalogItem,
+  ExerciseInfoState,
+  ExerciseReference,
+  buildExerciseReference,
+} from "@/components/exercises/exerciseInfo";
 
 import { ProgramTrendPanel } from "@/components/analytics/ProgramTrendPanel";
 
@@ -80,6 +89,7 @@ export const AnalyticsPanels = () => {
   const [chatError, setChatError] = useState<string | null>(null);
   const [chatApplying, setChatApplying] = useState(false);
   const [chatCancelling, setChatCancelling] = useState(false);
+  const [infoExercise, setInfoExercise] = useState<ExerciseInfoState | null>(null);
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
 
   const { data: daily } = useSWR(
@@ -98,6 +108,14 @@ export const AnalyticsPanels = () => {
   const { data: folders } = useSWR(
     token ? ["/api/programs/folders/", token] : null,
     ([url]) => apiFetch<ProgramFolder[]>(url as string, { token: token ?? undefined }),
+  );
+  const { data: exerciseCatalog } = useSWR(
+    token && chatOpen ? ["/api/exercises/", token] : null,
+    ([url]) => apiFetch<ExerciseCatalogItem[]>(url as string, { token: token ?? undefined }),
+    {
+      revalidateOnFocus: false,
+      keepPreviousData: true,
+    },
   );
   const { data: chatMessages, mutate: refreshChat } = useSWR(
     token && chatThreadId ? [`/api/llm-agent/threads/${chatThreadId}/messages/`, token] : null,
@@ -153,12 +171,26 @@ export const AnalyticsPanels = () => {
         .slice(-1)[0] ?? null,
     [chatMessages],
   );
+  const chatExerciseReferences = useMemo<ExerciseReference[]>(
+    () => (exerciseCatalog ?? []).map((exercise) => buildExerciseReference({ exercise })),
+    [exerciseCatalog],
+  );
 
   const scrollChatToBottom = useCallback(() => {
     const container = chatScrollRef.current;
     if (!container) return;
     requestAnimationFrame(() => {
       container.scrollTop = container.scrollHeight;
+    });
+  }, []);
+
+  const openExerciseInfo = useCallback((exercise: ExerciseReference) => {
+    setInfoExercise({
+      name: exercise.name,
+      text: exercise.text,
+      images: exercise.images,
+      sourceId: exercise.sourceId,
+      folderId: exercise.folderId,
     });
   }, []);
 
@@ -400,14 +432,25 @@ export const AnalyticsPanels = () => {
                   <p className="text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500">
                     {msg.role === "assistant" ? "Ассистент" : "Вы"}
                   </p>
-                  <p className="whitespace-pre-line text-sm text-slate-800 dark:text-slate-100">{msg.content}</p>
+                  <ExerciseMentionText
+                    message={{ role: msg.role, content: msg.content, actions: msg.actions }}
+                    references={chatExerciseReferences}
+                    onExerciseClick={openExerciseInfo}
+                    className="text-slate-800 dark:text-slate-100"
+                  />
                   {msg.actions && Array.isArray(msg.actions) && msg.actions.length > 0 && (
                     <ul className="mt-2 list-none space-y-1 text-xs text-slate-600 dark:text-slate-300">
                       {msg.actions.map((action: Record<string, any>, index: number) => (
                         <li key={index} className="rounded-md bg-slate-100/80 px-2 py-1 dark:bg-slate-700/50">
-                          {action.type || "изменение"}
-                          {action.exercise_name ? ` • ${action.exercise_name}` : ""}
-                          {action.day_name ? ` • ${action.day_name}` : ""}
+                          <ExerciseMentionText
+                            message={{
+                              role: "assistant",
+                              content: describeSimpleAgentAction(action),
+                            }}
+                            references={chatExerciseReferences}
+                            onExerciseClick={openExerciseInfo}
+                            className="text-xs text-slate-600 dark:text-slate-300"
+                          />
                         </li>
                       ))}
                     </ul>
@@ -462,6 +505,10 @@ export const AnalyticsPanels = () => {
           </div>
         </div>
       </Modal>
+      <ExerciseInfoModal
+        exercise={infoExercise}
+        onClose={() => setInfoExercise(null)}
+      />
     </div>
   );
 };

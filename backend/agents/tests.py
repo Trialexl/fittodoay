@@ -9,6 +9,7 @@ from rest_framework.test import APIClient
 
 from agents.models import LLMProgramMessage, LLMProgramThread, LLMRequestLog
 from agents.services import LLMProgramChatService, LLMUnavailableError
+from exercises.models import CustomExercise
 from programs.models import DayTemplate, ProgramFolder, TemplateExercise
 from workouts.models import Exercise_DB, WorkoutDay, WorkoutSetLog
 
@@ -489,6 +490,219 @@ def test_apply_actions_accepts_action_type_alias_for_add_exercise():
 
     assert response.status_code == 200
     assert TemplateExercise.objects.filter(template=day, exercise_id="alias_crunch").exists()
+
+
+@pytest.mark.django_db
+def test_apply_actions_creates_custom_exercise_and_adds_to_day():
+    user = User.objects.create_user(email="agent_custom_create@example.com", password="pass")
+    folder = ProgramFolder.objects.create(user=user, name="Силовая custom")
+    day = DayTemplate.objects.create(
+        folder=folder,
+        name="День 1",
+        schedule_type=DayTemplate.ScheduleType.WEEKLY,
+        schedule_config={"days_of_week": [0]},
+    )
+    thread = LLMProgramThread.objects.create(user=user, program=folder, title="Чат")
+    message = LLMProgramMessage.objects.create(
+        thread=thread,
+        role=LLMProgramMessage.Role.ASSISTANT,
+        content="Создам пользовательское упражнение",
+        actions=[
+            {
+                "type": "create_custom_exercise",
+                "day_id": day.id,
+                "exercise_name": "Подтягивания на гравитроне",
+                "target_muscles": "широчайшие/бицепс",
+                "has_weight": True,
+                "has_time": False,
+                "default_sets": 3,
+                "default_reps": 8,
+                "default_rest": 90,
+                "default_weight": 20,
+                "description": "Подтягивания с регулируемой поддержкой.",
+            }
+        ],
+        proposal_status=LLMProgramMessage.ProposalStatus.PENDING,
+    )
+
+    client = APIClient()
+    client.force_authenticate(user=user)
+    response = client.post(
+        f"/api/llm-agent/threads/{thread.id}/apply/",
+        {"message_id": message.id},
+        format="json",
+    )
+
+    assert response.status_code == 200
+    custom = CustomExercise.objects.get(user=user, name="Подтягивания на гравитроне")
+    created = TemplateExercise.objects.get(template=day, custom_exercise=custom)
+    assert created.exercise is None
+    assert created.set_override == 3
+    assert created.rep_override == 8
+    assert float(created.weight_override) == 20.0
+    assert created.rest_override == 90
+
+
+@pytest.mark.django_db
+def test_apply_actions_rejects_custom_exercise_without_required_fields():
+    user = User.objects.create_user(email="agent_custom_invalid@example.com", password="pass")
+    folder = ProgramFolder.objects.create(user=user, name="Силовая custom invalid")
+    day = DayTemplate.objects.create(
+        folder=folder,
+        name="День 1",
+        schedule_type=DayTemplate.ScheduleType.WEEKLY,
+        schedule_config={"days_of_week": [0]},
+    )
+    thread = LLMProgramThread.objects.create(user=user, program=folder, title="Чат")
+    message = LLMProgramMessage.objects.create(
+        thread=thread,
+        role=LLMProgramMessage.Role.ASSISTANT,
+        content="Плохое кастомное упражнение",
+        actions=[
+            {
+                "type": "create_custom_exercise",
+                "day_id": day.id,
+                "exercise_name": "Неполное упражнение",
+                "has_weight": True,
+                "default_sets": 3,
+            }
+        ],
+        proposal_status=LLMProgramMessage.ProposalStatus.PENDING,
+    )
+
+    client = APIClient()
+    client.force_authenticate(user=user)
+    response = client.post(
+        f"/api/llm-agent/threads/{thread.id}/apply/",
+        {"message_id": message.id},
+        format="json",
+    )
+
+    assert response.status_code == 200
+    applied = response.data.get("applied", [])
+    assert applied[0]["status"] == "skipped"
+    assert "create_custom_exercise requires" in applied[0]["reason"]
+    assert not CustomExercise.objects.filter(user=user).exists()
+    assert not TemplateExercise.objects.filter(template=day, custom_exercise__isnull=False).exists()
+
+
+@pytest.mark.django_db
+def test_apply_actions_reuses_existing_custom_exercise_by_name():
+    user = User.objects.create_user(email="agent_custom_reuse@example.com", password="pass")
+    folder = ProgramFolder.objects.create(user=user, name="Силовая custom reuse")
+    day = DayTemplate.objects.create(
+        folder=folder,
+        name="День 1",
+        schedule_type=DayTemplate.ScheduleType.WEEKLY,
+        schedule_config={"days_of_week": [0]},
+    )
+    custom = CustomExercise.objects.create(
+        user=user,
+        name="Подтягивания на гравитроне",
+        target_muscles="спина/бицепс",
+        has_weight=True,
+        has_time=False,
+        default_sets=3,
+        default_reps=8,
+        default_rest=90,
+    )
+    thread = LLMProgramThread.objects.create(user=user, program=folder, title="Чат")
+    message = LLMProgramMessage.objects.create(
+        thread=thread,
+        role=LLMProgramMessage.Role.ASSISTANT,
+        content="Повторно добавлю кастомное",
+        actions=[
+            {
+                "type": "create_custom_exercise",
+                "day_id": day.id,
+                "exercise_name": "подтягивания на гравитроне",
+                "target_muscles": "широчайшие/бицепс",
+                "has_weight": True,
+                "has_time": False,
+                "default_sets": 4,
+                "default_reps": 10,
+                "default_rest": 120,
+            }
+        ],
+        proposal_status=LLMProgramMessage.ProposalStatus.PENDING,
+    )
+
+    client = APIClient()
+    client.force_authenticate(user=user)
+    response = client.post(
+        f"/api/llm-agent/threads/{thread.id}/apply/",
+        {"message_id": message.id},
+        format="json",
+    )
+
+    assert response.status_code == 200
+    assert CustomExercise.objects.filter(user=user, name__iexact="Подтягивания на гравитроне").count() == 1
+    created = TemplateExercise.objects.get(template=day, custom_exercise=custom)
+    assert created.set_override == 4
+    assert created.rep_override == 10
+    assert created.rest_override == 120
+
+
+@pytest.mark.django_db
+def test_create_custom_exercise_uses_exact_system_match_instead_of_duplicate():
+    user = User.objects.create_user(email="agent_custom_system_exact@example.com", password="pass")
+    folder = ProgramFolder.objects.create(user=user, name="Силовая custom exact")
+    day = DayTemplate.objects.create(
+        folder=folder,
+        name="День 1",
+        schedule_type=DayTemplate.ScheduleType.WEEKLY,
+        schedule_config={"days_of_week": [0]},
+    )
+    Exercise_DB.objects.create(
+        id="exact_assisted_pullup",
+        name_en="Assisted Pull Up",
+        name_ru="Подтягивания на гравитроне",
+        force_en="pull",
+        force_ru="",
+        level_en="beginner",
+        level_ru="начальный",
+        mechanic_en="compound",
+        mechanic_ru="",
+        equipment_en="machine",
+        equipment_ru="тренажер",
+        category_en="strength",
+        category_ru="Силовая",
+        default_sets=3,
+        default_reps=8,
+        default_rest=90,
+    )
+    thread = LLMProgramThread.objects.create(user=user, program=folder, title="Чат")
+    message = LLMProgramMessage.objects.create(
+        thread=thread,
+        role=LLMProgramMessage.Role.ASSISTANT,
+        content="Добавлю существующее системное упражнение",
+        actions=[
+            {
+                "type": "create_custom_exercise",
+                "day_id": day.id,
+                "exercise_name": "Подтягивания на гравитроне",
+                "target_muscles": "спина/бицепс",
+                "has_weight": True,
+                "has_time": False,
+                "default_sets": 3,
+                "default_reps": 8,
+                "default_rest": 90,
+            }
+        ],
+        proposal_status=LLMProgramMessage.ProposalStatus.PENDING,
+    )
+
+    client = APIClient()
+    client.force_authenticate(user=user)
+    response = client.post(
+        f"/api/llm-agent/threads/{thread.id}/apply/",
+        {"message_id": message.id},
+        format="json",
+    )
+
+    assert response.status_code == 200
+    assert not CustomExercise.objects.filter(user=user).exists()
+    assert TemplateExercise.objects.filter(template=day, exercise_id="exact_assisted_pullup").exists()
 
 
 @pytest.mark.django_db

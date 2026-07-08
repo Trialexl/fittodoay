@@ -10,6 +10,15 @@ import { Modal } from "@/components/ui/Modal";
 import { AdjustNumberControl } from "@/components/workout/AdjustNumberControl";
 import { RestTimerOverlay } from "@/components/workout/RestTimerOverlay";
 import { ExecutionTimerOverlay } from "@/components/workout/ExecutionTimerOverlay";
+import { ExerciseInfoModal } from "@/components/exercises/ExerciseInfoModal";
+import { ExerciseMentionText } from "@/components/exercises/ExerciseMentionText";
+import {
+  ExerciseCatalogItem,
+  ExerciseInfoState,
+  ExerciseReference,
+  buildExerciseInfoText,
+  buildExerciseReference,
+} from "@/components/exercises/exerciseInfo";
 import { useOfflineWorkoutQueue } from "@/hooks/useOfflineWorkoutQueue";
 import { useRestTimer } from "@/hooks/useRestTimer";
 import { ApiError, apiFetch, resolveApiUrl, resolveApiUrlWithParams } from "@/lib/api";
@@ -75,14 +84,6 @@ type ExerciseImage = {
   path: string;
 };
 
-type InfoExerciseState = {
-  name: string;
-  text: string;
-  images: ExerciseImage[];
-  sourceId: number;
-  folderId: number;
-};
-
 type TrendSeriesPoint = {
   date: string;
   load: number | null;
@@ -116,14 +117,8 @@ type ExerciseTrendMode = "load" | "average_weight";
 
 type ExercisePayload = {
   template_exercise_id: number;
-  source: {
+  source: ExerciseCatalogItem & {
     type: string;
-    id: number;
-    name: string;
-    description?: string | { text?: string } | null;
-    target_muscles?: string | null;
-    difficulty?: string | null;
-    images?: ExerciseImage[];
   };
   defaults: {
     reps: number | null;
@@ -414,13 +409,6 @@ const parseTargetMuscles = (value?: string | null) =>
 const getExerciseMuscles = (exercise: ExercisePayload) =>
   parseTargetMuscles(exercise.source.target_muscles);
 
-const buildExerciseImageUrl = (path: string) => {
-  const encodedPath = path
-    .split("/")
-    .map((segment) => encodeURIComponent(segment))
-    .join("/");
-  return resolveApiUrl(`/static/${encodedPath}`);
-};
 const buildMusicTrackUrl = (path: string, token?: string | null) => {
   if (!token) return resolveApiUrl(path);
   return resolveApiUrlWithParams(path, { token });
@@ -712,30 +700,6 @@ const getProposalStatusMeta = (status: ChatMessage["proposal_status"]) => {
   }
 };
 
-const getChatMessageContent = (msg: ChatMessage) => {
-  if (msg.role !== "assistant") return msg.content;
-  const trimmed = msg.content.trim();
-  if (!trimmed) return "";
-  if (!(trimmed.startsWith("{") && trimmed.includes("assistant_reply"))) {
-    return msg.content;
-  }
-  try {
-    const parsed = JSON.parse(trimmed);
-    const reply =
-      (typeof parsed.assistant_reply === "string" && parsed.assistant_reply) ||
-      (typeof parsed.reply === "string" && parsed.reply) ||
-      (typeof parsed.message === "string" && parsed.message) ||
-      (typeof parsed.text === "string" && parsed.text);
-    if (reply) return reply;
-  } catch {
-    const malformedMatch = trimmed.match(/"assistant_reply"\s*:\s*"([\s\S]*)$/);
-    if (malformedMatch?.[1]) {
-      return malformedMatch[1].replace(/\\"/g, '"').replace(/\\n/g, "\n").trim();
-    }
-  }
-  return msg.content;
-};
-
 const normalizeExerciseName = (value: string) =>
   value.toLowerCase().replace(/\s+/g, " ").trim();
 const normalizeDayName = (value: string) =>
@@ -885,23 +849,23 @@ const normalizeNullableNumber = (value: unknown): number | null | undefined => {
 const getProposedParams = (action: Record<string, any>): ExerciseParamsMeta => ({
   sets: (() => {
     const source = action.parameters ?? action.params ?? action.changes ?? action;
-    return normalizeNullableNumber(source.sets ?? source.set_override ?? source.set) ?? null;
+    return normalizeNullableNumber(source.sets ?? source.default_sets ?? source.set_override ?? source.set) ?? null;
   })(),
   reps: (() => {
     const source = action.parameters ?? action.params ?? action.changes ?? action;
-    return normalizeNullableNumber(source.reps ?? source.rep_override ?? source.rep) ?? null;
+    return normalizeNullableNumber(source.reps ?? source.default_reps ?? source.rep_override ?? source.rep) ?? null;
   })(),
   weight: (() => {
     const source = action.parameters ?? action.params ?? action.changes ?? action;
-    return normalizeNullableNumber(source.weight ?? source.weight_override) ?? null;
+    return normalizeNullableNumber(source.weight ?? source.default_weight ?? source.weight_override) ?? null;
   })(),
   time: (() => {
     const source = action.parameters ?? action.params ?? action.changes ?? action;
-    return normalizeNullableNumber(source.time ?? source.time_override) ?? null;
+    return normalizeNullableNumber(source.time ?? source.default_time ?? source.time_override) ?? null;
   })(),
   rest: (() => {
     const source = action.parameters ?? action.params ?? action.changes ?? action;
-    return normalizeNullableNumber(source.rest ?? source.rest_override) ?? null;
+    return normalizeNullableNumber(source.rest ?? source.default_rest ?? source.rest_override) ?? null;
   })(),
 });
 
@@ -992,6 +956,9 @@ const describeAction = (
       "текущее упражнение";
     return `⇄ Заменить: ${oldExercise} → ${exercise}${day}${tail}`;
   }
+  if (actionType.includes("create_custom")) {
+    return `＋ Создать пользовательское: ${exercise}${day}${tail}`;
+  }
   if (actionType.includes("add") || actionType.includes("create")) {
     return `＋ Добавить: ${exercise}${day}${tail}`;
   }
@@ -1011,6 +978,9 @@ const humanizeChatError = (raw: string) => {
   }
   if (raw.includes("add_exercise requires valid day_id/day_name and exercise_id/exercise_name")) {
     return "Не удалось применить добавление: ассистент не указал корректный день или упражнение.";
+  }
+  if (raw.includes("create_custom_exercise requires")) {
+    return "Не удалось создать пользовательское упражнение: ассистент не передал обязательные параметры.";
   }
   if (raw.includes("invalid_action_type")) {
     return "Ассистент прислал изменение без типа действия. Запросите рекомендацию ещё раз.";
@@ -1208,9 +1178,7 @@ export const Checklist = ({
   const [weighInValue, setWeighInValue] = useState("");
   const [weighInSaving, setWeighInSaving] = useState(false);
   const [weighInError, setWeighInError] = useState<string | null>(null);
-  const [infoExercise, setInfoExercise] = useState<InfoExerciseState | null>(null);
-  const [infoTab, setInfoTab] = useState<"overview" | "stats">("overview");
-  const [infoImageIndex, setInfoImageIndex] = useState(0);
+  const [infoExercise, setInfoExercise] = useState<ExerciseInfoState | null>(null);
   const [expandedFolders, setExpandedFolders] = useState<Record<number, boolean>>({});
   const [expandedTemplates, setExpandedTemplates] = useState<Record<number, Record<number, boolean>>>({});
   const [expandedExercises, setExpandedExercises] = useState<Record<number, boolean>>({});
@@ -1221,12 +1189,6 @@ export const Checklist = ({
   const [openRecommendationFolders, setOpenRecommendationFolders] = useState<Record<number, boolean>>({});
   const [recommendationsLoadedDate, setRecommendationsLoadedDate] = useState<string | null>(null);
   const [recommendationsLoading, setRecommendationsLoading] = useState(false);
-  useEffect(() => {
-    setInfoImageIndex(0);
-  }, [infoExercise]);
-  useEffect(() => {
-    setInfoTab("overview");
-  }, [infoExercise]);
   const [recommendationsSaving, setRecommendationsSaving] = useState<number | null>(null);
   const [recommendationsError, setRecommendationsError] = useState<string | null>(null);
   const [recommendationsApplied, setRecommendationsApplied] = useState<Record<number, boolean>>({});
@@ -1294,8 +1256,17 @@ export const Checklist = ({
     );
   }, [plan?.id, restOverlay, showSystemNotification]);
 
+  const { data: exerciseCatalog } = useSWR(
+    auth.token && chatState.open ? ["/api/exercises/", auth.token] : null,
+    ([url, token]) => apiFetch<ExerciseCatalogItem[]>(url as string, { token: token as string }),
+    {
+      revalidateOnFocus: false,
+      keepPreviousData: true,
+    },
+  );
+
   const { data: infoTrendData, isLoading: infoTrendLoading } = useSWR(
-    auth.token && infoExercise && infoTab === "stats"
+    auth.token && infoExercise?.folderId
       ? ["/api/analytics/program-trends/?range=half-year&granularity=day", auth.token]
       : null,
     ([url, token]) => apiFetch<TrendResponse>(url as string, { token: token as string }),
@@ -2411,6 +2382,49 @@ export const Checklist = ({
     });
     return map;
   }, [plan]);
+  const exerciseCatalogById = useMemo(() => {
+    const map = new Map<number, ExerciseCatalogItem>();
+    (exerciseCatalog ?? []).forEach((exercise) => {
+      map.set(exercise.id, exercise);
+    });
+    return map;
+  }, [exerciseCatalog]);
+  const chatExerciseReferences = useMemo(() => {
+    const bySourceId = new Map<number, ExerciseReference>();
+
+    (exerciseCatalog ?? []).forEach((exercise) => {
+      bySourceId.set(exercise.id, buildExerciseReference({ exercise }));
+    });
+
+    plan?.folders.forEach((folder) => {
+      folder.templates.forEach((template) => {
+        template.exercises.forEach((exercise) => {
+          const catalogMatch = exerciseCatalogById.get(exercise.source.id);
+          const reference = buildExerciseReference({
+            exercise: catalogMatch ?? exercise.source,
+            displayName: exercise.source.name,
+            folderId: folder.id,
+            note: exercise.note,
+          });
+          const existing = bySourceId.get(reference.sourceId);
+          if (!existing) {
+            bySourceId.set(reference.sourceId, reference);
+            return;
+          }
+          bySourceId.set(reference.sourceId, {
+            ...existing,
+            name: existing.folderId ? existing.name : reference.name,
+            text: existing.folderId ? existing.text : reference.text,
+            images: existing.images.length ? existing.images : reference.images,
+            folderId: existing.folderId ?? reference.folderId,
+            aliases: Array.from(new Set([...existing.aliases, ...reference.aliases])),
+          });
+        });
+      });
+    });
+
+    return Array.from(bySourceId.values());
+  }, [exerciseCatalog, exerciseCatalogById, plan]);
   const {
     pendingLogs,
     pendingCount,
@@ -2925,25 +2939,16 @@ export const Checklist = ({
 
   const closeInfoModal = () => {
     setInfoExercise(null);
-    setInfoImageIndex(0);
     setInfoTrendMode("load");
   };
 
-  const showPrevInfoImage = () => {
-    setInfoImageIndex((prev) => {
-      if (!infoExercise || infoExercise.images.length <= 1) {
-        return 0;
-      }
-      return prev === 0 ? infoExercise.images.length - 1 : prev - 1;
-    });
-  };
-
-  const showNextInfoImage = () => {
-    setInfoImageIndex((prev) => {
-      if (!infoExercise || infoExercise.images.length <= 1) {
-        return 0;
-      }
-      return prev === infoExercise.images.length - 1 ? 0 : prev + 1;
+  const openExerciseInfo = (exercise: ExerciseReference | ExerciseInfoState) => {
+    setInfoExercise({
+      name: exercise.name,
+      text: exercise.text,
+      images: exercise.images,
+      sourceId: exercise.sourceId,
+      folderId: exercise.folderId,
     });
   };
 
@@ -2981,29 +2986,6 @@ export const Checklist = ({
     } catch (error: any) {
       setEditError(error?.message ?? "Не удалось удалить");
     }
-  };
-
-  const buildExerciseInfoText = (exercise: ExercisePayload) => {
-    const parts: string[] = [];
-    const difficulty = exercise.source.difficulty?.trim();
-    if (difficulty) {
-      parts.push(`Сложность: ${difficulty}`);
-    }
-    const muscles = getExerciseMuscles(exercise);
-    if (muscles.length) {
-      parts.push(`Мышцы: ${muscles.join(", ")}`);
-    }
-    const descriptionText =
-      typeof exercise.source.description === "string"
-        ? exercise.source.description
-        : exercise.source.description?.text ?? "";
-    if (descriptionText) {
-      parts.push(descriptionText);
-    }
-    if (exercise.note) {
-      parts.push(exercise.note);
-    }
-    return parts.join("\n\n");
   };
 
   const handleRestFieldChange = (field: "reps" | "weight" | "time", value: string) => {
@@ -3564,11 +3546,6 @@ export const Checklist = ({
         : infoExerciseTrend.points.filter((point) => point.load > 0),
     [infoExerciseTrend.points, infoTrendMode],
   );
-
-  const activeInfoImage =
-    infoExercise && infoExercise.images.length > 0
-      ? infoExercise.images[Math.min(infoImageIndex, infoExercise.images.length - 1)]
-      : null;
   const currentWeighInWeight = weighInData?.weight_kg ?? plan?.weigh_in?.weight_kg;
   const currentWeighInNumeric =
     currentWeighInWeight !== null && currentWeighInWeight !== undefined
@@ -3871,7 +3848,7 @@ export const Checklist = ({
                         const completedSets = exercise.sets.filter((set) =>
                           getLogForSet(exercise.template_exercise_id, set.set_index),
                         ).length;
-                        const exerciseInfo = buildExerciseInfoText(exercise);
+                        const exerciseInfo = buildExerciseInfoText(exercise.source, exercise.note);
                         const canShowInfo = Boolean(exerciseInfo);
                         return (
                           <div
@@ -3917,7 +3894,7 @@ export const Checklist = ({
                                     className="inline-flex h-5 w-5 items-center justify-center text-primary transition hover:text-primary/80 focus:outline-none focus:ring-2 focus:ring-primary/40"
                                     onClick={(event) => {
                                       event.stopPropagation();
-                                      setInfoExercise({
+                                      openExerciseInfo({
                                         name: exercise.source.name,
                                         text: exerciseInfo ?? "",
                                         images: exercise.source.images ?? [],
@@ -3929,7 +3906,7 @@ export const Checklist = ({
                                       if (event.key === "Enter" || event.key === " ") {
                                         event.preventDefault();
                                         event.stopPropagation();
-                                        setInfoExercise({
+                                        openExerciseInfo({
                                           name: exercise.source.name,
                                           text: exerciseInfo ?? "",
                                           images: exercise.source.images ?? [],
@@ -4631,28 +4608,35 @@ export const Checklist = ({
                   <p className="text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500">
                     {msg.role === "assistant" ? "Ассистент" : "Вы"}
                   </p>
-                  <p className="whitespace-pre-line text-sm text-slate-800 dark:text-slate-100">
-                    {getChatMessageContent(msg)}
-                  </p>
+                  <ExerciseMentionText
+                    message={{ role: msg.role, content: msg.content, actions: msg.actions }}
+                    references={chatExerciseReferences}
+                    onExerciseClick={openExerciseInfo}
+                    className="text-slate-800 dark:text-slate-100"
+                  />
                   {msg.actions && Array.isArray(msg.actions) && msg.actions.length > 0 && (
                     <ul className="mt-2 list-none space-y-1 text-xs text-slate-600 dark:text-slate-300">
                       {msg.actions.map((action: Record<string, any>, index: number) => {
                         const isLatestPending = latestPendingProposal?.id === msg.id && msg.proposal_status === "pending";
+                        const actionText = describeAction(
+                          action,
+                          exerciseParamsByTemplateExerciseId,
+                          exerciseParamsByExerciseId,
+                          exerciseNameByTemplateExerciseId,
+                          exerciseNameByExerciseId,
+                          exerciseParamsByNameAndDay,
+                        );
                         return (
                           <li
                             key={index}
                             className="flex items-start justify-between gap-2 rounded-md bg-slate-100/80 px-2 py-1 dark:bg-slate-700/50"
                           >
-                            <span>
-                              {describeAction(
-                                action,
-                                exerciseParamsByTemplateExerciseId,
-                                exerciseParamsByExerciseId,
-                                exerciseNameByTemplateExerciseId,
-                                exerciseNameByExerciseId,
-                                exerciseParamsByNameAndDay,
-                              )}
-                            </span>
+                            <ExerciseMentionText
+                              message={{ role: "assistant", content: actionText }}
+                              references={chatExerciseReferences}
+                              onExerciseClick={openExerciseInfo}
+                              className="text-xs text-slate-600 dark:text-slate-300"
+                            />
                             {isLatestPending && (
                               <button
                                 type="button"
@@ -4754,142 +4738,62 @@ export const Checklist = ({
         onFinishEarly={finishExecutionEarly}
       />
 
-      <Modal
-        open={Boolean(infoExercise)}
-        title={infoExercise ? infoExercise.name : undefined}
+      <ExerciseInfoModal
+        exercise={infoExercise}
         onClose={closeInfoModal}
-        className="max-w-2xl"
-      >
-        {infoExercise && (
-          <div className="space-y-4">
-            <div className="flex items-center gap-2 rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
-              <button
-                type="button"
-                onClick={() => setInfoTab("overview")}
-                className={clsx(
-                  "flex-1 rounded-lg px-3 py-2 text-sm font-semibold transition",
-                  infoTab === "overview"
-                    ? "bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-slate-100"
-                    : "text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-slate-100",
-                )}
-              >
-                Описание
-              </button>
-              <button
-                type="button"
-                onClick={() => setInfoTab("stats")}
-                className={clsx(
-                  "flex-1 rounded-lg px-3 py-2 text-sm font-semibold transition",
-                  infoTab === "stats"
-                    ? "bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-slate-100"
-                    : "text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-slate-100",
-                )}
-              >
-                <span className="inline-flex items-center justify-center gap-1.5">
-                  <StatsIcon className={infoTab === "stats" ? "text-primary" : ""} />
-                  Статистика
-                </span>
-              </button>
-            </div>
-
-            {infoTab === "overview" ? (
-              <>
-                {infoExercise.text && (
-                  <p className="whitespace-pre-line text-sm text-slate-600 dark:text-slate-300">{infoExercise.text}</p>
-                )}
-                {activeInfoImage && (
-                  <div className="space-y-2">
-                    <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={buildExerciseImageUrl(activeInfoImage.path)}
-                        alt={`${infoExercise.name} — шаг ${infoImageIndex + 1}`}
-                        className="h-64 w-full max-w-full bg-slate-50 object-contain dark:bg-slate-900"
-                      />
-                      {infoExercise.images.length > 1 && (
-                        <>
-                          <button
-                            type="button"
-                            className="absolute left-3 top-1/2 -translate-y-1/2 rounded-full bg-white/80 p-2 text-slate-600 shadow hover:bg-white dark:bg-slate-900/80 dark:text-slate-200 dark:hover:bg-slate-900"
-                            onClick={showPrevInfoImage}
-                            aria-label="Предыдущее изображение"
-                          >
-                            ‹
-                          </button>
-                          <button
-                            type="button"
-                            className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-white/80 p-2 text-slate-600 shadow hover:bg-white dark:bg-slate-900/80 dark:text-slate-200 dark:hover:bg-slate-900"
-                            onClick={showNextInfoImage}
-                            aria-label="Следующее изображение"
-                          >
-                            ›
-                          </button>
-                        </>
-                      )}
-                    </div>
-                    {infoExercise.images.length > 1 && (
-                      <p className="text-center text-xs text-slate-500 dark:text-slate-400">
-                        {infoImageIndex + 1} / {infoExercise.images.length}
-                      </p>
-                    )}
-                  </div>
-                )}
-              </>
+        statsContent={
+          <div className="space-y-3">
+            {infoTrendLoading ? (
+              <p className="text-sm text-slate-500 dark:text-slate-400">Загружаем статистику...</p>
+            ) : infoExerciseTrend.points.length === 0 ? (
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                Пока недостаточно данных для графика прогресса по этому упражнению.
+              </p>
             ) : (
               <div className="space-y-3">
-                {infoTrendLoading ? (
-                  <p className="text-sm text-slate-500 dark:text-slate-400">Загружаем статистику...</p>
-                ) : infoExerciseTrend.points.length === 0 ? (
+                <div className="inline-flex items-center rounded-lg border border-slate-200 bg-white p-1 text-xs dark:border-slate-700 dark:bg-slate-900">
+                  <button
+                    type="button"
+                    onClick={() => setInfoTrendMode("load")}
+                    className={clsx(
+                      "rounded-md px-3 py-1.5 font-semibold transition",
+                      infoTrendMode === "load"
+                        ? "bg-primary/10 text-primary"
+                        : "text-slate-500 hover:text-slate-900 dark:text-slate-300 dark:hover:text-slate-100",
+                    )}
+                  >
+                    Тоннаж
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setInfoTrendMode("average_weight")}
+                    disabled={!infoExerciseHasAverageWeight}
+                    className={clsx(
+                      "rounded-md px-3 py-1.5 font-semibold transition disabled:cursor-not-allowed disabled:opacity-50",
+                      infoTrendMode === "average_weight"
+                        ? "bg-primary/10 text-primary"
+                        : "text-slate-500 hover:text-slate-900 dark:text-slate-300 dark:hover:text-slate-100",
+                    )}
+                  >
+                    Средний вес
+                  </button>
+                </div>
+                {infoExercisePoints.length === 0 ? (
                   <p className="text-sm text-slate-500 dark:text-slate-400">
-                    Пока недостаточно данных для графика прогресса по этому упражнению.
+                    Для этого упражнения пока нет данных по среднему весу за день.
                   </p>
                 ) : (
-                  <div className="space-y-3">
-                    <div className="inline-flex items-center rounded-lg border border-slate-200 bg-white p-1 text-xs dark:border-slate-700 dark:bg-slate-900">
-                      <button
-                        type="button"
-                        onClick={() => setInfoTrendMode("load")}
-                        className={clsx(
-                          "rounded-md px-3 py-1.5 font-semibold transition",
-                          infoTrendMode === "load"
-                            ? "bg-primary/10 text-primary"
-                            : "text-slate-500 hover:text-slate-900 dark:text-slate-300 dark:hover:text-slate-100",
-                        )}
-                      >
-                        Тоннаж
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setInfoTrendMode("average_weight")}
-                        disabled={!infoExerciseHasAverageWeight}
-                        className={clsx(
-                          "rounded-md px-3 py-1.5 font-semibold transition disabled:cursor-not-allowed disabled:opacity-50",
-                          infoTrendMode === "average_weight"
-                            ? "bg-primary/10 text-primary"
-                            : "text-slate-500 hover:text-slate-900 dark:text-slate-300 dark:hover:text-slate-100",
-                        )}
-                      >
-                        Средний вес
-                      </button>
-                    </div>
-                    {infoExercisePoints.length === 0 ? (
-                      <p className="text-sm text-slate-500 dark:text-slate-400">
-                        Для этого упражнения пока нет данных по среднему весу за день.
-                      </p>
-                    ) : (
-                      <ExerciseTrendChart
-                        points={infoExercisePoints}
-                        sourceFolderName={infoExerciseTrend.sourceFolderName}
-                        mode={infoTrendMode}
-                      />
-                    )}
-                  </div>
+                  <ExerciseTrendChart
+                    points={infoExercisePoints}
+                    sourceFolderName={infoExerciseTrend.sourceFolderName}
+                    mode={infoTrendMode}
+                  />
                 )}
               </div>
             )}
           </div>
-        )}
-      </Modal>
+        }
+      />
 
       <Modal
         open={Boolean(editState)}

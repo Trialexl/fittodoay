@@ -21,6 +21,14 @@ import { useAuth } from "@/state/AuthContext";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
+import { describeSimpleAgentAction } from "@/components/agents/actionText";
+import { ExerciseInfoModal } from "@/components/exercises/ExerciseInfoModal";
+import { ExerciseMentionText } from "@/components/exercises/ExerciseMentionText";
+import {
+  ExerciseInfoState,
+  ExerciseReference,
+  buildExerciseReference,
+} from "@/components/exercises/exerciseInfo";
 import { TemplateEditor } from "@/components/templates/TemplateEditor";
 
 type Folder = {
@@ -183,6 +191,7 @@ export const ProgramBoard = ({ initialFocus }: ProgramBoardProps = {}) => {
   const [chatLoading, setChatLoading] = useState(false);
   const [applying, setApplying] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [infoExercise, setInfoExercise] = useState<ExerciseInfoState | null>(null);
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
 
   const { data: chatMessages, mutate: refreshChat } = useSWR(
@@ -193,6 +202,14 @@ export const ProgramBoard = ({ initialFocus }: ProgramBoardProps = {}) => {
       apiFetch<ChatMessage[]>(url, {
         token: auth as string,
       }),
+  );
+  const { data: exerciseCatalog } = useSWR(
+    token && chatState.open ? ["/api/exercises/", token] : null,
+    ([url, auth]) => apiFetch<ExerciseOption[]>(url, { token: auth as string }),
+    {
+      revalidateOnFocus: false,
+      keepPreviousData: true,
+    },
   );
 
   const latestPendingProposal = useMemo(
@@ -208,12 +225,32 @@ export const ProgramBoard = ({ initialFocus }: ProgramBoardProps = {}) => {
         .slice(-1)[0] ?? null,
     [chatMessages],
   );
+  const chatExerciseReferences = useMemo<ExerciseReference[]>(
+    () =>
+      (exerciseCatalog ?? []).map((exercise) =>
+        buildExerciseReference({
+          exercise,
+          note: null,
+        }),
+      ),
+    [exerciseCatalog],
+  );
 
   const scrollChatToBottom = useCallback(() => {
     const container = chatScrollRef.current;
     if (!container) return;
     requestAnimationFrame(() => {
       container.scrollTop = container.scrollHeight;
+    });
+  }, []);
+
+  const openExerciseInfo = useCallback((exercise: ExerciseReference) => {
+    setInfoExercise({
+      name: exercise.name,
+      text: exercise.text,
+      images: exercise.images,
+      sourceId: exercise.sourceId,
+      folderId: exercise.folderId,
     });
   }, []);
 
@@ -470,19 +507,25 @@ export const ProgramBoard = ({ initialFocus }: ProgramBoardProps = {}) => {
                   <p className="text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500">
                     {msg.role === "assistant" ? "Ассистент" : "Вы"}
                   </p>
-                  <p className="whitespace-pre-line text-sm text-slate-800 dark:text-slate-100">
-                    {getChatMessageContent(msg)}
-                  </p>
+                  <ExerciseMentionText
+                    message={{ role: msg.role, content: msg.content, actions: msg.actions }}
+                    references={chatExerciseReferences}
+                    onExerciseClick={openExerciseInfo}
+                    className="text-slate-800 dark:text-slate-100"
+                  />
                   {msg.actions && Array.isArray(msg.actions) && msg.actions.length > 0 && (
                     <ul className="mt-1 space-y-1 text-xs text-slate-600 dark:text-slate-300">
                       {msg.actions.map((action: any, index: number) => (
                         <li key={index} className="rounded bg-white px-2 py-1 shadow-sm dark:bg-slate-700/60">
-                          <span className="font-semibold">{action.type}</span>
-                          {action.exercise_id ? ` • упражнение ${action.exercise_id}` : ""}
-                          {action.day_id ? ` • день ${action.day_id}` : ""}
-                          {action.weight ? ` • вес ${action.weight}` : ""}
-                          {action.reps ? ` • повторы ${action.reps}` : ""}
-                          {action.sets ? ` • подходы ${action.sets}` : ""}
+                          <ExerciseMentionText
+                            message={{
+                              role: "assistant",
+                              content: describeSimpleAgentAction(action),
+                            }}
+                            references={chatExerciseReferences}
+                            onExerciseClick={openExerciseInfo}
+                            className="text-xs text-slate-600 dark:text-slate-300"
+                          />
                         </li>
                       ))}
                     </ul>
@@ -541,6 +584,10 @@ export const ProgramBoard = ({ initialFocus }: ProgramBoardProps = {}) => {
           </div>
         </div>
       </Modal>
+      <ExerciseInfoModal
+        exercise={infoExercise}
+        onClose={() => setInfoExercise(null)}
+      />
     </div>
   );
 };
@@ -1711,49 +1758,15 @@ const TemplateExerciseModal = ({
   );
 };
 
-const getChatMessageContent = (msg: ChatMessage) => {
-  if (!msg.content) return "";
-  if (msg.role !== "assistant") return msg.content;
-  const trimmed = msg.content.trim();
-  if (!trimmed) return "";
-  const looksJsonLike = trimmed.startsWith("{") || trimmed.startsWith("[");
-  if (!looksJsonLike) return msg.content;
-  try {
-    const parsed = JSON.parse(trimmed);
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      const candidate =
-        (typeof parsed.assistant_reply === "string" && parsed.assistant_reply) ||
-        (typeof parsed.reply === "string" && parsed.reply) ||
-        (typeof parsed.message === "string" && parsed.message) ||
-        (typeof parsed.text === "string" && parsed.text) ||
-        "";
-      if (candidate.trim()) return candidate.trim();
-    }
-  } catch {
-    const malformedMatch = trimmed.match(/"assistant_reply"\s*:\s*"([\s\S]*)$/);
-    if (malformedMatch) {
-      const tail = malformedMatch[1];
-      const cleaned = tail
-        .replace(/\\"/g, '"')
-        .replace(/\\n/g, "\n")
-        .replace(/\\t/g, "\t")
-        .replace(/"+$/g, "")
-        .trim();
-      if (cleaned) return cleaned;
-    }
-  }
-  if (Array.isArray(msg.actions) && msg.actions.length > 0) {
-    return "Подготовил предложения по изменениям. Проверьте список ниже и подтвердите, если подходит.";
-  }
-  return "Не удалось корректно отобразить ответ ассистента. Попробуйте переформулировать запрос.";
-};
-
 const humanizeChatError = (message: string) => {
   const normalized = (message || "").toLowerCase();
   if (
     normalized.includes("add_exercise requires valid day_id/day_name and exercise_id/exercise_name")
   ) {
     return "Не удалось применить добавление: ассистент не указал корректный день или упражнение. Уточните день и название упражнения.";
+  }
+  if (normalized.includes("create_custom_exercise requires")) {
+    return "Не удалось создать пользовательское упражнение: ассистент не передал обязательные параметры.";
   }
   if (normalized.includes("invalid_update_weight_action")) {
     return "Не удалось применить изменение: ассистент не указал, какое именно упражнение нужно менять.";

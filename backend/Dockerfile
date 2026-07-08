@@ -8,15 +8,22 @@ WORKDIR /app
 
 ARG INSTALL_DEV_DEPS=true
 
-RUN apt-get update -o Acquire::Retries=5 \
-    || (sed -i 's|http://deb.debian.org|http://ftp.us.debian.org|g' /etc/apt/sources.list.d/debian.sources \
-        && apt-get update -o Acquire::Retries=5) \
-    && if [ "$INSTALL_DEV_DEPS" = "true" ]; then \
-        apt-get install -y --no-install-recommends --fix-missing build-essential libpq-dev ffmpeg; \
-      else \
-        apt-get install -y --no-install-recommends --fix-missing ffmpeg; \
-      fi \
-    && rm -rf /var/lib/apt/lists/*
+RUN set -eux; \
+    packages="ffmpeg"; \
+    if [ "$INSTALL_DEV_DEPS" = "true" ]; then \
+        packages="build-essential libpq-dev ffmpeg"; \
+    fi; \
+    apt-get update -o Acquire::Retries=5; \
+    if ! apt-get install -y --no-install-recommends --fix-missing -o Acquire::Retries=5 $packages; then \
+        sed -i \
+            -e 's|http://deb.debian.org/debian-security|http://security.debian.org/debian-security|g' \
+            -e 's|http://deb.debian.org/debian|http://ftp.us.debian.org/debian|g' \
+            /etc/apt/sources.list.d/debian.sources; \
+        rm -rf /var/lib/apt/lists/*; \
+        apt-get update -o Acquire::Retries=5; \
+        apt-get install -y --no-install-recommends --fix-missing -o Acquire::Retries=5 $packages; \
+    fi; \
+    rm -rf /var/lib/apt/lists/*
 
 COPY backend/requirements.txt ./requirements.txt
 COPY backend/requirements-dev.txt ./requirements-dev.txt
