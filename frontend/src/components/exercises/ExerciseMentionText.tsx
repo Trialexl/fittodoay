@@ -20,7 +20,7 @@ type ExerciseMentionTextProps = {
 
 type AliasEntry = {
   alias: string;
-  aliasLower: string;
+  aliasNormalized: string;
   exercise: ExerciseReference;
 };
 
@@ -33,6 +33,39 @@ type MatchResult = {
 const WORD_CHAR_REGEX = /[\p{L}\p{N}]/u;
 
 const isWordChar = (value?: string) => (value ? WORD_CHAR_REGEX.test(value) : false);
+
+const normalizeMentionChar = (value: string) => value.toLowerCase().replace(/ё/g, "е");
+
+const buildNormalizedMentionText = (value: string) => {
+  let normalized = "";
+  const sourceIndexes: number[] = [];
+
+  for (let index = 0; index < value.length; ) {
+    const codePoint = value.codePointAt(index);
+    const char = codePoint ? String.fromCodePoint(codePoint) : value[index];
+    const normalizedChar = normalizeMentionChar(char);
+    if (isWordChar(normalizedChar)) {
+      normalized += normalizedChar;
+      sourceIndexes.push(index);
+    } else if (normalized[normalized.length - 1] !== " ") {
+      normalized += " ";
+      sourceIndexes.push(index);
+    }
+    index += char.length;
+  }
+
+  let start = 0;
+  let end = normalized.length;
+  while (start < end && normalized[start] === " ") start += 1;
+  while (end > start && normalized[end - 1] === " ") end -= 1;
+
+  return {
+    value: normalized.slice(start, end),
+    sourceIndexes: sourceIndexes.slice(start, end),
+  };
+};
+
+const normalizeAliasForMatch = (value: string) => buildNormalizedMentionText(value).value;
 
 export const getAssistantMessageText = (message: MessageLike) => {
   if (message.role !== "assistant") return message.content;
@@ -75,35 +108,41 @@ export const getAssistantMessageText = (message: MessageLike) => {
 
 const findNextMatch = (
   text: string,
+  normalizedText: ReturnType<typeof buildNormalizedMentionText>,
   aliasEntries: AliasEntry[],
   startIndex: number,
 ): MatchResult | null => {
-  const lowerText = text.toLowerCase();
   let bestMatch: MatchResult | null = null;
 
   aliasEntries.forEach((entry) => {
-    let candidateIndex = lowerText.indexOf(entry.aliasLower, startIndex);
+    let candidateIndex = normalizedText.value.indexOf(entry.aliasNormalized);
     while (candidateIndex !== -1) {
-      const matchEnd = candidateIndex + entry.alias.length;
-      const before = candidateIndex > 0 ? text[candidateIndex - 1] : undefined;
-      const after = matchEnd < text.length ? text[matchEnd] : undefined;
+      const matchEnd = candidateIndex + entry.aliasNormalized.length;
+      const originalIndex = normalizedText.sourceIndexes[candidateIndex];
+      const originalLastIndex = normalizedText.sourceIndexes[matchEnd - 1];
+      const originalLength = originalLastIndex - originalIndex + 1;
+      const before = candidateIndex > 0 ? normalizedText.value[candidateIndex - 1] : undefined;
+      const after = matchEnd < normalizedText.value.length ? normalizedText.value[matchEnd] : undefined;
       const hasBoundaryBefore = !isWordChar(before);
       const hasBoundaryAfter = !isWordChar(after);
-      if (hasBoundaryBefore && hasBoundaryAfter) {
+      if (originalIndex >= startIndex && hasBoundaryBefore && hasBoundaryAfter) {
         if (
           !bestMatch ||
-          candidateIndex < bestMatch.index ||
-          (candidateIndex === bestMatch.index && entry.alias.length > bestMatch.length)
+          originalIndex < bestMatch.index ||
+          (originalIndex === bestMatch.index && originalLength > bestMatch.length)
         ) {
           bestMatch = {
-            index: candidateIndex,
-            length: entry.alias.length,
+            index: originalIndex,
+            length: originalLength,
             exercise: entry.exercise,
           };
         }
         break;
       }
-      candidateIndex = lowerText.indexOf(entry.aliasLower, candidateIndex + entry.alias.length);
+      candidateIndex = normalizedText.value.indexOf(
+        entry.aliasNormalized,
+        candidateIndex + entry.aliasNormalized.length,
+      );
     }
   });
 
@@ -122,13 +161,15 @@ export const ExerciseMentionText = ({
     () =>
       references
         .flatMap((exercise) =>
-          exercise.aliases.map((alias) => ({
-            alias,
-            aliasLower: alias.toLowerCase(),
-            exercise,
-          })),
+          exercise.aliases
+            .map((alias) => ({
+              alias,
+              aliasNormalized: normalizeAliasForMatch(alias),
+              exercise,
+            }))
+            .filter((entry) => entry.aliasNormalized.length >= 4),
         )
-        .sort((left, right) => right.alias.length - left.alias.length),
+        .sort((left, right) => right.aliasNormalized.length - left.aliasNormalized.length),
     [references],
   );
 
@@ -136,10 +177,11 @@ export const ExerciseMentionText = ({
     if (message.role !== "assistant" || !aliasEntries.length || !onExerciseClick) {
       return [text];
     }
+    const normalizedText = buildNormalizedMentionText(text);
     const nodes: Array<string | { label: string; exercise: ExerciseReference }> = [];
     let cursor = 0;
     while (cursor < text.length) {
-      const match = findNextMatch(text, aliasEntries, cursor);
+      const match = findNextMatch(text, normalizedText, aliasEntries, cursor);
       if (!match) {
         nodes.push(text.slice(cursor));
         break;

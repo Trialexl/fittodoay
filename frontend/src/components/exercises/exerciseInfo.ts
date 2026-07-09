@@ -34,8 +34,17 @@ export type ExerciseReference = ExerciseInfoState & {
 
 const normalizeWhitespace = (value: string) => value.replace(/\s+/g, " ").trim();
 
+const normalizeAliasSource = (value: string) =>
+  normalizeWhitespace(
+    value
+      .toLowerCase()
+      .replace(/ё/g, "е")
+      .replace(/[()[\]{}"«»“”„*,.:;!?]+/g, " ")
+      .replace(/[_‐‑‒–—-]+/g, " "),
+  );
+
 export const normalizeExerciseReference = (value: string) =>
-  normalizeWhitespace(value.toLowerCase().replace(/[_-]+/g, " "));
+  normalizeAliasSource(value);
 
 export const parseExerciseMuscles = (value?: string | null) =>
   value
@@ -77,6 +86,53 @@ export const buildExerciseInfoText = (
   return parts.join("\n\n");
 };
 
+const buildDomainAliasVariants = (value: string) => {
+  const normalized = normalizeAliasSource(value);
+  const aliases: string[] = [];
+
+  if (normalized.includes("жим арнольда")) {
+    const tail = normalizeWhitespace(
+      normalized.replace(/^.*?жим арнольда/, "").replace(/^с /, " с "),
+    );
+    aliases.push("Арнольд-жим", "Арнольд жим");
+    if (tail) {
+      aliases.push(`Арнольд-жим ${tail}`, `Арнольд жим ${tail}`);
+    }
+  }
+
+  if (normalized.includes("махи гантелями стоя")) {
+    aliases.push(
+      "Махи гантелями в стороны",
+      "Махи гантелями в стороны стоя",
+      "Боковые махи гантелями",
+      "Боковые подъемы гантелей",
+      "Боковые подъемы гантелей стоя",
+    );
+  }
+
+  if (normalized.includes("side lateral raise")) {
+    aliases.push("Махи гантелями в стороны", "Махи гантелями в стороны стоя");
+  }
+
+  if (normalized.includes("dumbbell upright row") || normalized.includes("upright dumbbell row")) {
+    aliases.push(
+      "Тяга гантелей к подбородку",
+      "Тяга гантелей к подбородку стоя",
+      "Вертикальная тяга гантелей",
+    );
+  }
+
+  if (normalized.includes("upright barbell row") || normalized.includes("barbell upright row")) {
+    aliases.push("Тяга штанги к подбородку", "Вертикальная тяга штанги");
+  }
+
+  if (normalized.includes("upright cable row") || normalized.includes("cable upright row")) {
+    aliases.push("Тяга блока к подбородку", "Тяга нижнего блока к подбородку");
+  }
+
+  return aliases;
+};
+
 const buildAliasVariants = (value?: string | null) => {
   const trimmed = normalizeWhitespace(value ?? "");
   if (!trimmed) return [];
@@ -88,6 +144,7 @@ const buildAliasVariants = (value?: string | null) => {
         spaced,
         spaced.replace(/\s+/g, "_"),
         spaced.replace(/\s+/g, "-"),
+        ...buildDomainAliasVariants(trimmed),
       ].filter((item) => item.length >= 4),
     ),
   );
