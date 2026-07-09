@@ -11,7 +11,7 @@ from agents.models import LLMProgramMessage, LLMProgramThread, LLMRequestLog
 from agents.services import LLMProgramChatService, LLMUnavailableError
 from exercises.models import CustomExercise
 from programs.models import DayTemplate, ProgramFolder, TemplateExercise
-from workouts.models import Exercise_DB, WorkoutDay, WorkoutSetLog
+from workouts.models import Exercise_DB, ExerciseMuscle, WorkoutDay, WorkoutSetLog
 
 User = get_user_model()
 
@@ -433,6 +433,85 @@ def test_chat_prompt_requires_exercise_choice_and_technique_help():
     assert "Не отказывай в таком объяснении" in system_prompt
     assert "обязательно передавай exercise_name" in system_prompt
     assert "только параметры, которые действительно нужно изменить" in system_prompt
+    assert "используй available_exercises из JSON-контекста" in system_prompt
+
+
+@pytest.mark.django_db
+def test_chat_shortlist_uses_recent_context_for_catalog_list_request():
+    user = User.objects.create_user(email="agent_catalog_context@example.com", password="pass")
+    folder, _ = _create_base_program(user)
+    back_exercise = Exercise_DB.objects.create(
+        id="catalog_back_row",
+        name_en="Bent Over Barbell Row",
+        name_ru="Тяга штанги в наклоне",
+        force_en="pull",
+        force_ru="",
+        level_en="beginner",
+        level_ru="начальный",
+        mechanic_en="compound",
+        mechanic_ru="",
+        equipment_en="barbell",
+        equipment_ru="штанга",
+        category_en="strength",
+        category_ru="Силовая",
+        has_weight=True,
+        default_sets=3,
+        default_reps=10,
+        default_rest=60,
+    )
+    ExerciseMuscle.objects.create(
+        exercise=back_exercise,
+        name_en="Middle Back",
+        name_ru="Средняя спина",
+        is_primary=True,
+    )
+    shoulder_exercise = Exercise_DB.objects.create(
+        id="catalog_shoulder_press",
+        name_en="Shoulder Press",
+        name_ru="Жим плеч",
+        force_en="push",
+        force_ru="",
+        level_en="beginner",
+        level_ru="начальный",
+        mechanic_en="compound",
+        mechanic_ru="",
+        equipment_en="machine",
+        equipment_ru="тренажер",
+        category_en="strength",
+        category_ru="Силовая",
+        has_weight=True,
+        default_sets=3,
+        default_reps=10,
+        default_rest=60,
+    )
+    ExerciseMuscle.objects.create(
+        exercise=shoulder_exercise,
+        name_en="Shoulders",
+        name_ru="Плечи",
+        is_primary=True,
+    )
+    thread = LLMProgramThread.objects.create(user=user, program=folder, title="Чат")
+    LLMProgramMessage.objects.create(
+        thread=thread,
+        role=LLMProgramMessage.Role.USER,
+        content="посоветуй упражнения для спины",
+    )
+    LLMProgramMessage.objects.create(
+        thread=thread,
+        role=LLMProgramMessage.Role.ASSISTANT,
+        content="Для спины можно рассмотреть тяги и гиперэкстензии.",
+    )
+    service = LLMProgramChatService(thread)
+
+    messages = service._build_messages(
+        "выведи все что у нас есть в базе",
+        mode="chat",
+    )
+    context = json.loads(messages[1]["content"])
+    names = {item["name"] for item in context["available_exercises"]}
+
+    assert "Тяга штанги в наклоне" in names
+    assert "Жим плеч" not in names
 
 
 @pytest.mark.django_db

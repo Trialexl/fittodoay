@@ -130,6 +130,27 @@ const buildDomainAliasVariants = (value: string) => {
     aliases.push("Тяга блока к подбородку", "Тяга нижнего блока к подбородку");
   }
 
+  if (normalized.includes("barbell deadlift") || normalized.includes("становая тяга со штангой")) {
+    aliases.push("Становая тяга", "Классическая становая тяга");
+  }
+
+  if (
+    normalized.includes("stiff legged") ||
+    normalized.includes("stiff leg") ||
+    normalized.includes("romanian deadlift") ||
+    normalized.includes("становая на прямых ногах")
+  ) {
+    aliases.push("Становая тяга на прямых ногах", "Становая на прямых ногах");
+  }
+
+  if (normalized.includes("hyperextensions") || normalized.includes("гиперэкстензии")) {
+    aliases.push("Гиперэкстензия", "Гиперэкстензия вертикальная");
+  }
+
+  if (normalized.includes("reverse hyperextension")) {
+    aliases.push("Обратная гиперэкстензия", "Гиперэкстензия обратная");
+  }
+
   return aliases;
 };
 

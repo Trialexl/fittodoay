@@ -919,7 +919,7 @@ class LLMProgramChatService:
         chat_mode: str = "program_edit",
         workout_date: date | None = None,
     ) -> List[Dict[str, Any]]:
-        shortlist = self._build_shortlist(user_message)
+        shortlist = self._build_shortlist(self._build_shortlist_query(user_message))
         if chat_mode == "post_workout_review":
             system_prompt = (
                 "Ты фитнес-ассистент и эксперт по прогрессии нагрузки. "
@@ -957,6 +957,8 @@ class LLMProgramChatService:
                 "Для create_custom_exercise обязательны: day_id/day_name, exercise_name, target_muscles, has_weight, has_time, default_sets, default_rest, "
                 "а также default_reps для упражнений на повторы или default_time для timed/static упражнений. "
                 "Если пользователь просит помочь с выбором упражнения, обязательно предложи 2-4 варианта и коротко объясни, чем они отличаются и кому подходят. "
+                "Если пользователь просит показать, перечислить или вывести упражнения из базы/каталога, используй available_exercises из JSON-контекста; "
+                "если список неполный из-за размера каталога, прямо скажи, что показываешь релевантную выборку, и предложи сузить запрос по мышце или оборудованию. "
                 "Если пользователь просит 'как делать', дай краткую технику выполнения: исходное положение, движение, дыхание, типичные ошибки и безопасный диапазон нагрузки. "
                 "Не отказывай в таком объяснении по общим причинам, если запрос относится к обычным упражнениям из фитнес-каталога. "
                 "Если обсуждается прогресс, дай оценку по факту, выдели сильные/слабые места и предложи 1-3 приоритета на ближайшие тренировки. "
@@ -1854,33 +1856,44 @@ class LLMProgramChatService:
             is_active=True,
         )
 
+    def _build_shortlist_query(self, user_message: str | None) -> str:
+        recent_messages = list(self.thread.messages.order_by("-id")[:6])
+        parts = [msg.content for msg in reversed(recent_messages) if msg.content]
+        if user_message:
+            parts.append(user_message)
+        return " ".join(parts)[-5000:]
+
     def _build_shortlist(self, query: str | None) -> List[Dict[str, Any]]:
-        base_qs = Exercise_DB.objects.exclude(embedding__isnull=True)
-        if query:
-            # векторный поиск по эмбеддингу, если есть
+        base_qs = Exercise_DB.objects.all().prefetch_related("muscles")
+        normalized_query = self._normalize_search_text(query or "")
+        direct_filter = self._build_catalog_query_filter(normalized_query)
+        list_intent = self._has_catalog_list_intent(normalized_query)
+        limit = 60 if list_intent else 24
+
+        if direct_filter:
+            qs = base_qs.filter(direct_filter).distinct().order_by("name_ru", "name_en")[:limit]
+        elif query:
             try:
-                # простой текст → аналогичный корпус: используем postgres vector оператор
-                # для удобства — берём embedding первого совпадения по имени, если найдём
+                text_filter = self._build_text_match_filter(normalized_query)
                 text_match = (
-                    Exercise_DB.objects.filter(
-                        models.Q(name_ru__icontains=query)
-                        | models.Q(name_en__icontains=query)
-                        | models.Q(target_muscles__icontains=query)
-                    )
+                    Exercise_DB.objects.filter(text_filter)
                     .exclude(embedding__isnull=True)
                     .first()
+                    if text_filter
+                    else None
                 )
                 if text_match and text_match.embedding is not None:
                     qs = (
-                        base_qs.annotate(distance=L2Distance("embedding", text_match.embedding))
-                        .order_by("distance")[:20]
+                        Exercise_DB.objects.exclude(embedding__isnull=True)
+                        .annotate(distance=L2Distance("embedding", text_match.embedding))
+                        .order_by("distance")[:limit]
                     )
                 else:
-                    qs = base_qs.order_by("id")[:20]
+                    qs = base_qs.order_by("name_ru", "name_en")[:limit]
             except Exception:
-                qs = base_qs.order_by("id")[:20]
+                qs = base_qs.order_by("name_ru", "name_en")[:limit]
         else:
-            qs = base_qs.order_by("id")[:20]
+            qs = base_qs.order_by("name_ru", "name_en")[:limit]
         return [
             {
                 "id": ex.id,
@@ -1891,3 +1904,87 @@ class LLMProgramChatService:
             }
             for ex in qs
         ]
+
+    def _normalize_search_text(self, value: str) -> str:
+        return re.sub(r"\s+", " ", value.lower().replace("ё", "е")).strip()
+
+    def _has_catalog_list_intent(self, query: str) -> bool:
+        return any(
+            marker in query
+            for marker in (
+                "выведи",
+                "покажи",
+                "перечисли",
+                "список",
+                "что есть в базе",
+                "что у нас есть в базе",
+                "из базы",
+                "из каталога",
+                "available_exercises",
+            )
+        )
+
+    def _build_catalog_query_filter(self, query: str) -> models.Q | None:
+        terms = self._extract_catalog_terms(query)
+        if not terms:
+            return None
+        result = models.Q()
+        for term in terms:
+            result |= self._term_query(term)
+        return result
+
+    def _build_text_match_filter(self, query: str) -> models.Q | None:
+        tokens = [
+            token
+            for token in re.findall(r"[a-zа-я0-9]+", query)
+            if len(token) >= 4 and token not in self._catalog_stop_words()
+        ][:8]
+        if not tokens:
+            return None
+        result = models.Q()
+        for token in tokens:
+            result |= self._term_query(token)
+        return result
+
+    def _extract_catalog_terms(self, query: str) -> list[str]:
+        terms: set[str] = set()
+        aliases = {
+            "спин": ["спин", "широч", "трапец", "поясниц", "back", "lat", "trap", "row"],
+            "плеч": ["плеч", "дельт", "shoulder", "delt", "lateral"],
+            "груд": ["груд", "chest", "pector"],
+            "пресс": ["пресс", "живот", "abs", "abdominal", "core"],
+            "ног": ["ног", "бедр", "квадриц", "ягод", "leg", "quad", "glute", "hamstring"],
+            "бицеп": ["бицеп", "bicep"],
+            "трицеп": ["трицеп", "tricep"],
+        }
+        for marker, marker_terms in aliases.items():
+            if any(item in query for item in marker_terms):
+                terms.update(marker_terms)
+        return sorted(terms)
+
+    def _term_query(self, term: str) -> models.Q:
+        return (
+            models.Q(name_ru__icontains=term)
+            | models.Q(name_en__icontains=term)
+            | models.Q(category_ru__icontains=term)
+            | models.Q(category_en__icontains=term)
+            | models.Q(equipment_ru__icontains=term)
+            | models.Q(equipment_en__icontains=term)
+            | models.Q(muscles__name_ru__icontains=term)
+            | models.Q(muscles__name_en__icontains=term)
+        )
+
+    def _catalog_stop_words(self) -> set[str]:
+        return {
+            "выведи",
+            "покажи",
+            "перечисли",
+            "база",
+            "базе",
+            "каталог",
+            "каталога",
+            "упражнения",
+            "упражнений",
+            "available",
+            "exercises",
+        }
