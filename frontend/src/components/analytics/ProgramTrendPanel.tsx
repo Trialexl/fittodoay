@@ -138,6 +138,18 @@ const withAlpha = (hex: string, alpha: number) => {
   return `rgba(${r}, ${g}, ${b}, ${Math.min(Math.max(alpha, 0), 1)})`;
 };
 
+const buildAdaptiveValueDomain = (values: number[]): [number, number] | undefined => {
+  const finiteValues = values.filter((value) => Number.isFinite(value));
+  if (!finiteValues.length) return undefined;
+
+  const min = Math.min(...finiteValues);
+  const max = Math.max(...finiteValues);
+  const spread = max - min;
+  const pad = spread === 0 ? Math.max(1, Math.abs(max) * 0.05) : Math.max(1, spread * 0.15);
+
+  return [Math.max(0, Math.floor(min - pad)), Math.ceil(max + pad)];
+};
+
 const parseISODate = (iso: string) => {
   const [year, month, day] = iso.split("-").map(Number);
   return new Date(year, month - 1, day);
@@ -218,7 +230,22 @@ export const ProgramTrendPanel = () => {
     return filtered.length > 0 ? filtered : activeSeries;
   }, [activeSeries, focusedSeriesKey]);
 
-  const hasData = useMemo(() => effectiveSeries.some((series) => series.points.length > 0), [effectiveSeries]);
+  const hasData = useMemo(
+    () => effectiveSeries.some((series) => series.points.some((point) => point.value !== null && point.value !== undefined)),
+    [effectiveSeries],
+  );
+
+  const valueAxisDomain = useMemo(
+    () =>
+      buildAdaptiveValueDomain(
+        effectiveSeries.flatMap((series) =>
+          series.points
+            .map((point) => point.value)
+            .filter((value): value is number => value !== null && value !== undefined),
+        ),
+      ),
+    [effectiveSeries],
+  );
 
   const chartMaxValue = useMemo(() => {
     return effectiveSeries.reduce((max, series) => {
@@ -295,6 +322,20 @@ export const ProgramTrendPanel = () => {
     });
   }, [timelineData, effectiveSeries]);
 
+  const stackedValueAxisDomain = useMemo(() => {
+    if (!interpolatedTimelineData.length) return valueAxisDomain;
+
+    const seriesKeys = effectiveSeries.map((series) => series.key.toString());
+    const stackedValues = interpolatedTimelineData.map((entry) =>
+      seriesKeys.reduce((sum, key) => {
+        const value = entry[key];
+        return sum + (typeof value === "number" ? value : 0);
+      }, 0),
+    );
+
+    return buildAdaptiveValueDomain(stackedValues);
+  }, [effectiveSeries, interpolatedTimelineData, valueAxisDomain]);
+
   const isoOrderMap = useMemo(() => new Map(isoList.map((iso, index) => [iso, index])), [isoList]);
 
   const heatmapPoints = useMemo(
@@ -348,7 +389,7 @@ export const ProgramTrendPanel = () => {
               tickFormatter={(iso) => formatLabelDate(iso as string, activeGranularity)}
               minTickGap={16}
             />
-            <YAxis allowDecimals={false} />
+            <YAxis allowDecimals={false} domain={valueAxisDomain ?? ["auto", "auto"]} allowDataOverflow />
             <Tooltip content={tooltipRenderer} />
             {effectiveSeries.map((series) => (
               <Line
@@ -384,7 +425,7 @@ export const ProgramTrendPanel = () => {
               tickFormatter={(iso) => formatLabelDate(iso as string, activeGranularity)}
               minTickGap={16}
             />
-            <YAxis allowDecimals={false} />
+            <YAxis allowDecimals={false} domain={valueAxisDomain ?? ["auto", "auto"]} allowDataOverflow />
             <Tooltip content={tooltipRenderer} />
             {effectiveSeries.map((series) => (
               <Area
@@ -439,7 +480,7 @@ export const ProgramTrendPanel = () => {
               tickFormatter={(iso) => formatLabelDate(iso as string, activeGranularity)}
               minTickGap={16}
             />
-            <YAxis allowDecimals={false} />
+            <YAxis allowDecimals={false} domain={stackedValueAxisDomain ?? ["auto", "auto"]} allowDataOverflow />
             <Tooltip content={tooltipRenderer} />
             {effectiveSeries.map((series) => (
               <Area
