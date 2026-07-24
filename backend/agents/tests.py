@@ -62,7 +62,9 @@ def test_apply_actions_requires_message_id_and_updates_program():
         thread=thread,
         role=LLMProgramMessage.Role.ASSISTANT,
         content="Предлагаю поднять вес",
-        actions=[{"type": "update_weight", "template_exercise_id": te.id, "weight": 46}],
+        actions=[
+            {"type": "update_weight", "template_exercise_id": te.id, "weight": 46}
+        ],
         proposal_status=LLMProgramMessage.ProposalStatus.PENDING,
     )
 
@@ -117,7 +119,9 @@ def test_cancel_actions_marks_proposal_cancelled():
 
 @pytest.mark.django_db
 def test_cancel_actions_can_remove_single_action_and_keep_pending():
-    user = User.objects.create_user(email="agent_cancel_single@example.com", password="pass")
+    user = User.objects.create_user(
+        email="agent_cancel_single@example.com", password="pass"
+    )
     folder, te = _create_base_program(user)
     thread = LLMProgramThread.objects.create(user=user, program=folder, title="Чат")
     message = LLMProgramMessage.objects.create(
@@ -149,14 +153,18 @@ def test_cancel_actions_can_remove_single_action_and_keep_pending():
 
 @pytest.mark.django_db
 def test_cancel_actions_last_single_action_sets_cancelled():
-    user = User.objects.create_user(email="agent_cancel_last@example.com", password="pass")
+    user = User.objects.create_user(
+        email="agent_cancel_last@example.com", password="pass"
+    )
     folder, te = _create_base_program(user)
     thread = LLMProgramThread.objects.create(user=user, program=folder, title="Чат")
     message = LLMProgramMessage.objects.create(
         thread=thread,
         role=LLMProgramMessage.Role.ASSISTANT,
         content="Одна правка",
-        actions=[{"type": "update_weight", "template_exercise_id": te.id, "weight": 42}],
+        actions=[
+            {"type": "update_weight", "template_exercise_id": te.id, "weight": 42}
+        ],
         proposal_status=LLMProgramMessage.ProposalStatus.PENDING,
     )
 
@@ -183,7 +191,9 @@ def test_apply_rejects_non_pending_proposal():
         thread=thread,
         role=LLMProgramMessage.Role.ASSISTANT,
         content="Подтвердите правки",
-        actions=[{"type": "update_weight", "template_exercise_id": te.id, "weight": 44}],
+        actions=[
+            {"type": "update_weight", "template_exercise_id": te.id, "weight": 44}
+        ],
         proposal_status=LLMProgramMessage.ProposalStatus.CANCELLED,
     )
 
@@ -202,12 +212,16 @@ def test_apply_rejects_non_pending_proposal():
 
 @pytest.mark.django_db
 def test_chat_parser_extracts_reply_from_alternative_json_keys():
-    user = User.objects.create_user(email="agent_parse_alt@example.com", password="pass")
+    user = User.objects.create_user(
+        email="agent_parse_alt@example.com", password="pass"
+    )
     folder, _ = _create_base_program(user)
     thread = LLMProgramThread.objects.create(user=user, program=folder, title="Чат")
     service = LLMProgramChatService(thread)
 
-    parsed = service._parse_chat_response('{"message":"Давай уменьшим объем во вторник","actions":[]}')
+    parsed = service._parse_chat_response(
+        '{"message":"Давай уменьшим объем во вторник","actions":[]}'
+    )
 
     assert parsed["assistant_reply"] == "Давай уменьшим объем во вторник"
     assert parsed["actions"] == []
@@ -215,13 +229,16 @@ def test_chat_parser_extracts_reply_from_alternative_json_keys():
 
 @pytest.mark.django_db
 def test_chat_parser_generates_human_reply_when_actions_without_text():
-    user = User.objects.create_user(email="agent_parse_actions@example.com", password="pass")
+    user = User.objects.create_user(
+        email="agent_parse_actions@example.com", password="pass"
+    )
     folder, te = _create_base_program(user)
     thread = LLMProgramThread.objects.create(user=user, program=folder, title="Чат")
     service = LLMProgramChatService(thread)
 
     parsed = service._parse_chat_response(
-        '{"actions":[{"type":"update_weight","template_exercise_id":%d,"weight":42}]}' % te.id
+        '{"actions":[{"type":"update_weight","template_exercise_id":%d,"weight":42}]}'
+        % te.id
     )
 
     assert "Подготовил предложения" in parsed["assistant_reply"]
@@ -231,7 +248,9 @@ def test_chat_parser_generates_human_reply_when_actions_without_text():
 
 @pytest.mark.django_db
 def test_chat_send_normalizes_action_type_and_localizes_exercise_name(monkeypatch):
-    user = User.objects.create_user(email="agent_chat_normalize@example.com", password="pass")
+    user = User.objects.create_user(
+        email="agent_chat_normalize@example.com", password="pass"
+    )
     folder, te = _create_base_program(user)
     thread = LLMProgramThread.objects.create(user=user, program=folder, title="Чат")
     service = LLMProgramChatService(thread)
@@ -258,7 +277,9 @@ def test_chat_send_normalizes_action_type_and_localizes_exercise_name(monkeypatc
 
 @pytest.mark.django_db
 def test_chat_send_drops_noop_update_actions(monkeypatch):
-    user = User.objects.create_user(email="agent_chat_noop@example.com", password="pass")
+    user = User.objects.create_user(
+        email="agent_chat_noop@example.com", password="pass"
+    )
     folder, te = _create_base_program(user)
     thread = LLMProgramThread.objects.create(user=user, program=folder, title="Чат")
     service = LLMProgramChatService(thread)
@@ -279,7 +300,9 @@ def test_chat_send_drops_noop_update_actions(monkeypatch):
 
 @pytest.mark.django_db
 def test_chat_send_drops_update_without_target_fields(monkeypatch):
-    user = User.objects.create_user(email="agent_chat_update_no_target@example.com", password="pass")
+    user = User.objects.create_user(
+        email="agent_chat_update_no_target@example.com", password="pass"
+    )
     folder, _te = _create_base_program(user)
     thread = LLMProgramThread.objects.create(user=user, program=folder, title="Чат")
     service = LLMProgramChatService(thread)
@@ -299,14 +322,18 @@ def test_chat_send_drops_update_without_target_fields(monkeypatch):
 
 @pytest.mark.django_db
 def test_chat_send_cancels_previous_pending_when_new_reply_has_no_actions(monkeypatch):
-    user = User.objects.create_user(email="agent_chat_cancel_stale_none@example.com", password="pass")
+    user = User.objects.create_user(
+        email="agent_chat_cancel_stale_none@example.com", password="pass"
+    )
     folder, te = _create_base_program(user)
     thread = LLMProgramThread.objects.create(user=user, program=folder, title="Чат")
     stale = LLMProgramMessage.objects.create(
         thread=thread,
         role=LLMProgramMessage.Role.ASSISTANT,
         content="Старое предложение",
-        actions=[{"type": "update_weight", "template_exercise_id": te.id, "weight": 42}],
+        actions=[
+            {"type": "update_weight", "template_exercise_id": te.id, "weight": 42}
+        ],
         proposal_status=LLMProgramMessage.ProposalStatus.PENDING,
     )
     service = LLMProgramChatService(thread)
@@ -326,14 +353,18 @@ def test_chat_send_cancels_previous_pending_when_new_reply_has_no_actions(monkey
 
 @pytest.mark.django_db
 def test_chat_send_cancels_previous_pending_when_new_pending_is_created(monkeypatch):
-    user = User.objects.create_user(email="agent_chat_cancel_stale_new_pending@example.com", password="pass")
+    user = User.objects.create_user(
+        email="agent_chat_cancel_stale_new_pending@example.com", password="pass"
+    )
     folder, te = _create_base_program(user)
     thread = LLMProgramThread.objects.create(user=user, program=folder, title="Чат")
     stale = LLMProgramMessage.objects.create(
         thread=thread,
         role=LLMProgramMessage.Role.ASSISTANT,
         content="Старое предложение",
-        actions=[{"type": "update_weight", "template_exercise_id": te.id, "weight": 42}],
+        actions=[
+            {"type": "update_weight", "template_exercise_id": te.id, "weight": 42}
+        ],
         proposal_status=LLMProgramMessage.ProposalStatus.PENDING,
     )
     service = LLMProgramChatService(thread)
@@ -405,7 +436,9 @@ def test_chat_send_logs_unavailable_error(monkeypatch):
 
 @pytest.mark.django_db
 def test_chat_parser_extracts_reply_from_malformed_json():
-    user = User.objects.create_user(email="agent_parse_broken@example.com", password="pass")
+    user = User.objects.create_user(
+        email="agent_parse_broken@example.com", password="pass"
+    )
     folder, _ = _create_base_program(user)
     thread = LLMProgramThread.objects.create(user=user, program=folder, title="Чат")
     service = LLMProgramChatService(thread)
@@ -414,13 +447,17 @@ def test_chat_parser_extracts_reply_from_malformed_json():
         '{"assistant_reply": "Я могу добавить новые упражнения для пресса в \\"'
     )
 
-    assert parsed["assistant_reply"].startswith("Я могу добавить новые упражнения для пресса")
+    assert parsed["assistant_reply"].startswith(
+        "Я могу добавить новые упражнения для пресса"
+    )
     assert parsed["actions"] == []
 
 
 @pytest.mark.django_db
 def test_chat_prompt_requires_exercise_choice_and_technique_help():
-    user = User.objects.create_user(email="agent_prompt_help@example.com", password="pass")
+    user = User.objects.create_user(
+        email="agent_prompt_help@example.com", password="pass"
+    )
     folder, _ = _create_base_program(user)
     thread = LLMProgramThread.objects.create(user=user, program=folder, title="Чат")
     service = LLMProgramChatService(thread)
@@ -438,7 +475,9 @@ def test_chat_prompt_requires_exercise_choice_and_technique_help():
 
 @pytest.mark.django_db
 def test_chat_shortlist_uses_recent_context_for_catalog_list_request():
-    user = User.objects.create_user(email="agent_catalog_context@example.com", password="pass")
+    user = User.objects.create_user(
+        email="agent_catalog_context@example.com", password="pass"
+    )
     folder, _ = _create_base_program(user)
     back_exercise = Exercise_DB.objects.create(
         id="catalog_back_row",
@@ -516,7 +555,9 @@ def test_chat_shortlist_uses_recent_context_for_catalog_list_request():
 
 @pytest.mark.django_db
 def test_apply_actions_accepts_action_type_alias_for_add_exercise():
-    user = User.objects.create_user(email="agent_alias_apply@example.com", password="pass")
+    user = User.objects.create_user(
+        email="agent_alias_apply@example.com", password="pass"
+    )
     folder = ProgramFolder.objects.create(user=user, name="Силовая alias")
     day = DayTemplate.objects.create(
         folder=folder,
@@ -568,12 +609,16 @@ def test_apply_actions_accepts_action_type_alias_for_add_exercise():
     )
 
     assert response.status_code == 200
-    assert TemplateExercise.objects.filter(template=day, exercise_id="alias_crunch").exists()
+    assert TemplateExercise.objects.filter(
+        template=day, exercise_id="alias_crunch"
+    ).exists()
 
 
 @pytest.mark.django_db
 def test_apply_actions_creates_custom_exercise_and_adds_to_day():
-    user = User.objects.create_user(email="agent_custom_create@example.com", password="pass")
+    user = User.objects.create_user(
+        email="agent_custom_create@example.com", password="pass"
+    )
     folder = ProgramFolder.objects.create(user=user, name="Силовая custom")
     day = DayTemplate.objects.create(
         folder=folder,
@@ -624,7 +669,9 @@ def test_apply_actions_creates_custom_exercise_and_adds_to_day():
 
 @pytest.mark.django_db
 def test_apply_actions_rejects_custom_exercise_without_required_fields():
-    user = User.objects.create_user(email="agent_custom_invalid@example.com", password="pass")
+    user = User.objects.create_user(
+        email="agent_custom_invalid@example.com", password="pass"
+    )
     folder = ProgramFolder.objects.create(user=user, name="Силовая custom invalid")
     day = DayTemplate.objects.create(
         folder=folder,
@@ -662,12 +709,16 @@ def test_apply_actions_rejects_custom_exercise_without_required_fields():
     assert applied[0]["status"] == "skipped"
     assert "create_custom_exercise requires" in applied[0]["reason"]
     assert not CustomExercise.objects.filter(user=user).exists()
-    assert not TemplateExercise.objects.filter(template=day, custom_exercise__isnull=False).exists()
+    assert not TemplateExercise.objects.filter(
+        template=day, custom_exercise__isnull=False
+    ).exists()
 
 
 @pytest.mark.django_db
 def test_apply_actions_reuses_existing_custom_exercise_by_name():
-    user = User.objects.create_user(email="agent_custom_reuse@example.com", password="pass")
+    user = User.objects.create_user(
+        email="agent_custom_reuse@example.com", password="pass"
+    )
     folder = ProgramFolder.objects.create(user=user, name="Силовая custom reuse")
     day = DayTemplate.objects.create(
         folder=folder,
@@ -715,7 +766,12 @@ def test_apply_actions_reuses_existing_custom_exercise_by_name():
     )
 
     assert response.status_code == 200
-    assert CustomExercise.objects.filter(user=user, name__iexact="Подтягивания на гравитроне").count() == 1
+    assert (
+        CustomExercise.objects.filter(
+            user=user, name__iexact="Подтягивания на гравитроне"
+        ).count()
+        == 1
+    )
     created = TemplateExercise.objects.get(template=day, custom_exercise=custom)
     assert created.set_override == 4
     assert created.rep_override == 10
@@ -724,7 +780,9 @@ def test_apply_actions_reuses_existing_custom_exercise_by_name():
 
 @pytest.mark.django_db
 def test_create_custom_exercise_uses_exact_system_match_instead_of_duplicate():
-    user = User.objects.create_user(email="agent_custom_system_exact@example.com", password="pass")
+    user = User.objects.create_user(
+        email="agent_custom_system_exact@example.com", password="pass"
+    )
     folder = ProgramFolder.objects.create(user=user, name="Силовая custom exact")
     day = DayTemplate.objects.create(
         folder=folder,
@@ -781,12 +839,16 @@ def test_create_custom_exercise_uses_exact_system_match_instead_of_duplicate():
 
     assert response.status_code == 200
     assert not CustomExercise.objects.filter(user=user).exists()
-    assert TemplateExercise.objects.filter(template=day, exercise_id="exact_assisted_pullup").exists()
+    assert TemplateExercise.objects.filter(
+        template=day, exercise_id="exact_assisted_pullup"
+    ).exists()
 
 
 @pytest.mark.django_db
 def test_apply_actions_resolves_exercise_by_name_when_exercise_name_missing():
-    user = User.objects.create_user(email="agent_alias_name@example.com", password="pass")
+    user = User.objects.create_user(
+        email="agent_alias_name@example.com", password="pass"
+    )
     folder = ProgramFolder.objects.create(user=user, name="Силовая alias name")
     day = DayTemplate.objects.create(
         folder=folder,
@@ -840,12 +902,16 @@ def test_apply_actions_resolves_exercise_by_name_when_exercise_name_missing():
     )
 
     assert response.status_code == 200
-    assert TemplateExercise.objects.filter(template=day, exercise_id="plank_custom_id").exists()
+    assert TemplateExercise.objects.filter(
+        template=day, exercise_id="plank_custom_id"
+    ).exists()
 
 
 @pytest.mark.django_db
 def test_apply_actions_skips_invalid_actions_and_applies_valid_ones():
-    user = User.objects.create_user(email="agent_partial_apply@example.com", password="pass")
+    user = User.objects.create_user(
+        email="agent_partial_apply@example.com", password="pass"
+    )
     folder = ProgramFolder.objects.create(user=user, name="Силовая partial")
     day = DayTemplate.objects.create(
         folder=folder,
@@ -907,14 +973,18 @@ def test_apply_actions_skips_invalid_actions_and_applies_valid_ones():
     assert response.status_code == 200
     applied = response.data.get("applied", [])
     assert any(item.get("status") == "skipped" for item in applied)
-    assert TemplateExercise.objects.filter(template=day, exercise_id="plank_partial").exists()
+    assert TemplateExercise.objects.filter(
+        template=day, exercise_id="plank_partial"
+    ).exists()
     message.refresh_from_db()
     assert message.proposal_status == LLMProgramMessage.ProposalStatus.APPLIED
 
 
 @pytest.mark.django_db
 def test_apply_actions_marks_cancelled_when_nothing_applied():
-    user = User.objects.create_user(email="agent_noapply_cancel@example.com", password="pass")
+    user = User.objects.create_user(
+        email="agent_noapply_cancel@example.com", password="pass"
+    )
     folder, _te = _create_base_program(user)
     thread = LLMProgramThread.objects.create(user=user, program=folder, title="Чат")
     message = LLMProgramMessage.objects.create(
@@ -944,7 +1014,9 @@ def test_apply_actions_marks_cancelled_when_nothing_applied():
 
 @pytest.mark.django_db
 def test_apply_actions_resolves_weekday_name_to_existing_weekly_day():
-    user = User.objects.create_user(email="agent_weekday_existing@example.com", password="pass")
+    user = User.objects.create_user(
+        email="agent_weekday_existing@example.com", password="pass"
+    )
     folder = ProgramFolder.objects.create(user=user, name="Силовая weekday existing")
     day = DayTemplate.objects.create(
         folder=folder,
@@ -996,12 +1068,16 @@ def test_apply_actions_resolves_weekday_name_to_existing_weekly_day():
     )
 
     assert response.status_code == 200
-    assert TemplateExercise.objects.filter(template=day, exercise_id="weekday_plank").exists()
+    assert TemplateExercise.objects.filter(
+        template=day, exercise_id="weekday_plank"
+    ).exists()
 
 
 @pytest.mark.django_db
 def test_apply_actions_creates_weekday_day_when_missing():
-    user = User.objects.create_user(email="agent_weekday_create@example.com", password="pass")
+    user = User.objects.create_user(
+        email="agent_weekday_create@example.com", password="pass"
+    )
     folder = ProgramFolder.objects.create(user=user, name="Силовая weekday create")
     Exercise_DB.objects.create(
         id="weekday_crunch",
@@ -1046,15 +1122,21 @@ def test_apply_actions_creates_weekday_day_when_missing():
     )
 
     assert response.status_code == 200
-    created_day = DayTemplate.objects.filter(folder=folder, schedule_type=DayTemplate.ScheduleType.WEEKLY).first()
+    created_day = DayTemplate.objects.filter(
+        folder=folder, schedule_type=DayTemplate.ScheduleType.WEEKLY
+    ).first()
     assert created_day is not None
     assert (created_day.schedule_config or {}).get("days_of_week") == [2]
-    assert TemplateExercise.objects.filter(template=created_day, exercise_id="weekday_crunch").exists()
+    assert TemplateExercise.objects.filter(
+        template=created_day, exercise_id="weekday_crunch"
+    ).exists()
 
 
 @pytest.mark.django_db
 def test_apply_actions_resolves_ordinal_day_name_first_day():
-    user = User.objects.create_user(email="agent_ordinal_day@example.com", password="pass")
+    user = User.objects.create_user(
+        email="agent_ordinal_day@example.com", password="pass"
+    )
     folder = ProgramFolder.objects.create(user=user, name="Силовая ordinal day")
     first_day = DayTemplate.objects.create(
         folder=folder,
@@ -1113,12 +1195,16 @@ def test_apply_actions_resolves_ordinal_day_name_first_day():
     )
 
     assert response.status_code == 200
-    assert TemplateExercise.objects.filter(template=first_day, exercise_id="ordinal_pullup_machine").exists()
+    assert TemplateExercise.objects.filter(
+        template=first_day, exercise_id="ordinal_pullup_machine"
+    ).exists()
 
 
 @pytest.mark.django_db
 def test_apply_actions_supports_action_key_alias():
-    user = User.objects.create_user(email="agent_action_alias@example.com", password="pass")
+    user = User.objects.create_user(
+        email="agent_action_alias@example.com", password="pass"
+    )
     folder = ProgramFolder.objects.create(user=user, name="Силовая action alias")
     day = DayTemplate.objects.create(
         folder=folder,
@@ -1169,12 +1255,16 @@ def test_apply_actions_supports_action_key_alias():
     )
 
     assert response.status_code == 200
-    assert TemplateExercise.objects.filter(template=day, exercise_id="action_alias_crunch").exists()
+    assert TemplateExercise.objects.filter(
+        template=day, exercise_id="action_alias_crunch"
+    ).exists()
 
 
 @pytest.mark.django_db
 def test_apply_actions_supports_create_exercise_alias():
-    user = User.objects.create_user(email="agent_create_alias@example.com", password="pass")
+    user = User.objects.create_user(
+        email="agent_create_alias@example.com", password="pass"
+    )
     folder = ProgramFolder.objects.create(user=user, name="Силовая create alias")
     day = DayTemplate.objects.create(
         folder=folder,
@@ -1225,12 +1315,16 @@ def test_apply_actions_supports_create_exercise_alias():
     )
 
     assert response.status_code == 200
-    assert TemplateExercise.objects.filter(template=day, exercise_id="create_alias_pullup").exists()
+    assert TemplateExercise.objects.filter(
+        template=day, exercise_id="create_alias_pullup"
+    ).exists()
 
 
 @pytest.mark.django_db
 def test_apply_actions_resolves_noisy_exercise_identifier():
-    user = User.objects.create_user(email="agent_noisy_ex_id@example.com", password="pass")
+    user = User.objects.create_user(
+        email="agent_noisy_ex_id@example.com", password="pass"
+    )
     folder = ProgramFolder.objects.create(user=user, name="Силовая noisy id")
     day = DayTemplate.objects.create(
         folder=folder,
@@ -1281,12 +1375,16 @@ def test_apply_actions_resolves_noisy_exercise_identifier():
     )
 
     assert response.status_code == 200
-    assert TemplateExercise.objects.filter(template=day, exercise_id="assisted_pull_up").exists()
+    assert TemplateExercise.objects.filter(
+        template=day, exercise_id="assisted_pull_up"
+    ).exists()
 
 
 @pytest.mark.django_db
 def test_apply_actions_supports_remove_exercise_from_day():
-    user = User.objects.create_user(email="agent_remove_alias@example.com", password="pass")
+    user = User.objects.create_user(
+        email="agent_remove_alias@example.com", password="pass"
+    )
     folder = ProgramFolder.objects.create(user=user, name="Силовая remove alias")
     day = DayTemplate.objects.create(
         folder=folder,
@@ -1348,13 +1446,19 @@ def test_apply_actions_supports_remove_exercise_from_day():
 
 @pytest.mark.django_db
 def test_chat_send_passes_post_workout_context_mode_and_date(monkeypatch):
-    user = User.objects.create_user(email="agent_post_workout_mode@example.com", password="pass")
+    user = User.objects.create_user(
+        email="agent_post_workout_mode@example.com", password="pass"
+    )
     folder, _ = _create_base_program(user)
-    thread = LLMProgramThread.objects.create(user=user, program=folder, title="Пост-трен чат")
+    thread = LLMProgramThread.objects.create(
+        user=user, program=folder, title="Пост-трен чат"
+    )
     service = LLMProgramChatService(thread)
     captured: dict[str, object] = {}
 
-    def _fake_build_messages(user_message, *, mode, chat_mode="program_edit", workout_date=None):
+    def _fake_build_messages(
+        user_message, *, mode, chat_mode="program_edit", workout_date=None
+    ):
         captured["user_message"] = user_message
         captured["mode"] = mode
         captured["chat_mode"] = chat_mode
@@ -1382,9 +1486,13 @@ def test_chat_send_passes_post_workout_context_mode_and_date(monkeypatch):
 
 @pytest.mark.django_db
 def test_build_messages_includes_progress_context_for_post_workout_mode(monkeypatch):
-    user = User.objects.create_user(email="agent_post_workout_context@example.com", password="pass")
+    user = User.objects.create_user(
+        email="agent_post_workout_context@example.com", password="pass"
+    )
     folder, te = _create_base_program(user)
-    thread = LLMProgramThread.objects.create(user=user, program=folder, title="Пост-трен контекст")
+    thread = LLMProgramThread.objects.create(
+        user=user, program=folder, title="Пост-трен контекст"
+    )
     day = WorkoutDay.objects.create(
         user=user,
         date=date(2026, 2, 23),
@@ -1403,7 +1511,11 @@ def test_build_messages_includes_progress_context_for_post_workout_mode(monkeypa
                                 {
                                     "template_exercise_id": te.id,
                                     "is_active": True,
-                                    "sets": [{"set_index": 1}, {"set_index": 2}, {"set_index": 3}],
+                                    "sets": [
+                                        {"set_index": 1},
+                                        {"set_index": 2},
+                                        {"set_index": 3},
+                                    ],
                                 }
                             ],
                         }
@@ -1455,7 +1567,9 @@ def test_build_messages_includes_progress_context_for_post_workout_mode(monkeypa
 
 @pytest.mark.django_db
 def test_post_workout_context_uses_other_days_and_weekly_trend():
-    user = User.objects.create_user(email="agent_post_workout_history@example.com", password="pass")
+    user = User.objects.create_user(
+        email="agent_post_workout_history@example.com", password="pass"
+    )
     folder, te = _create_base_program(user)
     second_template = DayTemplate.objects.create(
         folder=folder,
@@ -1470,7 +1584,9 @@ def test_post_workout_context_uses_other_days_and_weekly_trend():
         rep_override=10,
         weight_override=36,
     )
-    thread = LLMProgramThread.objects.create(user=user, program=folder, title="Пост-трен история")
+    thread = LLMProgramThread.objects.create(
+        user=user, program=folder, title="Пост-трен история"
+    )
     first_date = date(2026, 2, 11)
     second_date = date(2026, 2, 23)
     first_day = WorkoutDay.objects.create(
@@ -1491,7 +1607,11 @@ def test_post_workout_context_uses_other_days_and_weekly_trend():
                                 {
                                     "template_exercise_id": te.id,
                                     "is_active": True,
-                                    "sets": [{"set_index": 1}, {"set_index": 2}, {"set_index": 3}],
+                                    "sets": [
+                                        {"set_index": 1},
+                                        {"set_index": 2},
+                                        {"set_index": 3},
+                                    ],
                                 }
                             ],
                         },
@@ -1502,7 +1622,11 @@ def test_post_workout_context_uses_other_days_and_weekly_trend():
                                 {
                                     "template_exercise_id": second_te.id,
                                     "is_active": True,
-                                    "sets": [{"set_index": 1}, {"set_index": 2}, {"set_index": 3}],
+                                    "sets": [
+                                        {"set_index": 1},
+                                        {"set_index": 2},
+                                        {"set_index": 3},
+                                    ],
                                 }
                             ],
                         },
@@ -1550,9 +1674,13 @@ def test_post_workout_context_uses_other_days_and_weekly_trend():
 
 @pytest.mark.django_db
 def test_post_workout_prompt_enforces_concise_reply_and_irr_scope():
-    user = User.objects.create_user(email="agent_post_workout_prompt@example.com", password="pass")
+    user = User.objects.create_user(
+        email="agent_post_workout_prompt@example.com", password="pass"
+    )
     folder, _ = _create_base_program(user)
-    thread = LLMProgramThread.objects.create(user=user, program=folder, title="Пост-трен prompt")
+    thread = LLMProgramThread.objects.create(
+        user=user, program=folder, title="Пост-трен prompt"
+    )
     service = LLMProgramChatService(thread)
 
     messages = service._build_messages(
@@ -1572,7 +1700,9 @@ def test_post_workout_prompt_enforces_concise_reply_and_irr_scope():
 
 @pytest.mark.django_db
 def test_add_exercise_uses_catalog_defaults_when_action_params_missing():
-    user = User.objects.create_user(email="agent_defaults_add@example.com", password="pass")
+    user = User.objects.create_user(
+        email="agent_defaults_add@example.com", password="pass"
+    )
     folder = ProgramFolder.objects.create(user=user, name="Силовая defaults add")
     day = DayTemplate.objects.create(
         folder=folder,
@@ -1625,7 +1755,9 @@ def test_add_exercise_uses_catalog_defaults_when_action_params_missing():
     )
 
     assert response.status_code == 200
-    te = TemplateExercise.objects.filter(template=day, exercise_id="defaults_machine_crunch").first()
+    te = TemplateExercise.objects.filter(
+        template=day, exercise_id="defaults_machine_crunch"
+    ).first()
     assert te is not None
     assert te.set_override == 4
     assert te.rep_override == 12
@@ -1635,7 +1767,9 @@ def test_add_exercise_uses_catalog_defaults_when_action_params_missing():
 
 @pytest.mark.django_db
 def test_update_weight_resolves_template_exercise_by_day_and_exercise():
-    user = User.objects.create_user(email="agent_update_resolve@example.com", password="pass")
+    user = User.objects.create_user(
+        email="agent_update_resolve@example.com", password="pass"
+    )
     folder = ProgramFolder.objects.create(user=user, name="Силовая update resolve")
     day = DayTemplate.objects.create(
         folder=folder,
@@ -1704,7 +1838,9 @@ def test_update_weight_resolves_template_exercise_by_day_and_exercise():
 
 @pytest.mark.django_db
 def test_apply_actions_supports_uppercase_delete_exercise_alias():
-    user = User.objects.create_user(email="agent_delete_upper@example.com", password="pass")
+    user = User.objects.create_user(
+        email="agent_delete_upper@example.com", password="pass"
+    )
     folder = ProgramFolder.objects.create(user=user, name="Силовая delete upper")
     day = DayTemplate.objects.create(
         folder=folder,

@@ -29,7 +29,9 @@ class Command(BaseCommand):
         reviews = TechniqueReview.objects.filter(created_at__lt=cutoff)
         count = reviews.count()
         if options["dry_run"]:
-            self.stdout.write(f"Would delete {count} technique reviews older than {days} days")
+            self.stdout.write(
+                f"Would delete {count} technique reviews older than {days} days"
+            )
             return
 
         deleted_files = 0

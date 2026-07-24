@@ -57,7 +57,9 @@ class LLMConfig:
         return cls(
             api_key=os.environ.get("OPENROUTER_API_KEY"),
             model=os.environ.get("OPENROUTER_MODEL", "anthropic/claude-3.5-sonnet"),
-            base_url=os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"),
+            base_url=os.environ.get(
+                "OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"
+            ),
             referrer=os.environ.get("OPENROUTER_REFERRER"),
             app_name=os.environ.get("OPENROUTER_APP_NAME", "fitTODOay"),
         )
@@ -133,12 +135,18 @@ class LLMProgramGenerationService:
         exercises_snapshot = self._serialize_exercises()
         constraints = self._build_constraints()
         base_messages = self._build_messages(
-            self._filter_prompt_preferences(preferences), exercises_snapshot, constraints
+            self._filter_prompt_preferences(preferences),
+            exercises_snapshot,
+            constraints,
         )
 
         last_error: Exception | None = None
         for attempt in range(1, self.max_attempts + 1):
-            messages = base_messages if attempt == 1 else [*base_messages, self._retry_instruction(attempt)]
+            messages = (
+                base_messages
+                if attempt == 1
+                else [*base_messages, self._retry_instruction(attempt)]
+            )
             try:
                 raw_text = self._call_llm(messages)
                 plan = self._parse_plan(raw_text)
@@ -159,7 +167,11 @@ class LLMProgramGenerationService:
                     self.user.id,
                     exc,
                 )
-        status_code = getattr(last_error, "args", ["invalid_response"])[0] if last_error else "invalid_response"
+        status_code = (
+            getattr(last_error, "args", ["invalid_response"])[0]
+            if last_error
+            else "invalid_response"
+        )
         self._log_request(
             payload=base_messages,
             response=None,
@@ -173,7 +185,9 @@ class LLMProgramGenerationService:
 
     def _serialize_exercises(self) -> List[Dict[str, Any]]:
         qs = Exercise_DB.objects.all().order_by("id")
-        primary_muscles = ExerciseMuscle.objects.filter(is_primary=True).order_by("name_en")
+        primary_muscles = ExerciseMuscle.objects.filter(is_primary=True).order_by(
+            "name_en"
+        )
         muscle_map: dict[str, list[str]] = {}
         for muscle in primary_muscles.values("exercise_id", "name_en"):
             muscle_map.setdefault(muscle["exercise_id"], []).append(muscle["name_en"])
@@ -183,7 +197,9 @@ class LLMProgramGenerationService:
             snapshot.append(
                 {
                     "id": exercise.id,
-                    "name": exercise.name_ru or exercise.name_en or exercise.english_name,
+                    "name": exercise.name_ru
+                    or exercise.name_en
+                    or exercise.english_name,
                     "target_muscles": "/".join(muscle_map.get(exercise.id, [])),
                     "equipment": exercise.equipment_en or exercise.equipment_ru,
                     "difficulty": exercise.level_en or exercise.level_ru,
@@ -208,12 +224,12 @@ class LLMProgramGenerationService:
             "Respond ONLY with a valid JSON object (no Markdown). JSON must start with '{' and end with '}'.\n"
             "Important: all names and comments for programs and day templates MUST be in Russian (Cyrillic).\n"
             "Schema:\n"
-            "{\"programs\": [{\"name\": string, \"comment\": string?, \"days\": ["
-            "{\"name\": string, \"comment\": string?, "
-            "\"schedule_type\": \"weekly\", \"schedule_config\": {\"days_of_week\": [int]}, "
-            "\"exercises\": [{"
-            "\"exercise_id\": string, \"sets\": int, \"reps\": int|null, \"weight\": number|null, "
-            "\"time\": int|null, \"rest\": int|null, \"note\": string?\n"
+            '{"programs": [{"name": string, "comment": string?, "days": ['
+            '{"name": string, "comment": string?, '
+            '"schedule_type": "weekly", "schedule_config": {"days_of_week": [int]}, '
+            '"exercises": [{'
+            '"exercise_id": string, "sets": int, "reps": int|null, "weight": number|null, '
+            '"time": int|null, "rest": int|null, "note": string?\n'
             "}]}]}]}\n"
             "Rules: use only catalog exercise IDs, determine appropriate sets/reps/weight/time yourself, keep numeric values numbers or null, "
             "and shorten days/exercises/comments if the response becomes too long."
@@ -278,7 +294,9 @@ class LLMProgramGenerationService:
         try:
             data = json.loads(cleaned)
         except json.JSONDecodeError as exc:
-            logger.warning("LLM returned invalid JSON: %s (raw=%s)", exc, raw_text[:2000])
+            logger.warning(
+                "LLM returned invalid JSON: %s (raw=%s)", exc, raw_text[:2000]
+            )
             raise LLMInvalidResponse("invalid_json") from exc
         programs = data.get("programs")
         if not programs:
@@ -292,7 +310,9 @@ class LLMProgramGenerationService:
         for idx, program in enumerate(programs_spec):
             folder = ProgramFolder.objects.create(
                 user=self.user,
-                name=self._unique_folder_name(program.get("name") or f"Программа {idx + 1}"),
+                name=self._unique_folder_name(
+                    program.get("name") or f"Программа {idx + 1}"
+                ),
                 comment=program.get("comment", ""),
                 is_active=idx == 0,
                 sort_order=self.user.program_folders.count(),
@@ -303,8 +323,11 @@ class LLMProgramGenerationService:
                     name=day.get("name") or f"День {day_index + 1}",
                     comment=day.get("comment", ""),
                     is_active=True,
-                    schedule_type=day.get("schedule_type", DayTemplate.ScheduleType.WEEKLY),
-                    schedule_config=day.get("schedule_config") or {"days_of_week": [day_index % 7]},
+                    schedule_type=day.get(
+                        "schedule_type", DayTemplate.ScheduleType.WEEKLY
+                    ),
+                    schedule_config=day.get("schedule_config")
+                    or {"days_of_week": [day_index % 7]},
                     sort_order=day_index,
                 )
                 for order, exercise_entry in enumerate(day.get("exercises", [])):
@@ -348,7 +371,9 @@ class LLMProgramGenerationService:
             name = f"{base_name} ({counter})"
         return name
 
-    def _log_request(self, *, payload, response, success: bool, status: str, error: str | None = None):
+    def _log_request(
+        self, *, payload, response, success: bool, status: str, error: str | None = None
+    ):
         try:
             LLMRequestLog.objects.create(
                 user=self.user,
@@ -470,7 +495,9 @@ class LLMProgramChatService:
                 error=str(exc),
             )
             raise
-        actions = parsed.get("actions") if isinstance(parsed.get("actions"), list) else []
+        actions = (
+            parsed.get("actions") if isinstance(parsed.get("actions"), list) else []
+        )
         actions = self._normalize_actions_for_display(actions)
         proposal_status = (
             LLMProgramMessage.ProposalStatus.PENDING
@@ -567,8 +594,14 @@ class LLMProgramChatService:
         return message
 
     def _apply_action(self, action: Dict[str, Any]) -> Dict[str, Any]:
-        raw_action_type = action.get("type") or action.get("action_type") or action.get("action")
-        action_type = str(raw_action_type).strip().lower() if raw_action_type is not None else None
+        raw_action_type = (
+            action.get("type") or action.get("action_type") or action.get("action")
+        )
+        action_type = (
+            str(raw_action_type).strip().lower()
+            if raw_action_type is not None
+            else None
+        )
         alias_map = {
             "add_exercise_to_day": "add_exercise",
             "add_exercise": "add_exercise",
@@ -609,7 +642,12 @@ class LLMProgramChatService:
                 "add_exercise requires valid day_id/day_name and exercise_id/exercise_name"
             )
         defaults = self._build_exercise_defaults(exercise, action)
-        sort_order = (day.template_exercises.aggregate(models.Max("sort_order")).get("sort_order__max") or 0) + 1
+        sort_order = (
+            day.template_exercises.aggregate(models.Max("sort_order")).get(
+                "sort_order__max"
+            )
+            or 0
+        ) + 1
         new_te = TemplateExercise.objects.create(
             template=day,
             exercise=exercise,
@@ -641,7 +679,9 @@ class LLMProgramChatService:
         custom = self._build_or_get_custom_exercise(action)
         defaults = self._build_custom_exercise_defaults(custom, action)
         sort_order = (
-            day.template_exercises.aggregate(models.Max("sort_order")).get("sort_order__max")
+            day.template_exercises.aggregate(models.Max("sort_order")).get(
+                "sort_order__max"
+            )
             or 0
         ) + 1
         new_te = TemplateExercise.objects.create(
@@ -679,7 +719,12 @@ class LLMProgramChatService:
         old_te.is_active = False
         old_te.save(update_fields=["is_active"])
         defaults = self._build_exercise_defaults(exercise, action)
-        sort_order = (day.template_exercises.aggregate(models.Max("sort_order")).get("sort_order__max") or 0) + 1
+        sort_order = (
+            day.template_exercises.aggregate(models.Max("sort_order")).get(
+                "sort_order__max"
+            )
+            or 0
+        ) + 1
         new_te = TemplateExercise.objects.create(
             template=day,
             exercise=exercise,
@@ -701,7 +746,9 @@ class LLMProgramChatService:
     def _remove_exercise(self, action: Dict[str, Any]) -> Dict[str, Any]:
         day = self._resolve_day(action)
         exercise = self._resolve_exercise(action)
-        te_id = action.get("template_exercise_id") or action.get("deactivate_exercise_id")
+        te_id = action.get("template_exercise_id") or action.get(
+            "deactivate_exercise_id"
+        )
 
         qs = TemplateExercise.objects.filter(
             template__folder=self.thread.program,
@@ -730,7 +777,9 @@ class LLMProgramChatService:
         te = None
         if te_id:
             te = TemplateExercise.objects.filter(
-                id=te_id, template__folder=self.thread.program, template__folder__user=self.thread.user
+                id=te_id,
+                template__folder=self.thread.program,
+                template__folder__user=self.thread.user,
             ).first()
         if not te:
             day = self._resolve_day(action)
@@ -748,7 +797,14 @@ class LLMProgramChatService:
         if not te:
             raise LLMInvalidResponse("invalid_update_weight_action")
         changed_fields = []
-        for field in ("weight_override", "rep_override", "set_override", "time_override", "rest_override", "note"):
+        for field in (
+            "weight_override",
+            "rep_override",
+            "set_override",
+            "time_override",
+            "rest_override",
+            "note",
+        ):
             key = field.replace("_override", "")
             if field == "note":
                 value = action.get("note", "")
@@ -772,7 +828,9 @@ class LLMProgramChatService:
             te.save(update_fields=changed_fields)
         return {"type": "update_weight", "template_exercise_id": te.id}
 
-    def _build_exercise_defaults(self, exercise: Exercise_DB, action: Dict[str, Any]) -> Dict[str, Any]:
+    def _build_exercise_defaults(
+        self, exercise: Exercise_DB, action: Dict[str, Any]
+    ) -> Dict[str, Any]:
         sets = action.get("sets")
         reps = action.get("reps")
         weight = action.get("weight")
@@ -780,9 +838,21 @@ class LLMProgramChatService:
         rest = action.get("rest")
         return {
             "sets": sets if sets is not None else exercise.default_sets,
-            "reps": reps if reps is not None else (exercise.default_reps if not exercise.has_time else None),
-            "weight": weight if weight is not None else (exercise.default_weight if exercise.has_weight else None),
-            "time": time if time is not None else (exercise.default_time if exercise.has_time else None),
+            "reps": (
+                reps
+                if reps is not None
+                else (exercise.default_reps if not exercise.has_time else None)
+            ),
+            "weight": (
+                weight
+                if weight is not None
+                else (exercise.default_weight if exercise.has_weight else None)
+            ),
+            "time": (
+                time
+                if time is not None
+                else (exercise.default_time if exercise.has_time else None)
+            ),
             "rest": rest if rest is not None else exercise.default_rest,
         }
 
@@ -796,9 +866,21 @@ class LLMProgramChatService:
         rest = action.get("rest", action.get("default_rest"))
         return {
             "sets": sets if sets is not None else exercise.default_sets,
-            "reps": reps if reps is not None else (exercise.default_reps if not exercise.has_time else None),
-            "weight": weight if weight is not None else (exercise.default_weight if exercise.has_weight else None),
-            "time": time if time is not None else (exercise.default_time if exercise.has_time else None),
+            "reps": (
+                reps
+                if reps is not None
+                else (exercise.default_reps if not exercise.has_time else None)
+            ),
+            "weight": (
+                weight
+                if weight is not None
+                else (exercise.default_weight if exercise.has_weight else None)
+            ),
+            "time": (
+                time
+                if time is not None
+                else (exercise.default_time if exercise.has_time else None)
+            ),
             "rest": rest if rest is not None else exercise.default_rest,
         }
 
@@ -829,11 +911,21 @@ class LLMProgramChatService:
         has_weight = bool(has_weight) if has_weight is not None else False
         has_time = bool(has_time) if has_time is not None else False
 
-        default_sets = self._positive_int(action.get("default_sets", action.get("sets")))
-        default_rest = self._positive_int(action.get("default_rest", action.get("rest")))
-        default_reps = self._positive_int(action.get("default_reps", action.get("reps")))
-        default_time = self._positive_int(action.get("default_time", action.get("time")))
-        default_weight = self._nullable_number(action.get("default_weight", action.get("weight")))
+        default_sets = self._positive_int(
+            action.get("default_sets", action.get("sets"))
+        )
+        default_rest = self._positive_int(
+            action.get("default_rest", action.get("rest"))
+        )
+        default_reps = self._positive_int(
+            action.get("default_reps", action.get("reps"))
+        )
+        default_time = self._positive_int(
+            action.get("default_time", action.get("time"))
+        )
+        default_weight = self._nullable_number(
+            action.get("default_weight", action.get("weight"))
+        )
 
         if default_sets is None or default_rest is None:
             raise LLMInvalidResponse(
@@ -945,7 +1037,7 @@ class LLMProgramChatService:
         if mode == "chat":
             system_prompt += (
                 " Верни JSON без Markdown с полями: "
-                "{\"assistant_reply\": string, \"actions\": Array<object>}. "
+                '{"assistant_reply": string, "actions": Array<object>}. '
                 "assistant_reply — это понятный человеку ответ простым языком. "
                 "actions — только конкретные изменения для подтверждения пользователем; если изменений нет, верни пустой массив. "
                 "В каждом action обязательно передавай exercise_name на русском (человекочитаемое название упражнения). "
@@ -969,18 +1061,18 @@ class LLMProgramChatService:
         else:
             system_prompt += (
                 " Сформируй действия в строгом JSON без Markdown: "
-                "{\"assistant_reply\": string, "
-                "\"actions\": [{"
-                "\"type\": \"add_exercise\"|\"replace_exercise\"|\"update_weight\"|\"create_custom_exercise\", "
-                "\"day_id\": number?, \"day_name\": string?, "
-                "\"deactivate_exercise_id\": number?, "
-                "\"template_exercise_id\": number?, "
-                "\"exercise_id\": string?, \"exercise_name\": string?, "
-                "\"sets\": number|null?, \"reps\": number|null?, \"weight\": number|null?, "
-                "\"time\": number|null?, \"rest\": number|null?, \"target_muscles\": string?, "
-                "\"has_weight\": boolean?, \"has_time\": boolean?, \"default_sets\": number?, "
-                "\"default_reps\": number?, \"default_time\": number?, \"default_rest\": number?, "
-                "\"default_weight\": number|null?, \"description\": string?, \"note\": string?"
+                '{"assistant_reply": string, '
+                '"actions": [{'
+                '"type": "add_exercise"|"replace_exercise"|"update_weight"|"create_custom_exercise", '
+                '"day_id": number?, "day_name": string?, '
+                '"deactivate_exercise_id": number?, '
+                '"template_exercise_id": number?, '
+                '"exercise_id": string?, "exercise_name": string?, '
+                '"sets": number|null?, "reps": number|null?, "weight": number|null?, '
+                '"time": number|null?, "rest": number|null?, "target_muscles": string?, '
+                '"has_weight": boolean?, "has_time": boolean?, "default_sets": number?, '
+                '"default_reps": number?, "default_time": number?, "default_rest": number?, '
+                '"default_weight": number|null?, "description": string?, "note": string?'
                 "}]} "
                 "assistant_reply — кратко для человека (что предлагаешь, зачем). "
                 "Всегда заполняй exercise_name на русском для каждого action. "
@@ -994,7 +1086,9 @@ class LLMProgramChatService:
             "available_exercises": shortlist,
         }
         if chat_mode == "post_workout_review":
-            context["progress_context"] = self._build_post_workout_context(workout_date=workout_date)
+            context["progress_context"] = self._build_post_workout_context(
+                workout_date=workout_date
+            )
         history = []
         for msg in self.thread.messages.order_by("-id")[:12][::-1]:
             history.append({"role": msg.role, "content": msg.content})
@@ -1006,7 +1100,11 @@ class LLMProgramChatService:
         ]
 
     def _latest_actions(self):
-        last = self.thread.messages.filter(role=LLMProgramMessage.Role.ASSISTANT).order_by("-id").first()
+        last = (
+            self.thread.messages.filter(role=LLMProgramMessage.Role.ASSISTANT)
+            .order_by("-id")
+            .first()
+        )
         return last.actions if last else None
 
     def _serialize_program(self):
@@ -1017,9 +1115,13 @@ class LLMProgramChatService:
             "comment": folder.comment,
             "days": [],
         }
-        templates = folder.templates.all().order_by("sort_order", "id").prefetch_related(
-            "template_exercises__exercise",
-            "template_exercises__custom_exercise",
+        templates = (
+            folder.templates.all()
+            .order_by("sort_order", "id")
+            .prefetch_related(
+                "template_exercises__exercise",
+                "template_exercises__custom_exercise",
+            )
         )
         for day in templates:
             day_entry = {
@@ -1059,7 +1161,11 @@ class LLMProgramChatService:
                         "is_active": te.is_active,
                         "sets": te.set_override,
                         "reps": te.rep_override,
-                        "weight": float(te.weight_override) if te.weight_override is not None else None,
+                        "weight": (
+                            float(te.weight_override)
+                            if te.weight_override is not None
+                            else None
+                        ),
                         "time": te.time_override,
                         "rest": te.rest_override,
                         "note": te.note,
@@ -1068,7 +1174,9 @@ class LLMProgramChatService:
             data["days"].append(day_entry)
         return data
 
-    def _build_post_workout_context(self, *, workout_date: date | None = None) -> Dict[str, Any]:
+    def _build_post_workout_context(
+        self, *, workout_date: date | None = None
+    ) -> Dict[str, Any]:
         program_id = self.thread.program_id
         candidate_days = list(
             WorkoutDay.objects.filter(user=self.thread.user)
@@ -1113,13 +1221,17 @@ class LLMProgramChatService:
             folder_payloads = generate_recommendations_for_day(target_day)
             for folder_payload in folder_payloads:
                 if folder_payload.get("folder_id") == program_id:
-                    algorithm_recommendations = folder_payload.get("recommendations") or []
+                    algorithm_recommendations = (
+                        folder_payload.get("recommendations") or []
+                    )
                     break
 
         return {
             "program_id": program_id,
             "program_name": self.thread.program.name,
-            "requested_workout_date": workout_date.isoformat() if workout_date else None,
+            "requested_workout_date": (
+                workout_date.isoformat() if workout_date else None
+            ),
             "latest_workout_summary": latest_summary,
             "recent_workouts": serialized_days[:10],
             "weekly_trend": weekly_trend,
@@ -1130,7 +1242,7 @@ class LLMProgramChatService:
 
     def _extract_folder_ids_from_day(self, day: WorkoutDay) -> set[int]:
         result: set[int] = set()
-        for raw in (day.source_folder_ids or []):
+        for raw in day.source_folder_ids or []:
             try:
                 result.add(int(raw))
             except (TypeError, ValueError):
@@ -1146,11 +1258,15 @@ class LLMProgramChatService:
                 continue
         return result
 
-    def _extract_program_template_exercise_ids(self, day: WorkoutDay, program_id: int) -> set[int]:
+    def _extract_program_template_exercise_ids(
+        self, day: WorkoutDay, program_id: int
+    ) -> set[int]:
         snapshot = self._extract_program_templates_from_snapshot(day, program_id)
         return snapshot["template_exercise_ids"]
 
-    def _extract_program_templates_from_snapshot(self, day: WorkoutDay, program_id: int) -> Dict[str, Any]:
+    def _extract_program_templates_from_snapshot(
+        self, day: WorkoutDay, program_id: int
+    ) -> Dict[str, Any]:
         plan = day.plan_snapshot or {}
         templates: List[Dict[str, Any]] = []
         all_te_ids: set[int] = set()
@@ -1167,7 +1283,9 @@ class LLMProgramChatService:
                     template_id = int(template_id_raw)
                 except (TypeError, ValueError):
                     continue
-                template_name = str(template.get("name") or f"День {template_id}").strip()
+                template_name = str(
+                    template.get("name") or f"День {template_id}"
+                ).strip()
                 planned_sets = 0
                 template_te_ids: set[int] = set()
                 for exercise in template.get("exercises", []):
@@ -1200,7 +1318,9 @@ class LLMProgramChatService:
             return float(log.actual_time) / TIME_COEFFICIENT
         return 0.0
 
-    def _serialize_day_progress(self, day: WorkoutDay, program_id: int) -> Dict[str, Any]:
+    def _serialize_day_progress(
+        self, day: WorkoutDay, program_id: int
+    ) -> Dict[str, Any]:
         snapshot = self._extract_program_templates_from_snapshot(day, program_id)
         te_ids = snapshot["template_exercise_ids"]
         templates = snapshot["templates"]
@@ -1228,7 +1348,9 @@ class LLMProgramChatService:
                 "total_load": 0.0,
                 "template_summaries": [],
             }
-        relevant_logs = [log for log in day.set_logs.all() if log.template_exercise_id in te_ids]
+        relevant_logs = [
+            log for log in day.set_logs.all() if log.template_exercise_id in te_ids
+        ]
         logs_count = len(relevant_logs)
         planned_sets = sum(item["planned_sets"] for item in template_progress.values())
         total_load = 0.0
@@ -1241,7 +1363,9 @@ class LLMProgramChatService:
             bucket = template_progress[template_id]
             bucket["logged_sets"] += 1
             bucket["total_load"] += load
-        completion_percent = int((logs_count / planned_sets) * 100) if planned_sets else 0
+        completion_percent = (
+            int((logs_count / planned_sets) * 100) if planned_sets else 0
+        )
         template_summaries = []
         for item in template_progress.values():
             template_planned = item["planned_sets"]
@@ -1252,9 +1376,11 @@ class LLMProgramChatService:
                     "template_name": item["template_name"],
                     "planned_sets": template_planned,
                     "logged_sets": template_logged,
-                    "completion_percent": int((template_logged / template_planned) * 100)
-                    if template_planned
-                    else 0,
+                    "completion_percent": (
+                        int((template_logged / template_planned) * 100)
+                        if template_planned
+                        else 0
+                    ),
                     "total_load": round(item["total_load"], 2),
                 }
             )
@@ -1269,7 +1395,9 @@ class LLMProgramChatService:
             "template_summaries": template_summaries,
         }
 
-    def _build_weekly_program_trend(self, serialized_days: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _build_weekly_program_trend(
+        self, serialized_days: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
         weekly: Dict[str, Dict[str, Any]] = {}
         for day_payload in serialized_days:
             try:
@@ -1302,14 +1430,18 @@ class LLMProgramChatService:
                     "workout_days": item["workout_days"],
                     "planned_sets": planned,
                     "logged_sets": logged,
-                    "completion_percent": int((logged / planned) * 100) if planned else 0,
+                    "completion_percent": (
+                        int((logged / planned) * 100) if planned else 0
+                    ),
                     "total_load": round(item["total_load"], 2),
                 }
             )
         result.sort(key=lambda entry: entry["week_start"], reverse=True)
         return result[:8]
 
-    def _build_day_type_trend(self, serialized_days: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _build_day_type_trend(
+        self, serialized_days: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
         by_day_type: Dict[str, Dict[str, Any]] = {}
         for day_payload in serialized_days:
             day_date = day_payload.get("date")
@@ -1328,9 +1460,14 @@ class LLMProgramChatService:
                     },
                 )
                 bucket["sessions"] += 1
-                bucket["completion_sum"] += float(template.get("completion_percent") or 0.0)
+                bucket["completion_sum"] += float(
+                    template.get("completion_percent") or 0.0
+                )
                 bucket["load_sum"] += float(template.get("total_load") or 0.0)
-                if day_date and (bucket["last_date"] is None or str(day_date) > str(bucket["last_date"])):
+                if day_date and (
+                    bucket["last_date"] is None
+                    or str(day_date) > str(bucket["last_date"])
+                ):
                     bucket["last_date"] = day_date
         result = []
         for item in by_day_type.values():
@@ -1339,7 +1476,9 @@ class LLMProgramChatService:
                 {
                     "day_name": item["day_name"],
                     "sessions": item["sessions"],
-                    "average_completion_percent": round(item["completion_sum"] / sessions, 1),
+                    "average_completion_percent": round(
+                        item["completion_sum"] / sessions, 1
+                    ),
                     "average_load": round(item["load_sum"] / sessions, 2),
                     "last_date": item["last_date"],
                 }
@@ -1360,7 +1499,8 @@ class LLMProgramChatService:
             logs = [
                 log
                 for log in day.set_logs.all()
-                if log.template_exercise_id in te_ids and log.template_exercise_id is not None
+                if log.template_exercise_id in te_ids
+                and log.template_exercise_id is not None
             ]
             for log in logs:
                 te = log.template_exercise
@@ -1441,7 +1581,9 @@ class LLMProgramChatService:
         try:
             data = json.loads(cleaned)
             if isinstance(data, dict):
-                actions = data.get("actions") if isinstance(data.get("actions"), list) else []
+                actions = (
+                    data.get("actions") if isinstance(data.get("actions"), list) else []
+                )
                 reply = (
                     data.get("assistant_reply")
                     or data.get("reply")
@@ -1462,7 +1604,9 @@ class LLMProgramChatService:
             return {"assistant_reply": extracted_reply, "actions": []}
         return {"assistant_reply": cleaned, "actions": []}
 
-    def _normalize_actions_for_display(self, actions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _normalize_actions_for_display(
+        self, actions: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
         alias_map = {
             "add_exercise_to_day": "add_exercise",
             "add_exercise": "add_exercise",
@@ -1485,11 +1629,32 @@ class LLMProgramChatService:
             if not isinstance(raw_action, dict):
                 continue
             action = dict(raw_action)
-            action_type = str(action.get("type") or action.get("action_type") or action.get("action") or "").strip().lower()
+            action_type = (
+                str(
+                    action.get("type")
+                    or action.get("action_type")
+                    or action.get("action")
+                    or ""
+                )
+                .strip()
+                .lower()
+            )
             normalized_type = alias_map.get(action_type, action_type)
             if not normalized_type and (
                 action.get("template_exercise_id")
-                or any(key in action for key in ("weight", "reps", "rep", "sets", "set", "time", "rest", "note"))
+                or any(
+                    key in action
+                    for key in (
+                        "weight",
+                        "reps",
+                        "rep",
+                        "sets",
+                        "set",
+                        "time",
+                        "rest",
+                        "note",
+                    )
+                )
             ):
                 normalized_type = "update_weight"
             if not normalized_type:
@@ -1510,13 +1675,19 @@ class LLMProgramChatService:
 
     def _attach_localized_exercise_name(self, action: Dict[str, Any]) -> None:
         candidate_exercise = None
-        te_id = action.get("template_exercise_id") or action.get("deactivate_exercise_id")
+        te_id = action.get("template_exercise_id") or action.get(
+            "deactivate_exercise_id"
+        )
         if te_id:
-            template_exercise = TemplateExercise.objects.filter(
-                id=te_id,
-                template__folder=self.thread.program,
-                template__folder__user=self.thread.user,
-            ).select_related("exercise").first()
+            template_exercise = (
+                TemplateExercise.objects.filter(
+                    id=te_id,
+                    template__folder=self.thread.program,
+                    template__folder__user=self.thread.user,
+                )
+                .select_related("exercise")
+                .first()
+            )
             if template_exercise and template_exercise.exercise:
                 candidate_exercise = template_exercise.exercise
         if candidate_exercise is None:
@@ -1533,16 +1704,22 @@ class LLMProgramChatService:
         day_id = action.get("day_id")
         if not day_id or action.get("day_name"):
             return
-        day = DayTemplate.objects.filter(
-            id=day_id,
-            folder=self.thread.program,
-            folder__user=self.thread.user,
-        ).only("name").first()
+        day = (
+            DayTemplate.objects.filter(
+                id=day_id,
+                folder=self.thread.program,
+                folder__user=self.thread.user,
+            )
+            .only("name")
+            .first()
+        )
         if day:
             action["day_name"] = day.name
 
     def _drop_unchanged_action_fields(self, action: Dict[str, Any]) -> None:
-        te_id = action.get("template_exercise_id") or action.get("deactivate_exercise_id")
+        te_id = action.get("template_exercise_id") or action.get(
+            "deactivate_exercise_id"
+        )
         if not te_id:
             return
         template_exercise = TemplateExercise.objects.filter(
@@ -1569,7 +1746,11 @@ class LLMProgramChatService:
             if proposed is None:
                 continue
             try:
-                is_equal = float(proposed) == float(current) if proposed is not None and current is not None else proposed == current
+                is_equal = (
+                    float(proposed) == float(current)
+                    if proposed is not None and current is not None
+                    else proposed == current
+                )
             except (TypeError, ValueError):
                 is_equal = proposed == current
             if is_equal:
@@ -1605,10 +1786,14 @@ class LLMProgramChatService:
         # Prefer content until the next unescaped quote if present.
         end_match = re.search(r'(?<!\\)"', raw_tail)
         value = raw_tail[: end_match.start()] if end_match else raw_tail
-        value = value.replace('\\"', '"').replace("\\n", "\n").replace("\\t", "\t").strip()
+        value = (
+            value.replace('\\"', '"').replace("\\n", "\n").replace("\\t", "\t").strip()
+        )
         return value or None
 
-    def _log_request(self, *, payload, response, success: bool, status: str, error: str | None = None):
+    def _log_request(
+        self, *, payload, response, success: bool, status: str, error: str | None = None
+    ):
         try:
             LLMRequestLog.objects.create(
                 user=self.thread.user,
@@ -1632,7 +1817,9 @@ class LLMProgramChatService:
         parsed = self._parse_response(raw)
         return parsed.get("actions") or []
 
-    def _resolve_day(self, action: Dict[str, Any], fallback_from_te: int | None = None) -> DayTemplate | None:
+    def _resolve_day(
+        self, action: Dict[str, Any], fallback_from_te: int | None = None
+    ) -> DayTemplate | None:
         day_id = action.get("day_id")
         day_name = action.get("day_name") or action.get("day")
         explicit_day_provided = bool(day_id or day_name)
@@ -1644,7 +1831,9 @@ class LLMProgramChatService:
                 return day
         if day_name:
             day = DayTemplate.objects.filter(
-                folder=self.thread.program, folder__user=self.thread.user, name__iexact=day_name
+                folder=self.thread.program,
+                folder__user=self.thread.user,
+                name__iexact=day_name,
             ).first()
             if day:
                 return day
@@ -1671,14 +1860,20 @@ class LLMProgramChatService:
         if explicit_day_provided:
             return None
         active_day = (
-            DayTemplate.objects.filter(folder=self.thread.program, folder__user=self.thread.user, is_active=True)
+            DayTemplate.objects.filter(
+                folder=self.thread.program,
+                folder__user=self.thread.user,
+                is_active=True,
+            )
             .order_by("sort_order", "id")
             .first()
         )
         if active_day:
             return active_day
         return (
-            DayTemplate.objects.filter(folder=self.thread.program, folder__user=self.thread.user)
+            DayTemplate.objects.filter(
+                folder=self.thread.program, folder__user=self.thread.user
+            )
             .order_by("sort_order", "id")
             .first()
         )
@@ -1729,7 +1924,9 @@ class LLMProgramChatService:
                 return relaxed_from_id
         return None
 
-    def _resolve_exact_system_exercise(self, action: Dict[str, Any]) -> Exercise_DB | None:
+    def _resolve_exact_system_exercise(
+        self, action: Dict[str, Any]
+    ) -> Exercise_DB | None:
         candidates = [
             action.get("exercise_id"),
             action.get("exercise_name"),
@@ -1826,18 +2023,21 @@ class LLMProgramChatService:
             DayTemplate.objects.filter(
                 folder=self.thread.program,
                 folder__user=self.thread.user,
-            )
-            .order_by("sort_order", "id")
+            ).order_by("sort_order", "id")
         )
         if order_index >= len(days):
             return None
         return days[order_index]
 
-    def _create_weekday_day(self, weekday_index: int, weekday_label: str) -> DayTemplate:
+    def _create_weekday_day(
+        self, weekday_index: int, weekday_label: str
+    ) -> DayTemplate:
         base_name = f"День ({weekday_label})"
         name = base_name
         suffix = 2
-        while DayTemplate.objects.filter(folder=self.thread.program, name=name).exists():
+        while DayTemplate.objects.filter(
+            folder=self.thread.program, name=name
+        ).exists():
             name = f"{base_name} {suffix}"
             suffix += 1
         last_sort_order = (
@@ -1871,7 +2071,11 @@ class LLMProgramChatService:
         limit = 60 if list_intent else 24
 
         if direct_filter:
-            qs = base_qs.filter(direct_filter).distinct().order_by("name_ru", "name_en")[:limit]
+            qs = (
+                base_qs.filter(direct_filter)
+                .distinct()
+                .order_by("name_ru", "name_en")[:limit]
+            )
         elif query:
             try:
                 text_filter = self._build_text_match_filter(normalized_query)
@@ -1885,7 +2089,9 @@ class LLMProgramChatService:
                 if text_match and text_match.embedding is not None:
                     qs = (
                         Exercise_DB.objects.exclude(embedding__isnull=True)
-                        .annotate(distance=L2Distance("embedding", text_match.embedding))
+                        .annotate(
+                            distance=L2Distance("embedding", text_match.embedding)
+                        )
                         .order_by("distance")[:limit]
                     )
                 else:
@@ -1949,11 +2155,29 @@ class LLMProgramChatService:
     def _extract_catalog_terms(self, query: str) -> list[str]:
         terms: set[str] = set()
         aliases = {
-            "спин": ["спин", "широч", "трапец", "поясниц", "back", "lat", "trap", "row"],
+            "спин": [
+                "спин",
+                "широч",
+                "трапец",
+                "поясниц",
+                "back",
+                "lat",
+                "trap",
+                "row",
+            ],
             "плеч": ["плеч", "дельт", "shoulder", "delt", "lateral"],
             "груд": ["груд", "chest", "pector"],
             "пресс": ["пресс", "живот", "abs", "abdominal", "core"],
-            "ног": ["ног", "бедр", "квадриц", "ягод", "leg", "quad", "glute", "hamstring"],
+            "ног": [
+                "ног",
+                "бедр",
+                "квадриц",
+                "ягод",
+                "leg",
+                "quad",
+                "glute",
+                "hamstring",
+            ],
             "бицеп": ["бицеп", "bicep"],
             "трицеп": ["трицеп", "tricep"],
         }

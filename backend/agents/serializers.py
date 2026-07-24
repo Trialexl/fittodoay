@@ -17,7 +17,9 @@ class LLMProgramRequestSerializer(LLMPreferencesSerializer):
 
 
 class LLMProgramResponseSerializer(serializers.Serializer):
-    created_programs = serializers.ListField(child=serializers.DictField(), read_only=True)
+    created_programs = serializers.ListField(
+        child=serializers.DictField(), read_only=True
+    )
     active_program_id = serializers.IntegerField(read_only=True)
     raw_plan = serializers.DictField(read_only=True)
 

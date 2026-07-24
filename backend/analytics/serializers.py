@@ -15,7 +15,9 @@ class DateRangeSerializer(serializers.Serializer):
         start = self.validated_data.get("start") or date.today().replace(day=1)
         end = self.validated_data.get("end") or date.today()
         if start > end:
-            raise serializers.ValidationError("Дата начала не может быть позже даты окончания")
+            raise serializers.ValidationError(
+                "Дата начала не может быть позже даты окончания"
+            )
         return start, end
 
 

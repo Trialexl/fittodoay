@@ -4,6 +4,7 @@ from rest_framework import generics, permissions, status
 from rest_framework.authtoken.models import Token
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from django.contrib.auth import login as session_login
 
 from .models import UserProfile
 from .serializers import (
@@ -25,6 +26,9 @@ class RegisterView(APIView):
         serializer = RegisterSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
+        session_login(
+            request, user, backend="django.contrib.auth.backends.ModelBackend"
+        )
         token, _ = Token.objects.get_or_create(user=user)
         return Response(
             {"user": UserSerializer(user).data, "token": token.key},
@@ -40,6 +44,9 @@ class LoginView(APIView):
         serializer = LoginSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
         user = serializer.validated_data["user"]
+        session_login(
+            request, user, backend="django.contrib.auth.backends.ModelBackend"
+        )
         token, _ = Token.objects.get_or_create(user=user)
         return Response({"token": token.key, "user": UserSerializer(user).data})
 
@@ -75,7 +82,9 @@ class LLMPreferencesView(APIView):
         preferences.update(serializer.validated_data)
         profile.llm_preferences = preferences
         profile.save(update_fields=["llm_preferences"])
-        response_serializer = self.serializer_class(instance=self._with_defaults(preferences))
+        response_serializer = self.serializer_class(
+            instance=self._with_defaults(preferences)
+        )
         return Response(response_serializer.data)
 
     def _with_defaults(self, data: dict | None):
@@ -94,5 +103,6 @@ class UserFeedbackView(generics.CreateAPIView):
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
+
 
 # Create your views here.

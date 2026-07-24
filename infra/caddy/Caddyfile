@@ -11,7 +11,14 @@
     Referrer-Policy strict-origin-when-cross-origin
   }
 
-  @backend path /api /api/* /admin /admin/* /static/* /media/*
+  @mcp path /mcp /mcp/* /authorize /token /register /revoke /.well-known/oauth-authorization-server /.well-known/oauth-protected-resource/mcp
+  reverse_proxy @mcp backend:8000 {
+    header_up Host {host}
+    header_up X-Forwarded-Host {host}
+    header_up X-Forwarded-Proto {scheme}
+  }
+
+  @backend path /api /api/* /oauth /oauth/* /admin /admin/* /static/* /media/*
   reverse_proxy @backend backend:8000
 
   reverse_proxy frontend:3000

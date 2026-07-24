@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 import sys
-from collections import defaultdict
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -63,7 +62,9 @@ def simulate(values: dict, set_index: int):
 
     variation = 1 if (values["sessions"] + set_index) % 4 == 0 else 0
     actual_reps = max(1, int(values["rep_target"]) + variation)
-    actual_weight = float(values["weight_target"]) if values["weight_target"] is not None else None
+    actual_weight = (
+        float(values["weight_target"]) if values["weight_target"] is not None else None
+    )
     return {"reps": actual_reps, "weight": actual_weight, "time": None}
 
 
@@ -80,7 +81,9 @@ def adjust_progress(values: dict):
 
     if values["has_weight"] and values["weight_target"] is not None:
         if values["rep_target"] >= base_reps + 4:
-            values["weight_target"] = float(Decimal(str(values["weight_target"])) + WEIGHT_STEP)
+            values["weight_target"] = float(
+                Decimal(str(values["weight_target"])) + WEIGHT_STEP
+            )
             values["rep_target"] = min(base_reps, WEIGHT_RESET_REPS)
 
 

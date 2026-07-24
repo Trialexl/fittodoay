@@ -4,6 +4,8 @@ Docker-first команды для разработки и проверки.
 
 Production-деплой: локально собрать и запушить images, на сервере только `pull` + `up --no-build`.
 
+Настройка OAuth MCP и подключение Codex Desktop: [docs/mcp.md](docs/mcp.md).
+
 ```bash
 ./build-and-push-images.sh
 ./update-server.sh

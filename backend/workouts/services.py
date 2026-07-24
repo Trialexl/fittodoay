@@ -1,12 +1,17 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date
 from typing import Any, Dict, List
 
 from django.db.models import Prefetch
 
 from programs.models import DayTemplate, ProgramFolder, TemplateExercise
-from workouts.models import ExerciseImage, ExerciseInstruction, ExerciseMuscle, WorkoutDay
+from workouts.models import (
+    ExerciseImage,
+    ExerciseInstruction,
+    ExerciseMuscle,
+    WorkoutDay,
+)
 
 
 def _parse_date(value: str | None) -> date | None:
@@ -61,7 +66,9 @@ def resolve_defaults(te: TemplateExercise) -> Dict[str, Any]:
     return {
         "has_weight": getattr(source, "has_weight", True),
         "has_time": getattr(source, "has_time", False),
-        "weight": float(te.weight_override or getattr(source, "default_weight", 0) or 0),
+        "weight": float(
+            te.weight_override or getattr(source, "default_weight", 0) or 0
+        ),
         "reps": te.rep_override or getattr(source, "default_reps", None),
         "sets": te.set_override or getattr(source, "default_sets", 1),
         "time": te.time_override or getattr(source, "default_time", None),
@@ -137,7 +144,9 @@ def generate_daily_plan(user, target_date: date | None = None) -> WorkoutDay:
                     ),
                     Prefetch(
                         "exercise__muscles",
-                        queryset=ExerciseMuscle.objects.order_by("-is_primary", "name_ru", "name_en"),
+                        queryset=ExerciseMuscle.objects.order_by(
+                            "-is_primary", "name_ru", "name_en"
+                        ),
                         to_attr="prefetched_muscles",
                     ),
                 ),
@@ -157,7 +166,11 @@ def generate_daily_plan(user, target_date: date | None = None) -> WorkoutDay:
     for folder in folders:
         if not folder.is_active:
             continue
-        folder_payload = {"id": folder.id, "name": _folder_display_name(folder), "templates": []}
+        folder_payload = {
+            "id": folder.id,
+            "name": _folder_display_name(folder),
+            "templates": [],
+        }
         for template in folder.templates.all():
             if not template.effective_active:
                 continue
@@ -230,7 +243,9 @@ def generate_daily_plan(user, target_date: date | None = None) -> WorkoutDay:
     day.plan_snapshot = plan_snapshot
     day.source_folder_ids = folder_ids
     day.source_template_ids = template_ids
-    day.save(update_fields=["plan_snapshot", "source_folder_ids", "source_template_ids"])
+    day.save(
+        update_fields=["plan_snapshot", "source_folder_ids", "source_template_ids"]
+    )
     return day
 
 

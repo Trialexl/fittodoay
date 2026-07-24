@@ -69,8 +69,10 @@ class TemplateExerciseSerializer(serializers.ModelSerializer):
         self.fields["custom_exercise_id"].queryset = custom_qs
 
     def validate(self, attrs):
-        exercise = attrs.get("exercise")
-        custom_exercise = attrs.get("custom_exercise")
+        exercise = attrs.get("exercise", getattr(self.instance, "exercise", None))
+        custom_exercise = attrs.get(
+            "custom_exercise", getattr(self.instance, "custom_exercise", None)
+        )
         if exercise and custom_exercise:
             raise serializers.ValidationError(
                 "Укажите только один источник упражнения."

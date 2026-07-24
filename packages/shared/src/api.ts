@@ -89,6 +89,7 @@ export const createApiClient = (config: ApiClientConfig) => {
     }
 
     const response = await fetchImpl(normalizePath(config.baseUrl, path), {
+      credentials: "include",
       ...options,
       headers,
     });

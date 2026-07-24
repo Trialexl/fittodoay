@@ -65,7 +65,10 @@ class ExerciseSerializer(serializers.ModelSerializer):
 class CustomExerciseSerializer(serializers.ModelSerializer):
     base_exercise = ExerciseSerializer(read_only=True)
     base_exercise_id = serializers.PrimaryKeyRelatedField(
-        queryset=Exercise_DB.objects.all(), write_only=True, required=False, allow_null=True
+        queryset=Exercise_DB.objects.all(),
+        write_only=True,
+        required=False,
+        allow_null=True,
     )
 
     class Meta:

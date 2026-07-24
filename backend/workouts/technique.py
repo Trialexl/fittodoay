@@ -159,9 +159,7 @@ class TechniqueReviewAnalysisService:
         if completed.returncode != 0:
             return None
         try:
-            duration = float(
-                completed.stdout.decode("utf-8", errors="ignore").strip()
-            )
+            duration = float(completed.stdout.decode("utf-8", errors="ignore").strip())
         except ValueError:
             return None
         return duration if duration > 0 else None
@@ -282,9 +280,7 @@ class TechniqueReviewAnalysisService:
                 index / TECHNIQUE_CANDIDATE_FRAME_FPS,
                 max(duration - 0.1, 0.0),
             )
-            candidates.append(
-                (timestamp, completed.stdout[start : start + frame_size])
-            )
+            candidates.append((timestamp, completed.stdout[start : start + frame_size]))
         return candidates
 
     def _find_repeated_motion_window(
@@ -333,15 +329,10 @@ class TechniqueReviewAnalysisService:
                     start_index=start_index + cycle_length,
                     cycle_length=cycle_length,
                 )
-                if (
-                    min(first_motion, second_motion)
-                    < TECHNIQUE_MIN_REP_MOTION
-                ):
+                if min(first_motion, second_motion) < TECHNIQUE_MIN_REP_MOTION:
                     continue
 
-                phase_distance = self._cycle_phase_distance(
-                    first_cycle, second_cycle
-                )
+                phase_distance = self._cycle_phase_distance(first_cycle, second_cycle)
                 if phase_distance > variation * 0.85:
                     continue
 
@@ -390,10 +381,13 @@ class TechniqueReviewAnalysisService:
         count = min(len(first_cycle), len(second_cycle))
         if count == 0:
             return 0.0
-        return sum(
-            cls._frame_distance(first_cycle[index][1], second_cycle[index][1])
-            for index in range(count)
-        ) / count
+        return (
+            sum(
+                cls._frame_distance(first_cycle[index][1], second_cycle[index][1])
+                for index in range(count)
+            )
+            / count
+        )
 
     @staticmethod
     def _timestamps_for_repeated_window(
@@ -623,7 +617,10 @@ class TechniqueReviewAnalysisService:
             raw_text = data["choices"][0]["message"]["content"]
             parsed = json.loads(raw_text.strip())
             self._log_llm(
-                payload=log_payload, response=parsed, success=True, status="technique_ok"
+                payload=log_payload,
+                response=parsed,
+                success=True,
+                status="technique_ok",
             )
             return parsed
         except httpx.TimeoutException as exc:
@@ -745,9 +742,7 @@ class TechniqueReviewAnalysisService:
                 self.review.detected_exercise_confidence = 1.0
             self.review.status = TechniqueReview.Status.FAILED
             self.review.error_code = error_code
-            self.review.summary = (
-                "Не удалось найти два повторяющихся движения. Снимите 2-3 полных повтора упражнения."
-            )
+            self.review.summary = "Не удалось найти два повторяющихся движения. Снимите 2-3 полных повтора упражнения."
         elif forced_exercise:
             self.review.exercise = forced_exercise
             self.review.detected_exercise_name = forced_exercise.name

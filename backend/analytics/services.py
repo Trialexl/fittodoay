@@ -4,9 +4,7 @@ from collections import defaultdict
 from datetime import date, timedelta
 from typing import Dict, List
 
-from django.db.models import Prefetch
 
-from programs.models import TemplateExercise
 from workouts.models import WorkoutSetLog, WorkoutWeighIn
 from workouts.services import resolve_defaults
 
@@ -119,7 +117,12 @@ def aggregate_body_weight(user, start: date, end: date) -> List[Dict]:
     cursor = start
     while cursor <= end:
         value = by_date.get(cursor)
-        result.append({"date": cursor.isoformat(), "weight_kg": round(value, 2) if value is not None else None})
+        result.append(
+            {
+                "date": cursor.isoformat(),
+                "weight_kg": round(value, 2) if value is not None else None,
+            }
+        )
         cursor += timedelta(days=1)
     return result
 
@@ -145,7 +148,9 @@ def build_ai_feed(user, limit: int = 50) -> List[Dict]:
                 "type": "system" if te and te.exercise else "custom",
                 "set_index": log.set_index,
                 "actual_reps": log.actual_reps,
-                "actual_weight": float(log.actual_weight) if log.actual_weight else None,
+                "actual_weight": (
+                    float(log.actual_weight) if log.actual_weight else None
+                ),
                 "actual_time": log.actual_time,
                 "load": _compute_load(log),
             }
@@ -194,9 +199,15 @@ def build_program_trends(
     )
     folder_names: Dict[int, str] = {}
     folder_daily: Dict[int, Dict[date, float]] = defaultdict(lambda: defaultdict(float))
-    exercise_daily: Dict[tuple, Dict[date, float]] = defaultdict(lambda: defaultdict(float))
-    exercise_weight_sum: Dict[tuple, Dict[date, float]] = defaultdict(lambda: defaultdict(float))
-    exercise_weight_count: Dict[tuple, Dict[date, int]] = defaultdict(lambda: defaultdict(int))
+    exercise_daily: Dict[tuple, Dict[date, float]] = defaultdict(
+        lambda: defaultdict(float)
+    )
+    exercise_weight_sum: Dict[tuple, Dict[date, float]] = defaultdict(
+        lambda: defaultdict(float)
+    )
+    exercise_weight_count: Dict[tuple, Dict[date, int]] = defaultdict(
+        lambda: defaultdict(int)
+    )
     exercise_meta: Dict[tuple, Dict] = {}
 
     for log in logs:
@@ -235,7 +246,14 @@ def build_program_trends(
 
     dates: List[date] = _bucket_sequence(start, end, granularity)
     # Обрезаем диапазон до первой/последней даты, где есть хоть какая-то нагрузка
-    active_dates = sorted({dt for per_folder in folder_daily.values() for dt, load in per_folder.items() if load})
+    active_dates = sorted(
+        {
+            dt
+            for per_folder in folder_daily.values()
+            for dt, load in per_folder.items()
+            if load
+        }
+    )
     trimmed_start = active_dates[0] if active_dates else None
     trimmed_end = active_dates[-1] if active_dates else None
     if trimmed_start and trimmed_end:
@@ -269,7 +287,9 @@ def build_program_trends(
                     {
                         "date": current.isoformat(),
                         "load": None if value is None else round(value, 2),
-                        "avg_weight": None if avg_weight is None else round(avg_weight, 2),
+                        "avg_weight": (
+                            None if avg_weight is None else round(avg_weight, 2)
+                        ),
                         "weight_sets": weight_count,
                     }
                 )

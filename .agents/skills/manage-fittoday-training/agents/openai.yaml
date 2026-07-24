@@ -1,0 +1,14 @@
+interface:
+  display_name: "Fittoday: тренировки"
+  short_description: "Тренировки и прогресс через OAuth MCP"
+  default_prompt: "Use $manage-fittoday-training to review my workout plan and safely update it."
+
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "fittoday"
+      description: "Fittoday OAuth MCP server"
+      transport: "streamable_http"
+
+policy:
+  allow_implicit_invocation: true

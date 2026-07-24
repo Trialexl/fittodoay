@@ -232,9 +232,7 @@ class TechniqueReviewCreateSerializer(serializers.ModelSerializer):
                     "error_code": "video_too_large",
                 }
             )
-        max_seconds = max(
-            int(getattr(settings, "TECHNIQUE_VIDEO_MAX_SECONDS", 30)), 1
-        )
+        max_seconds = max(int(getattr(settings, "TECHNIQUE_VIDEO_MAX_SECONDS", 30)), 1)
         duration_seconds = _probe_video_duration_seconds(value)
         if duration_seconds and duration_seconds > max_seconds:
             raise serializers.ValidationError(

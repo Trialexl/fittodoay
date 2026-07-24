@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from datetime import date
 
 import pytest
 from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
 
-from programs.models import DayTemplate, ProgramFolder, TemplateExercise
+from programs.models import DayTemplate, ProgramFolder
 from workouts.models import Exercise_DB
 
 User = get_user_model()

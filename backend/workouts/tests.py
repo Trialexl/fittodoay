@@ -1172,9 +1172,7 @@ def test_technique_review_confirm_exercise_reruns_analysis(monkeypatch, tmp_path
 
 
 @pytest.mark.django_db
-def test_technique_review_extracts_frames_across_video_duration(
-    monkeypatch, tmp_path
-):
+def test_technique_review_extracts_frames_across_video_duration(monkeypatch, tmp_path):
     user = User.objects.create_user(
         email="technique-frame-sampling@example.com", password="pass"
     )
@@ -1383,9 +1381,7 @@ def test_technique_review_sends_images_to_llm_and_logs_placeholders(
     sent_images = [item for item in content if item["type"] == "image_url"]
     assert result["detected_exercise"]["catalog_exercise_id"] == "Pullups"
     assert len(sent_images) == 2
-    assert sent_images[0]["image_url"]["url"].startswith(
-        "data:image/jpeg;base64,YWJj"
-    )
+    assert sent_images[0]["image_url"]["url"].startswith("data:image/jpeg;base64,YWJj")
 
     log = LLMRequestLog.objects.filter(user=user, status="technique_ok").first()
     assert log is not None
@@ -1437,7 +1433,9 @@ def test_technique_review_list_is_scoped_to_current_user(tmp_path):
 def test_technique_review_upload_can_return_processing_in_async_mode(
     monkeypatch, tmp_path
 ):
-    user = User.objects.create_user(email="technique-async@example.com", password="pass")
+    user = User.objects.create_user(
+        email="technique-async@example.com", password="pass"
+    )
     client = APIClient()
     client.force_authenticate(user=user)
 
@@ -1467,9 +1465,7 @@ def test_technique_review_upload_can_return_processing_in_async_mode(
 
 
 @pytest.mark.django_db
-def test_technique_review_upload_accepts_temporary_uploaded_file(
-    monkeypatch, tmp_path
-):
+def test_technique_review_upload_accepts_temporary_uploaded_file(monkeypatch, tmp_path):
     user = User.objects.create_user(
         email="technique-temp-upload@example.com", password="pass"
     )
@@ -1569,7 +1565,9 @@ def test_technique_review_upload_rejects_long_video(monkeypatch, tmp_path):
 
 @pytest.mark.django_db
 def test_technique_review_upload_respects_daily_limit(tmp_path):
-    user = User.objects.create_user(email="technique-limit@example.com", password="pass")
+    user = User.objects.create_user(
+        email="technique-limit@example.com", password="pass"
+    )
     client = APIClient()
     client.force_authenticate(user=user)
     with override_settings(MEDIA_ROOT=tmp_path):
@@ -1599,7 +1597,9 @@ def test_technique_review_upload_respects_daily_limit(tmp_path):
 
 @pytest.mark.django_db
 def test_technique_review_delete_removes_review_and_video(tmp_path):
-    user = User.objects.create_user(email="technique-delete@example.com", password="pass")
+    user = User.objects.create_user(
+        email="technique-delete@example.com", password="pass"
+    )
     client = APIClient()
     client.force_authenticate(user=user)
     with override_settings(MEDIA_ROOT=tmp_path):
@@ -1621,7 +1621,9 @@ def test_technique_review_delete_removes_review_and_video(tmp_path):
 
 @pytest.mark.django_db
 def test_cleanup_technique_reviews_deletes_expired_files(tmp_path):
-    user = User.objects.create_user(email="technique-cleanup@example.com", password="pass")
+    user = User.objects.create_user(
+        email="technique-cleanup@example.com", password="pass"
+    )
     with override_settings(MEDIA_ROOT=tmp_path):
         old_review = TechniqueReview.objects.create(
             user=user,
@@ -1654,7 +1656,9 @@ def test_cleanup_technique_reviews_deletes_expired_files(tmp_path):
 def test_process_technique_reviews_command_processes_pending_review(
     monkeypatch, tmp_path
 ):
-    user = User.objects.create_user(email="technique-worker@example.com", password="pass")
+    user = User.objects.create_user(
+        email="technique-worker@example.com", password="pass"
+    )
     exercise = _build_exercise()
     with override_settings(MEDIA_ROOT=tmp_path):
         review = TechniqueReview.objects.create(

@@ -131,10 +131,14 @@ def test_aggregate_exercise_loads_sums_per_entry():
 
 @pytest.mark.django_db
 def test_aggregate_body_weight_returns_daily_series_with_nulls():
-    user = User.objects.create_user(email="weightstats@example.com", password="password")
+    user = User.objects.create_user(
+        email="weightstats@example.com", password="password"
+    )
     start = date.today() - timedelta(days=2)
     WorkoutWeighIn.objects.create(user=user, date=start, weight_kg="80.00")
-    WorkoutWeighIn.objects.create(user=user, date=start + timedelta(days=2), weight_kg="79.60")
+    WorkoutWeighIn.objects.create(
+        user=user, date=start + timedelta(days=2), weight_kg="79.60"
+    )
 
     series = aggregate_body_weight(user, start=start, end=start + timedelta(days=2))
     assert [item["date"] for item in series] == [
@@ -150,21 +154,27 @@ def test_aggregate_body_weight_returns_daily_series_with_nulls():
 @pytest.mark.django_db
 def test_body_weight_endpoint_returns_user_only_data():
     user = User.objects.create_user(email="weightapi@example.com", password="password")
-    other = User.objects.create_user(email="weightapi-other@example.com", password="password")
+    other = User.objects.create_user(
+        email="weightapi-other@example.com", password="password"
+    )
     today = date.today()
     WorkoutWeighIn.objects.create(user=user, date=today, weight_kg="82.30")
     WorkoutWeighIn.objects.create(user=other, date=today, weight_kg="99.90")
     client = APIClient()
     client.force_authenticate(user=user)
 
-    response = client.get(f"/api/analytics/body-weight/?start={today.isoformat()}&end={today.isoformat()}")
+    response = client.get(
+        f"/api/analytics/body-weight/?start={today.isoformat()}&end={today.isoformat()}"
+    )
     assert response.status_code == 200
     assert response.data["items"][0]["weight_kg"] == 82.3
 
 
 @pytest.mark.django_db
 def test_body_weight_endpoint_defaults_start_to_first_weigh_in():
-    user = User.objects.create_user(email="weightapi-start@example.com", password="password")
+    user = User.objects.create_user(
+        email="weightapi-start@example.com", password="password"
+    )
     client = APIClient()
     client.force_authenticate(user=user)
     first = date.today() - timedelta(days=20)
@@ -183,7 +193,9 @@ def test_body_weight_endpoint_defaults_start_to_first_weigh_in():
 
 @pytest.mark.django_db
 def test_build_program_trends_includes_daily_average_weight_for_exercise():
-    user = User.objects.create_user(email="trend-weight@example.com", password="password")
+    user = User.objects.create_user(
+        email="trend-weight@example.com", password="password"
+    )
     folder = ProgramFolder.objects.get(user=user, name="Основные")
     template = DayTemplate.objects.create(
         folder=folder,
@@ -210,7 +222,9 @@ def test_build_program_trends_includes_daily_average_weight_for_exercise():
         default_reps=10,
         default_sets=3,
     )
-    template_exercise = TemplateExercise.objects.create(template=template, exercise=exercise, set_override=3)
+    template_exercise = TemplateExercise.objects.create(
+        template=template, exercise=exercise, set_override=3
+    )
     day_1 = date.today() - timedelta(days=2)
     day_2 = date.today()
     workout_day_1 = WorkoutDay.objects.create(user=user, date=day_1)

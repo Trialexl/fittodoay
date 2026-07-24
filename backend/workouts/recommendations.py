@@ -120,7 +120,10 @@ def _build_recommendation(
     if avg_reps is None:
         return None
     avg_weight = _average(
-        [float(log.actual_weight) if log.actual_weight is not None else None for log in logs]
+        [
+            float(log.actual_weight) if log.actual_weight is not None else None
+            for log in logs
+        ]
     )
 
     rounded_avg = round(avg_reps, 1)
@@ -141,9 +144,7 @@ def _build_recommendation(
         actual_decimal = Decimal(str(avg_weight)) if avg_weight is not None else None
         if actual_decimal and actual_decimal > planned_decimal + AUTO_ALIGN_THRESHOLD:
             target_weight = _round_weight_up(actual_decimal)
-            reason = (
-                f"Фактически работаете со средним весом {target_weight} кг — фиксируем его и сохраняем диапазон повторений на уровне {actual_rep_goal}."
-            )
+            reason = f"Фактически работаете со средним весом {target_weight} кг — фиксируем его и сохраняем диапазон повторений на уровне {actual_rep_goal}."
             return Recommendation(
                 template_exercise_id=te.id,
                 exercise_name=exercise_name,
@@ -163,9 +164,7 @@ def _build_recommendation(
             )
         if actual_decimal and actual_decimal < planned_decimal - AUTO_DROP_THRESHOLD:
             new_weight = _round_weight_up(max(Decimal("0"), actual_decimal))
-            reason = (
-                f"Средний рабочий вес {actual_decimal} кг заметно ниже плана — возвращаемся к нему и удерживаем цель на уровне {actual_rep_goal} повторов."
-            )
+            reason = f"Средний рабочий вес {actual_decimal} кг заметно ниже плана — возвращаемся к нему и удерживаем цель на уровне {actual_rep_goal} повторов."
             return Recommendation(
                 template_exercise_id=te.id,
                 exercise_name=exercise_name,
@@ -188,24 +187,22 @@ def _build_recommendation(
             if new_weight != planned_decimal:
                 suggested_weight = float(new_weight)
             suggested_reps = TARGET_REP_MIN
-            reason = (
-                f"Среднее {rounded_avg:.1f} повт. не дотягивает до 8 — уменьшаем вес и закрепляем план на 8 повторениях."
-            )
+            reason = f"Среднее {rounded_avg:.1f} повт. не дотягивает до 8 — уменьшаем вес и закрепляем план на 8 повторениях."
             action = "decrease_weight"
         elif rounded_avg < TARGET_REP_MIN + 0.5 and planned_reps > TARGET_REP_MIN:
-            reason = (
-                f"Фактически удерживаете около {rounded_avg:.1f} повт. — сконцентрируйтесь на технике, после чего вернёмся к росту повторений."
-            )
+            reason = f"Фактически удерживаете около {rounded_avg:.1f} повт. — сконцентрируйтесь на технике, после чего вернёмся к росту повторений."
             action = "info_low_reps"
             informational = True
-        elif rounded_avg >= TARGET_REP_MAX and estimated_rir > TARGET_RIR + RIR_TOLERANCE:
+        elif (
+            rounded_avg >= TARGET_REP_MAX and estimated_rir > TARGET_RIR + RIR_TOLERANCE
+        ):
             suggested_weight = _round_weight_up(planned_decimal + WEIGHT_STEP)
             suggested_reps = TARGET_REP_MIN
-            reason = (
-                f"Повторы вышли на {rounded_avg:.1f} (RIR≈{estimated_rir:.1f}) — повышаем вес и начинаем новый цикл с 8 повторений."
-            )
+            reason = f"Повторы вышли на {rounded_avg:.1f} (RIR≈{estimated_rir:.1f}) — повышаем вес и начинаем новый цикл с 8 повторений."
             action = "increase_weight"
-        elif (avg_weight is None or abs(float(avg_weight) - planned_weight) <= float(AUTO_ALIGN_THRESHOLD)):
+        elif avg_weight is None or abs(float(avg_weight) - planned_weight) <= float(
+            AUTO_ALIGN_THRESHOLD
+        ):
             if planned_reps < TARGET_REP_MAX and rounded_avg >= planned_reps:
                 next_reps = min(planned_reps + 1, TARGET_REP_MAX)
                 suggested_reps = next_reps
@@ -216,11 +213,15 @@ def _build_recommendation(
                 action = "increase_reps_after_weight"
         elif rep_goal != planned_reps:
             suggested_reps = rep_goal
-            reason = "Фиксируем план в диапазоне 8–12 повт., чтобы отслеживать прогрессию."
+            reason = (
+                "Фиксируем план в диапазоне 8–12 повт., чтобы отслеживать прогрессию."
+            )
             action = "adjust_reps"
     else:
         target_reps = _clamp(int(round(avg_reps)), TARGET_REP_MIN, TARGET_REP_MAX)
-        if target_reps != planned_reps or (is_first_time and target_reps == planned_reps):
+        if target_reps != planned_reps or (
+            is_first_time and target_reps == planned_reps
+        ):
             suggested_reps = target_reps
             reason = (
                 f"Средний результат {rounded_avg:.1f} повт. (RIR≈{estimated_rir:.1f}). "
@@ -231,7 +232,9 @@ def _build_recommendation(
     if not informational and suggested_reps is None and suggested_weight is None:
         return None
 
-    current_weight = float(planned_weight) if planned_weight is not None and has_weight else None
+    current_weight = (
+        float(planned_weight) if planned_weight is not None and has_weight else None
+    )
 
     return Recommendation(
         template_exercise_id=te.id,
@@ -282,7 +285,9 @@ def generate_recommendations_for_day(day: WorkoutDay) -> List[Dict]:
         if log.template_exercise_id:
             logs_by_te[log.template_exercise_id].append(log)
 
-    folder_completed: Dict[int, bool] = {folder_id: True for folder_id in folder_names.keys()}
+    folder_completed: Dict[int, bool] = {
+        folder_id: True for folder_id in folder_names.keys()
+    }
     for te_id, meta in template_index.items():
         expected = meta.get("expected_sets") or 0
         actual = len(logs_by_te.get(te_id, []))
@@ -327,7 +332,9 @@ def generate_recommendations_for_day(day: WorkoutDay) -> List[Dict]:
         if folder_recs:
             first_te_id = folder_recs[0]["template_exercise_id"]
             template_obj = templates.get(first_te_id)
-            actual_name = template_obj.template.folder.name if template_obj else folder_name
+            actual_name = (
+                template_obj.template.folder.name if template_obj else folder_name
+            )
             folders_payload.append(
                 {
                     "folder_id": folder_id,
@@ -345,7 +352,9 @@ def apply_recommendations(user, items: List[Dict]) -> int:
     te_ids = {item["template_exercise_id"] for item in items}
     templates = {
         te.id: te
-        for te in TemplateExercise.objects.filter(id__in=te_ids, template__folder__user=user)
+        for te in TemplateExercise.objects.filter(
+            id__in=te_ids, template__folder__user=user
+        )
     }
     if len(templates) != len(te_ids):
         raise ValueError("exercise_mismatch")

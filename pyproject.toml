@@ -1,12 +1,12 @@
 [tool.black]
 line-length = 88
 target-version = ["py311"]
-exclude = ["backend/migrations"]
+exclude = "/migrations/"
 
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-extend-exclude = ["backend/migrations"]
+extend-exclude = ["**/migrations/**"]
 
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "fittodoey_backend.settings"

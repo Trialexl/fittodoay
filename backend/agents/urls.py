@@ -12,7 +12,9 @@ app_name = "agents"
 
 urlpatterns = [
     path("llm-agent/programs/", LLMProgramView.as_view(), name="llm-programs"),
-    path("llm-agent/threads/", LLMProgramThreadView.as_view(), name="llm-thread-create"),
+    path(
+        "llm-agent/threads/", LLMProgramThreadView.as_view(), name="llm-thread-create"
+    ),
     path(
         "llm-agent/threads/<int:pk>/messages/",
         LLMProgramMessageView.as_view(),

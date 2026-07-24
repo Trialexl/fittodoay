@@ -19,7 +19,9 @@ class TimestampedModel(models.Model):
 class CustomExercise(TimestampedModel):
     """User-defined exercise copied from base template or created from scratch."""
 
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="custom_exercises")
+    user = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="custom_exercises"
+    )
     base_exercise = models.ForeignKey(
         Exercise_DB,
         on_delete=models.SET_NULL,
@@ -48,5 +50,6 @@ class CustomExercise(TimestampedModel):
 
     def __str__(self) -> str:
         return f"{self.name} ({self.user.email})"
+
 
 # Create your models here.

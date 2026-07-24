@@ -108,4 +108,5 @@ class UserFeedback(models.Model):
     def __str__(self):
         return f"Feedback {self.id} from {self.user.email}"
 
+
 # Create your models here.

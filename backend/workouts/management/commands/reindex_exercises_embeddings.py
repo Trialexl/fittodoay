@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 from django.core.management.base import BaseCommand
 
-from pgvector.django import L2Distance
 
 try:
     from sentence_transformers import SentenceTransformer

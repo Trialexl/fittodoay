@@ -24,10 +24,16 @@ jobs:
         run: |
           . venv/bin/activate
           python backend/manage.py check
+          python backend/manage.py makemigrations --check --dry-run
+          python -m pip check
       - name: Ruff
         run: |
           . venv/bin/activate
-          ruff backend
+          ruff check backend
+      - name: Black
+        run: |
+          . venv/bin/activate
+          black --check backend
       - name: Pytest
         run: |
           . venv/bin/activate
@@ -43,8 +49,19 @@ jobs:
       - name: Install dependencies
         run: |
           cd frontend
-          npm install
+          npm ci
       - name: Lint
         run: |
           cd frontend
           npm run lint
+      - name: Build
+        run: |
+          cd frontend
+          npm run build
+
+  backend-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build backend image
+        run: docker build -f backend/Dockerfile .

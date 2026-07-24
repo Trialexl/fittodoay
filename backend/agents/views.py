@@ -61,7 +61,9 @@ class LLMProgramView(APIView):
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
         except LLMInvalidResponse as exc:
-            logger.warning("LLM returned invalid data for user %s: %s", request.user.id, exc)
+            logger.warning(
+                "LLM returned invalid data for user %s: %s", request.user.id, exc
+            )
             return Response(
                 {"detail": "assistant_invalid_response", "message": FALLBACK_MESSAGE},
                 status=status.HTTP_502_BAD_GATEWAY,
@@ -94,7 +96,9 @@ class LLMProgramThreadView(generics.CreateAPIView):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         thread = serializer.save()
-        return Response(LLMProgramThreadSerializer(thread).data, status=status.HTTP_201_CREATED)
+        return Response(
+            LLMProgramThreadSerializer(thread).data, status=status.HTTP_201_CREATED
+        )
 
 
 class LLMProgramMessageView(APIView):
@@ -163,7 +167,9 @@ class LLMProgramApplyView(APIView):
         try:
             thread = LLMProgramThread.objects.get(id=pk, user=request.user)
         except LLMProgramThread.DoesNotExist:
-            return Response({"detail": "thread_not_found"}, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {"detail": "thread_not_found"}, status=status.HTTP_404_NOT_FOUND
+            )
         serializer = LLMProgramActionSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         service = LLMProgramChatService(thread)
@@ -181,7 +187,9 @@ class LLMProgramCancelView(APIView):
         try:
             thread = LLMProgramThread.objects.get(id=pk, user=request.user)
         except LLMProgramThread.DoesNotExist:
-            return Response({"detail": "thread_not_found"}, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {"detail": "thread_not_found"}, status=status.HTTP_404_NOT_FOUND
+            )
         serializer = LLMProgramActionSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         service = LLMProgramChatService(thread)

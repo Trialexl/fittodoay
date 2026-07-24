@@ -1,22 +1,19 @@
 "use client";
 
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { ProgramBoard } from "@/components/programs/ProgramBoard";
 import { useAuth } from "@/state/AuthContext";
 
-type PageProps = {
-  searchParams?: Record<string, string | string[] | undefined>;
-};
-
-export default function ProgramsPage({ searchParams }: PageProps) {
+const ProgramsPageContent = () => {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user, loading } = useAuth();
-  const folderId = searchParams?.folder ? Number(searchParams.folder) : undefined;
-  const templateId = searchParams?.template ? Number(searchParams.template) : undefined;
-  const templateName =
-    typeof searchParams?.templateName === "string" ? (searchParams.templateName as string) : undefined;
-  const exerciseId = searchParams?.exercise ? Number(searchParams.exercise) : undefined;
+  const parseId = (value: string | null) => (value ? Number(value) : undefined);
+  const folderId = parseId(searchParams.get("folder"));
+  const templateId = parseId(searchParams.get("template"));
+  const templateName = searchParams.get("templateName") ?? undefined;
+  const exerciseId = parseId(searchParams.get("exercise"));
   useEffect(() => {
     if (!loading && !user) {
       router.replace("/");
@@ -46,5 +43,13 @@ export default function ProgramsPage({ searchParams }: PageProps) {
         }}
       />
     </div>
+  );
+};
+
+export default function ProgramsPage() {
+  return (
+    <Suspense fallback={null}>
+      <ProgramsPageContent />
+    </Suspense>
   );
 }

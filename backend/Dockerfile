@@ -59,4 +59,4 @@ ENV DJANGO_SETTINGS_MODULE=fittodoey_backend.settings \
 EXPOSE 8000
 
 ENTRYPOINT ["/entrypoint.sh"]
-CMD ["gunicorn", "fittodoey_backend.wsgi:application", "--bind", "0.0.0.0:8000"]
+CMD ["uvicorn", "mcp_gateway.combined:application", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--proxy-headers", "--forwarded-allow-ips=*"]

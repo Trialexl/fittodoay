@@ -25,4 +25,5 @@ class CustomExerciseAdmin(admin.ModelAdmin):
     search_fields = ("name", "user__email", "target_muscles")
     list_filter = ("has_weight", "has_time")
 
+
 # Register your models here.

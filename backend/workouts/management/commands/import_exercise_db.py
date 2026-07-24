@@ -22,7 +22,12 @@ class Command(BaseCommand):
             "--file",
             type=str,
             default=str(
-                (Path(__file__).resolve().parents[4] / "docs" / "exercises" / "exercises_ru_all.json")
+                (
+                    Path(__file__).resolve().parents[4]
+                    / "docs"
+                    / "exercises"
+                    / "exercises_ru_all.json"
+                )
             ),
             help="Path to exercises JSON file",
         )
@@ -59,7 +64,9 @@ class Command(BaseCommand):
             for entry in payload:
                 exercise_id = entry.get("id") or entry.get("name")
                 if not exercise_id:
-                    self.stdout.write(self.style.WARNING("Skipping entry without id or name"))
+                    self.stdout.write(
+                        self.style.WARNING("Skipping entry without id or name")
+                    )
                     continue
                 defaults = self._build_defaults(entry)
                 exercise, created_flag = Exercise_DB.objects.update_or_create(
@@ -97,7 +104,10 @@ class Command(BaseCommand):
 
         return {
             "name_en": entry.get("name") or entry.get("name_en") or "",
-            "name_ru": entry.get("наименование") or entry.get("name_ru") or entry.get("name") or "",
+            "name_ru": entry.get("наименование")
+            or entry.get("name_ru")
+            or entry.get("name")
+            or "",
             "force_en": entry.get("force") or entry.get("force_en") or "",
             "force_ru": entry.get("force_ru") or "",
             "level_en": entry.get("level") or entry.get("level_en") or "",

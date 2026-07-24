@@ -1,0 +1,3 @@
+# OAuth credentials for future MCP connections must be stored in the OS keyring.
+# Add [mcp_servers.fittoday] only after a real production domain is assigned.
+mcp_oauth_credentials_store = "keyring"

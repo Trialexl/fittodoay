@@ -21,7 +21,9 @@ class TimestampedModel(models.Model):
 class ProgramFolder(TimestampedModel):
     """Folder that groups day templates under a goal/program."""
 
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="program_folders")
+    user = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="program_folders"
+    )
     name = models.CharField(max_length=120)
     comment = models.CharField(max_length=255, blank=True)
     is_active = models.BooleanField(default=True)
@@ -44,7 +46,9 @@ class DayTemplate(TimestampedModel):
         INTERVAL = "interval", "Раз в X дней"
         CUSTOM = "custom", "Пользовательские правила"
 
-    folder = models.ForeignKey(ProgramFolder, on_delete=models.CASCADE, related_name="templates")
+    folder = models.ForeignKey(
+        ProgramFolder, on_delete=models.CASCADE, related_name="templates"
+    )
     name = models.CharField(max_length=120)
     comment = models.CharField(max_length=255, blank=True)
     is_active = models.BooleanField(default=True)
@@ -74,14 +78,24 @@ class TemplateExercise(TimestampedModel):
         Exercise_DB, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
     )
     custom_exercise = models.ForeignKey(
-        CustomExercise, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+        CustomExercise,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
     )
     sort_order = models.PositiveIntegerField(default=0)
-    weight_override = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
+    weight_override = models.DecimalField(
+        max_digits=6, decimal_places=2, null=True, blank=True
+    )
     rep_override = models.PositiveIntegerField(null=True, blank=True)
     set_override = models.PositiveIntegerField(null=True, blank=True)
-    time_override = models.PositiveIntegerField(null=True, blank=True, help_text="Секунды")
-    rest_override = models.PositiveIntegerField(null=True, blank=True, help_text="Секунды")
+    time_override = models.PositiveIntegerField(
+        null=True, blank=True, help_text="Секунды"
+    )
+    rest_override = models.PositiveIntegerField(
+        null=True, blank=True, help_text="Секунды"
+    )
     note = models.CharField(max_length=255, blank=True)
     is_active = models.BooleanField(default=True)
 
@@ -100,10 +114,13 @@ class TemplateExercise(TimestampedModel):
     def clean(self):
         super().clean()
         if bool(self.exercise) == bool(self.custom_exercise):
-            raise ValidationError("Укажите либо системное упражнение, либо кастомное, но не оба.")
+            raise ValidationError(
+                "Укажите либо системное упражнение, либо кастомное, но не оба."
+            )
 
     def __str__(self):
         ref = self.exercise or self.custom_exercise
         return f"{self.template.name} → {ref}"
+
 
 # Create your models here.

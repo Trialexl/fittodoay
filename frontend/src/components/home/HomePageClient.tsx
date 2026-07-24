@@ -1,7 +1,7 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { FormEvent, useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
 import { ApiError } from "@/lib/api";
 import { useAuth } from "@/state/AuthContext";
@@ -16,11 +16,38 @@ type Props = {
 
 export const HomePageClient = ({ greetingFontClassName }: Props) => {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { login, register, user, loading } = useAuth();
   const [form, setForm] = useState({ email: "", password: "" });
   const [error, setError] = useState<string | null>(null);
   const [statusText, setStatusText] = useState("Введите email и пароль");
   const [submitting, setSubmitting] = useState(false);
+  const bootstrapStarted = useRef(false);
+  const requestedReturnTo = searchParams.get("return_to");
+  const safeReturnTo =
+    requestedReturnTo?.startsWith("/oauth/consent/?request=") &&
+    !requestedReturnTo.includes("\\") &&
+    !requestedReturnTo.includes("%")
+      ? requestedReturnTo
+      : null;
+
+  const finishAuthentication = async () => {
+    const localToken =
+      typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    if (safeReturnTo && localToken) {
+      const response = await fetch("/api/auth/session-bootstrap/", {
+        method: "POST",
+        credentials: "include",
+        headers: { Authorization: `Token ${localToken}` },
+      });
+      if (!response.ok) {
+        throw new Error("Session bootstrap failed");
+      }
+      window.location.assign(safeReturnTo);
+      return;
+    }
+    router.push("/workout");
+  };
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -32,7 +59,7 @@ export const HomePageClient = ({ greetingFontClassName }: Props) => {
 
     try {
       await login(form.email, form.password);
-      router.push("/workout");
+      await finishAuthentication();
       return;
     } catch (err) {
       if (err instanceof ApiError && (err.status === 400 || err.status === 404)) {
@@ -43,7 +70,7 @@ export const HomePageClient = ({ greetingFontClassName }: Props) => {
             password: form.password,
             profile: buildDefaultProfile(),
           });
-          router.push("/workout");
+          await finishAuthentication();
           return;
         } catch (registerError: unknown) {
           const message =
@@ -63,10 +90,19 @@ export const HomePageClient = ({ greetingFontClassName }: Props) => {
   };
 
   useEffect(() => {
-    if (!loading && user) {
+    if (!loading && user && !safeReturnTo) {
       router.replace("/workout");
     }
-  }, [loading, user, router]);
+  }, [loading, user, router, safeReturnTo]);
+
+  useEffect(() => {
+    if (loading || !user || !safeReturnTo || bootstrapStarted.current) return;
+    bootstrapStarted.current = true;
+    void finishAuthentication().catch(() => {
+      bootstrapStarted.current = false;
+      setError("Не удалось восстановить браузерную сессию");
+    });
+  });
 
   return (
     <main className="flex min-h-[calc(100vh-80px)] flex-col items-center justify-center px-4">

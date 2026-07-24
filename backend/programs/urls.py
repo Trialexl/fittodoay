@@ -5,6 +5,8 @@ from .views import DayTemplateViewSet, ProgramFolderViewSet, TemplateExerciseVie
 router = DefaultRouter()
 router.register(r"folders", ProgramFolderViewSet, basename="program-folder")
 router.register(r"templates", DayTemplateViewSet, basename="day-template")
-router.register(r"template-exercises", TemplateExerciseViewSet, basename="template-exercise")
+router.register(
+    r"template-exercises", TemplateExerciseViewSet, basename="template-exercise"
+)
 
 urlpatterns = router.urls

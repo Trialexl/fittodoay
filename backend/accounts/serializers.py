@@ -37,7 +37,9 @@ class LLMPreferencesSerializer(serializers.Serializer):
     gender = serializers.ChoiceField(
         choices=UserProfile.Gender.choices, required=False, allow_null=True
     )
-    age = serializers.IntegerField(min_value=10, max_value=100, required=False, allow_null=True)
+    age = serializers.IntegerField(
+        min_value=10, max_value=100, required=False, allow_null=True
+    )
     weight_kg = serializers.FloatField(required=False, allow_null=True)
     height_cm = serializers.FloatField(required=False, allow_null=True)
     goal = serializers.ChoiceField(
@@ -79,7 +81,9 @@ class RegisterSerializer(serializers.Serializer):
 
     def validate_email(self, value: str) -> str:
         if User.objects.filter(email=value).exists():
-            raise serializers.ValidationError("Пользователь с таким email уже существует")
+            raise serializers.ValidationError(
+                "Пользователь с таким email уже существует"
+            )
         return value
 
     def create(self, validated_data):
@@ -96,9 +100,13 @@ class LoginSerializer(serializers.Serializer):
     def validate(self, attrs):
         email = attrs.get("email")
         password = attrs.get("password")
-        user = authenticate(request=self.context.get("request"), email=email, password=password)
+        user = authenticate(
+            request=self.context.get("request"), email=email, password=password
+        )
         if not user:
-            raise serializers.ValidationError(_("Неверный email или пароль"), code="authorization")
+            raise serializers.ValidationError(
+                _("Неверный email или пароль"), code="authorization"
+            )
         attrs["user"] = user
         return attrs
 

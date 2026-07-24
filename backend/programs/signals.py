@@ -12,5 +12,9 @@ def create_default_folder(sender, instance, created, **kwargs):
     ProgramFolder.objects.get_or_create(
         user=instance,
         name="Основные",
-        defaults={"comment": "Папка создана автоматически", "is_active": True, "sort_order": 0},
+        defaults={
+            "comment": "Папка создана автоматически",
+            "is_active": True,
+            "sort_order": 0,
+        },
     )

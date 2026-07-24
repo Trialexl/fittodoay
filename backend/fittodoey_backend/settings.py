@@ -16,8 +16,14 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Core security
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", get_random_secret_key())
 DEBUG = os.environ.get("DJANGO_DEBUG", "false").lower() == "true"
+
+
 def split_env_list(name: str, default: str) -> list[str]:
-    return [item.strip() for item in os.environ.get(name, default).split(",") if item.strip()]
+    return [
+        item.strip()
+        for item in os.environ.get(name, default).split(",")
+        if item.strip()
+    ]
 
 
 ALLOWED_HOSTS = split_env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1")
@@ -39,6 +45,7 @@ INSTALLED_APPS = [
     "programs",
     "workouts",
     "analytics",
+    "mcp_gateway",
 ]
 
 MIDDLEWARE = [
@@ -118,7 +125,14 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
-STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
+}
 STATICFILES_DIRS: list[Path] = []
 EXERCISES_STATIC_DIR = BASE_DIR.parent / "docs" / "exercises"
 if EXERCISES_STATIC_DIR.exists():
@@ -148,6 +162,7 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # REST Framework defaults
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
+        "mcp_gateway.authentication.DelegatedJWTAuthentication",
         "rest_framework.authentication.SessionAuthentication",
         "rest_framework.authentication.BasicAuthentication",
         "rest_framework.authentication.TokenAuthentication",
@@ -167,3 +182,35 @@ CSRF_TRUSTED_ORIGINS = split_env_list(
     "DJANGO_CSRF_TRUSTED_ORIGINS",
     ",".join(CORS_ALLOWED_ORIGINS),
 )
+
+APP_DOMAIN = os.environ.get("APP_DOMAIN", "").strip().rstrip("/")
+MCP_ISSUER_URL = os.environ.get(
+    "MCP_ISSUER_URL",
+    f"https://{APP_DOMAIN}" if APP_DOMAIN else "http://localhost:8000",
+).rstrip("/")
+MCP_PUBLIC_URL = os.environ.get(
+    "MCP_PUBLIC_URL",
+    f"https://{APP_DOMAIN}/mcp" if APP_DOMAIN else "http://localhost:8000/mcp",
+).rstrip("/")
+MCP_BACKEND_URL = os.environ.get("MCP_BACKEND_URL", "http://127.0.0.1:8000").rstrip("/")
+MCP_REDIRECT_ORIGINS = split_env_list("MCP_REDIRECT_ORIGINS", "")
+MCP_ACCESS_TOKEN_SECONDS = int(os.environ.get("MCP_ACCESS_TOKEN_SECONDS", "900"))
+MCP_REFRESH_TOKEN_SECONDS = int(os.environ.get("MCP_REFRESH_TOKEN_SECONDS", "2592000"))
+MCP_AUTH_CODE_SECONDS = int(os.environ.get("MCP_AUTH_CODE_SECONDS", "300"))
+MCP_AUTH_REQUEST_SECONDS = int(os.environ.get("MCP_AUTH_REQUEST_SECONDS", "600"))
+MCP_DELEGATED_TOKEN_SECONDS = int(os.environ.get("MCP_DELEGATED_TOKEN_SECONDS", "60"))
+
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": __import__("datetime").timedelta(
+        seconds=MCP_DELEGATED_TOKEN_SECONDS
+    ),
+    "ALGORITHM": "HS256",
+    "SIGNING_KEY": SECRET_KEY,
+}
+
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+USE_X_FORWARDED_HOST = True
+SESSION_COOKIE_SECURE = bool(APP_DOMAIN) and not DEBUG
+CSRF_COOKIE_SECURE = bool(APP_DOMAIN) and not DEBUG
+SESSION_COOKIE_SAMESITE = "Lax"
+CSRF_COOKIE_SAMESITE = "Lax"

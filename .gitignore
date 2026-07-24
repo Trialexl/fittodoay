@@ -25,6 +25,7 @@ out/
 yarn-error.log
 pnpm-lock.yaml
 package-lock.json
+!frontend/package-lock.json
 
 # Logs
 *.log

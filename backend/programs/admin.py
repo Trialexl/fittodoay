@@ -22,4 +22,5 @@ class DayTemplateAdmin(admin.ModelAdmin):
     search_fields = ("name", "folder__name")
     inlines = [TemplateExerciseInline]
 
+
 # Register your models here.

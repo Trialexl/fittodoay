@@ -42,6 +42,13 @@ class ExerciseListView(generics.ListAPIView):
         return queryset.distinct()
 
 
+class ExerciseDetailView(generics.RetrieveAPIView):
+    serializer_class = ExerciseSerializer
+    queryset = Exercise_DB.objects.all().prefetch_related(
+        "muscles", "instructions", "images"
+    )
+
+
 class CustomExerciseListCreateView(generics.ListCreateAPIView):
     serializer_class = CustomExerciseSerializer
 
@@ -54,5 +61,6 @@ class CustomExerciseDetailView(generics.RetrieveUpdateDestroyAPIView):
 
     def get_queryset(self):
         return CustomExercise.objects.filter(user=self.request.user)
+
 
 # Create your views here.

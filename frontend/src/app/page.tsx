@@ -1,4 +1,5 @@
 import localFont from "next/font/local";
+import { Suspense } from "react";
 
 import { HomePageClient } from "@/components/home/HomePageClient";
 
@@ -8,5 +9,9 @@ const greetingFont = localFont({
 });
 
 export default function HomePage() {
-  return <HomePageClient greetingFontClassName={greetingFont.className} />;
+  return (
+    <Suspense fallback={null}>
+      <HomePageClient greetingFontClassName={greetingFont.className} />
+    </Suspense>
+  );
 }
