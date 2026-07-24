@@ -20,7 +20,7 @@ from programs.models import TemplateExercise  # noqa: E402
 from workouts.models import WorkoutSetLog  # noqa: E402
 from workouts.services import generate_daily_plan, update_workout_status  # noqa: E402
 
-EMAIL = "seed-user@example.com"
+EMAIL = os.environ.get("SEED_PROGRESS_EMAIL", "").strip()
 START_DATE = date(2025, 9, 1)
 END_DATE = date.today()
 WEIGHT_STEP = Decimal("2.0")
@@ -88,6 +88,9 @@ def adjust_progress(values: dict):
 
 
 def main():
+    if not EMAIL:
+        raise SystemExit("Set SEED_PROGRESS_EMAIL before running seed_progress.py")
+
     user = User.objects.filter(email=EMAIL).first()
     if not user:
         raise SystemExit(f"User {EMAIL} not found")

@@ -51,8 +51,8 @@ build/
 local.properties
 *.iml
 *.hprof
+*.keystore
 .cxx/
 
 # Bundle artifacts
 *.jsbundle
-mobile/android/app/debug.keystore
