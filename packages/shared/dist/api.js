@@ -70,6 +70,7 @@ const createApiClient = (config) => {
             headers.set("Authorization", `Token ${token}`);
         }
         const response = await fetchImpl(normalizePath(config.baseUrl, path), {
+            credentials: "include",
             ...options,
             headers,
         });
@@ -86,7 +87,7 @@ const createApiClient = (config) => {
         };
         if (!response.ok) {
             const payload = await parsePayload();
-            if ((response.status === 401 || response.status === 403) && config.onInvalidToken) {
+            if (response.status === 401 && config.onInvalidToken) {
                 config.onInvalidToken();
             }
             const message = extractErrorMessage(payload) || response.statusText;

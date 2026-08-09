@@ -106,7 +106,7 @@ export const createApiClient = (config: ApiClientConfig) => {
 
     if (!response.ok) {
       const payload = await parsePayload();
-      if ((response.status === 401 || response.status === 403) && config.onInvalidToken) {
+      if (response.status === 401 && config.onInvalidToken) {
         config.onInvalidToken();
       }
       const message = extractErrorMessage(payload) || response.statusText;
