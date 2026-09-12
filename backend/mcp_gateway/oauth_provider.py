@@ -31,6 +31,7 @@ from .models import (
 READ_SCOPE = "fittoday.read"
 WRITE_SCOPE = "fittoday.write"
 VALID_SCOPES = {READ_SCOPE, WRITE_SCOPE}
+DEFAULT_SCOPES = (READ_SCOPE, WRITE_SCOPE)
 
 
 def token_hash(value: str) -> str:
@@ -59,7 +60,7 @@ def _validate_resource(resource: str | None) -> str:
 
 
 def _scopes(value: list[str] | None) -> list[str]:
-    result = list(dict.fromkeys(value or [READ_SCOPE]))
+    result = list(dict.fromkeys(value or DEFAULT_SCOPES))
     if READ_SCOPE not in result or not set(result).issubset(VALID_SCOPES):
         raise AuthorizeError("invalid_scope", "Запрошены недопустимые scopes")
     return result
@@ -82,7 +83,7 @@ class DjangoOAuthProvider(
             )
         if not redirects or not all(validate_redirect_uri(uri) for uri in redirects):
             raise RegistrationError("invalid_redirect_uri", "Redirect URI запрещён")
-        requested = set((client_info.scope or READ_SCOPE).split())
+        requested = set((client_info.scope or " ".join(DEFAULT_SCOPES)).split())
         if READ_SCOPE not in requested or not requested.issubset(VALID_SCOPES):
             raise RegistrationError("invalid_client_metadata", "Некорректный scope")
         if not client_info.client_id:
@@ -111,7 +112,8 @@ class DjangoOAuthProvider(
         if not params.code_challenge:
             raise AuthorizeError("invalid_request", "PKCE S256 обязателен")
         resource = _validate_resource(params.resource)
-        scopes = _scopes(params.scopes)
+        registered_scopes = (client.scope or "").split()
+        scopes = _scopes(params.scopes or registered_scopes)
         redirect_uri = str(params.redirect_uri)
         if not validate_redirect_uri(redirect_uri):
             raise AuthorizeError("invalid_request", "Redirect URI запрещён")

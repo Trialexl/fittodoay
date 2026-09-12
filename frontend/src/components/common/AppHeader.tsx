@@ -7,6 +7,7 @@ import { useAuth } from "@/state/AuthContext";
 import { useTheme } from "@/state/ThemeContext";
 import { Button } from "@/components/ui/Button";
 import { BrandMark } from "@/components/common/BrandMark";
+import { McpSetupModal } from "@/components/common/McpSetupModal";
 import { Modal } from "@/components/ui/Modal";
 import { apiFetch } from "@/lib/api";
 
@@ -26,7 +27,7 @@ const accentOptions = [
   { value: "#ef4444", label: "Красный" },
 ];
 
-const MenuIcon = ({ name }: { name: "programs" | "workout" | "analytics" | "technique" | "assistant" | "appearance" }) => {
+const MenuIcon = ({ name }: { name: "programs" | "workout" | "analytics" | "technique" | "assistant" | "appearance" | "mcp" }) => {
   if (name === "programs") {
     return (
       <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8} aria-hidden="true">
@@ -64,6 +65,16 @@ const MenuIcon = ({ name }: { name: "programs" | "workout" | "analytics" | "tech
       </svg>
     );
   }
+  if (name === "mcp") {
+    return (
+      <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8} aria-hidden="true">
+        <circle cx="5" cy="10" r="2.25" />
+        <circle cx="15" cy="5" r="2.25" />
+        <circle cx="15" cy="15" r="2.25" />
+        <path d="m7 9 5.8-3M7 11l5.8 3" />
+      </svg>
+    );
+  }
   return (
     <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8} aria-hidden="true">
       <path d="M10 3.5a6.5 6.5 0 1 0 0 13h1a1.5 1.5 0 1 0 0-3h-1.2a1.8 1.8 0 1 1 0-3.6h.7A2.5 2.5 0 1 0 10 3.5Z" />
@@ -80,6 +91,7 @@ export const AppHeader = () => {
   const { theme, setTheme, accentColor, setAccentColor, saving: savingTheme } = useTheme();
   const [menuOpen, setMenuOpen] = useState(false);
   const [appearanceOpen, setAppearanceOpen] = useState(false);
+  const [mcpSetupOpen, setMcpSetupOpen] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [feedbackMessage, setFeedbackMessage] = useState("");
   const [feedbackError, setFeedbackError] = useState<string | null>(null);
@@ -116,6 +128,11 @@ export const AppHeader = () => {
 
   const openAppearance = () => {
     setAppearanceOpen(true);
+    setMenuOpen(false);
+  };
+
+  const openMcpSetup = () => {
+    setMcpSetupOpen(true);
     setMenuOpen(false);
   };
 
@@ -213,6 +230,14 @@ export const AppHeader = () => {
                   >
                     <MenuIcon name="appearance" />
                     <span>Оформление</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={openMcpSetup}
+                    className="flex items-center gap-2 rounded-lg px-2 py-1 text-left transition hover:bg-primary/10 hover:text-primary"
+                  >
+                    <MenuIcon name="mcp" />
+                    <span>Подключить MCP</span>
                   </button>
                 </nav>
                 <div className="mt-4 flex flex-col gap-2 border-t border-slate-100 pt-3 text-slate-600">
@@ -316,6 +341,8 @@ export const AppHeader = () => {
           </div>
         </div>
       </Modal>
+
+      <McpSetupModal open={mcpSetupOpen} onClose={() => setMcpSetupOpen(false)} />
 
       <Modal
         open={feedbackOpen}

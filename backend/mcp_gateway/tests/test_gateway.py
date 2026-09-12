@@ -5,6 +5,7 @@ from datetime import timedelta
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.test import override_settings
 from django.utils import timezone
@@ -21,7 +22,7 @@ from mcp_gateway.api_proxy import (
 from mcp_gateway.combined import application as combined_application
 from mcp_gateway.domain_tools import TrainingExercise, _upsert_workout_set
 from mcp_gateway.models import OAuthClient, OAuthTokenRecord
-from mcp_gateway.oauth_provider import token_hash
+from mcp_gateway.oauth_provider import DEFAULT_SCOPES, VALID_SCOPES, token_hash
 from mcp_gateway.server import mcp
 from mcp_gateway.services import create_training_program
 from programs.models import DayTemplate, ProgramFolder, TemplateExercise
@@ -81,8 +82,22 @@ def test_metadata_and_unauthorized_mcp_response():
         metadata = client.get("/.well-known/oauth-authorization-server")
         assert metadata.status_code == 200
         assert "S256" in metadata.json()["code_challenge_methods_supported"]
+        assert set(metadata.json()["scopes_supported"]) == VALID_SCOPES
         protected = client.get("/.well-known/oauth-protected-resource/mcp")
         assert protected.status_code == 200
+        assert set(protected.json()["scopes_supported"]) == VALID_SCOPES
+        default_registration = client.post(
+            "/register",
+            json={
+                "redirect_uris": ["http://127.0.0.1:45677/callback"],
+                "token_endpoint_auth_method": "none",
+                "grant_types": ["authorization_code", "refresh_token"],
+                "response_types": ["code"],
+                "client_name": "Default scopes integration test",
+            },
+        )
+        assert default_registration.status_code == 201
+        assert set(default_registration.json()["scope"].split()) == VALID_SCOPES
         registration = client.post(
             "/register",
             json={
@@ -127,7 +142,7 @@ def test_metadata_and_unauthorized_mcp_response():
             client=OAuthClient.objects.get(client_id=registered_client_id),
             user=user,
             scopes=["fittoday.read"],
-            resource="http://localhost:8000/mcp",
+            resource=settings.MCP_PUBLIC_URL,
             expires_at=timezone.now() + timedelta(minutes=5),
         )
         with patch(
@@ -149,6 +164,40 @@ def test_metadata_and_unauthorized_mcp_response():
             )
         assert tool_call.status_code == 200
         assert "error" not in tool_call.json()
+
+        raw_write_access = "integration-write-access-token"
+        OAuthTokenRecord.objects.create(
+            token_hash=token_hash(raw_write_access),
+            token_family="integration-write-family",
+            kind=OAuthTokenRecord.Kind.ACCESS,
+            client=OAuthClient.objects.get(client_id=registered_client_id),
+            user=user,
+            scopes=list(DEFAULT_SCOPES),
+            resource=settings.MCP_PUBLIC_URL,
+            expires_at=timezone.now() + timedelta(minutes=5),
+        )
+        with patch(
+            "mcp_gateway.domain_tools.api_request",
+            new=AsyncMock(return_value={"id": 1, "name": "Scope test"}),
+        ):
+            write_tool_call = client.post(
+                "/mcp",
+                headers={
+                    "accept": "application/json, text/event-stream",
+                    "authorization": f"Bearer {raw_write_access}",
+                },
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 3,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "create_program",
+                        "arguments": {"name": "Scope test"},
+                    },
+                },
+            )
+        assert write_tool_call.status_code == 200
+        assert "error" not in write_tool_call.json()
 
 
 def test_write_requires_write_scope_before_proxy_request():

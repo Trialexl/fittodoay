@@ -15,9 +15,11 @@ from pydantic import AnyUrl
 
 from mcp_gateway.models import (
     OAuthAuthorizationCode,
+    OAuthAuthorizationRequest,
     OAuthTokenRecord,
 )
 from mcp_gateway.oauth_provider import (
+    DEFAULT_SCOPES,
     DjangoOAuthProvider,
     token_hash,
     validate_redirect_uri,
@@ -122,6 +124,35 @@ def test_public_client_code_exchange_rotation_and_revocation():
     access = async_to_sync(provider.load_access_token)(rotated.access_token)
     async_to_sync(provider.revoke_token)(access)
     assert async_to_sync(provider.load_access_token)(rotated.access_token) is None
+
+
+@pytest.mark.django_db(transaction=True)
+@override_settings(
+    MCP_PUBLIC_URL="https://fit.example/mcp", MCP_ISSUER_URL="https://fit.example"
+)
+def test_authorize_without_scope_uses_registered_client_scopes():
+    provider = DjangoOAuthProvider()
+    info = client_info()
+    async_to_sync(provider.register_client)(info)
+    loaded = async_to_sync(provider.get_client)(info.client_id)
+
+    consent_url = async_to_sync(provider.authorize)(
+        loaded,
+        AuthorizationParams(
+            state="state-default-scopes",
+            scopes=None,
+            code_challenge="C" * 43,
+            redirect_uri=AnyUrl("http://127.0.0.1:43123/callback"),
+            redirect_uri_provided_explicitly=True,
+            resource="https://fit.example/mcp",
+        ),
+    )
+
+    raw_request = parse_qs(urlparse(consent_url).query)["request"][0]
+    request = OAuthAuthorizationRequest.objects.get(
+        request_hash=token_hash(raw_request)
+    )
+    assert request.scopes == list(DEFAULT_SCOPES)
 
 
 @pytest.mark.django_db
