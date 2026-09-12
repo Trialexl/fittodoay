@@ -5,8 +5,9 @@ from pathlib import Path
 from uuid import uuid4
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.core.files.storage import FileSystemStorage
-from django.core.validators import FileExtensionValidator
+from django.core.validators import FileExtensionValidator, URLValidator
 from django.db import models
 from django.utils.text import slugify
 from pgvector.django import VectorField
@@ -306,6 +307,10 @@ class TechniqueReview(TimestampedModel):
 
 
 class WorkoutMusicTrack(TimestampedModel):
+    class StreamCategory(models.TextChoices):
+        WORKOUT = "workout", "Тренировка"
+        RELAX = "relax", "Релакс"
+
     owner = models.ForeignKey(
         User,
         on_delete=models.CASCADE,
@@ -320,9 +325,23 @@ class WorkoutMusicTrack(TimestampedModel):
     file = models.FileField(
         upload_to=music_upload_to,
         storage=music_storage,
+        null=True,
+        blank=True,
         validators=[
             FileExtensionValidator(allowed_extensions=ALLOWED_MUSIC_EXTENSIONS)
         ],
+    )
+    stream_url = models.URLField(
+        max_length=500,
+        blank=True,
+        default="",
+        validators=[URLValidator(schemes=["https"])],
+    )
+    stream_category = models.CharField(
+        max_length=16,
+        choices=StreamCategory.choices,
+        blank=True,
+        default="",
     )
     is_active = models.BooleanField(default=True)
 
@@ -330,9 +349,37 @@ class WorkoutMusicTrack(TimestampedModel):
         verbose_name = "Музыкальный трек"
         verbose_name_plural = "Музыкальные треки"
         ordering = ["title", "file", "-created_at"]
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(file__isnull=False, stream_url="") & ~models.Q(file="")
+                )
+                | (
+                    (models.Q(file__isnull=True) | models.Q(file=""))
+                    & ~models.Q(stream_url="")
+                ),
+                name="workout_music_exactly_one_source",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(stream_url="", stream_category="")
+                    | (~models.Q(stream_url="") & ~models.Q(stream_category=""))
+                ),
+                name="workout_music_stream_category",
+            ),
+            models.UniqueConstraint(
+                fields=["stream_url"],
+                condition=~models.Q(stream_url=""),
+                name="workout_music_unique_stream_url",
+            ),
+        ]
 
     def __str__(self):
         return self.display_name
+
+    @property
+    def is_stream(self):
+        return bool(self.stream_url)
 
     @property
     def display_name(self):
@@ -342,7 +389,22 @@ class WorkoutMusicTrack(TimestampedModel):
             return self.artist
         if self.title:
             return self.title
-        return Path(self.file.name).stem.replace("_", " ")
+        if self.file:
+            return Path(self.file.name).stem.replace("_", " ")
+        return "Радиостанция"
+
+    def clean(self):
+        super().clean()
+        if bool(self.file) == bool(self.stream_url):
+            raise ValidationError("Укажите либо аудиофайл, либо URL радиопотока.")
+        if self.stream_url and not self.stream_category:
+            raise ValidationError(
+                {"stream_category": "Для радиопотока укажите категорию."}
+            )
+        if not self.stream_url and self.stream_category:
+            raise ValidationError(
+                {"stream_category": "Категория доступна только радиопотокам."}
+            )
 
     def save(self, *args, **kwargs):
         if self.file and not self.title:

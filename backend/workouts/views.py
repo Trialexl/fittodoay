@@ -660,9 +660,15 @@ class WorkoutMusicTracksView(APIView):
                 "title": track.title,
                 "artist": track.artist,
                 "album": track.album,
-                "filename": track.file.name,
+                "filename": track.file.name if track.file else "",
                 "is_mine": track.owner_id == request.user.id,
-                "url": f"/api/workouts/music/tracks/{track.id}/file/",
+                "source_type": "stream" if track.is_stream else "file",
+                "stream_category": track.stream_category or None,
+                "url": (
+                    track.stream_url
+                    if track.is_stream
+                    else f"/api/workouts/music/tracks/{track.id}/file/"
+                ),
             }
             for track in tracks
         ]
@@ -725,6 +731,8 @@ class WorkoutMusicTrackUploadView(APIView):
                     "album": track.album,
                     "filename": track.file.name,
                     "is_mine": True,
+                    "source_type": "file",
+                    "stream_category": None,
                     "url": f"/api/workouts/music/tracks/{track.id}/file/",
                 }
             )

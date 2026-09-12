@@ -244,6 +244,8 @@ type MusicTrack = {
   filename: string;
   is_mine?: boolean;
   url: string;
+  source_type: "file" | "stream";
+  stream_category?: "workout" | "relax" | null;
 };
 
 type MusicGroupBy = "none" | "folder" | "artist" | "album";
@@ -409,9 +411,10 @@ const parseTargetMuscles = (value?: string | null) =>
 const getExerciseMuscles = (exercise: ExercisePayload) =>
   parseTargetMuscles(exercise.source.target_muscles);
 
-const buildMusicTrackUrl = (path: string, token?: string | null) => {
-  if (!token) return resolveApiUrl(path);
-  return resolveApiUrlWithParams(path, { token });
+const buildMusicTrackUrl = (track: MusicTrack, token?: string | null) => {
+  if (track.source_type === "stream") return track.url;
+  if (!token) return resolveApiUrl(track.url);
+  return resolveApiUrlWithParams(track.url, { token });
 };
 
 const describeAudioDebugState = (audio: HTMLAudioElement | null) => ({
@@ -732,6 +735,9 @@ const getTrackPathParts = (track: MusicTrack) =>
     .filter(Boolean);
 
 const getTrackFolderLabel = (track: MusicTrack) => {
+  if (track.source_type === "stream") {
+    return track.stream_category === "relax" ? "Радио · Релакс" : "Радио · Тренировка";
+  }
   const parts = getTrackPathParts(track);
   if (!parts.length) return "Без папки";
   const folderParts = parts.slice(0, -1);
@@ -1564,7 +1570,7 @@ export const Checklist = ({
     if (useGlobalMusicPlayerOnly) return;
     const audio = musicAudioRef.current;
     if (!audio || !currentMusicTrack) return;
-    const expectedUrl = buildMusicTrackUrl(currentMusicTrack.url, auth.token).trim();
+    const expectedUrl = buildMusicTrackUrl(currentMusicTrack, auth.token).trim();
     const activeUrl = (audio.currentSrc || audio.src || "").trim();
     if (activeUrl === expectedUrl) return;
     if (!audio.paused && !audio.ended) return;
@@ -1664,7 +1670,7 @@ export const Checklist = ({
     const audio = musicAudioRef.current;
     if (!audio || !currentMusicTrack) return;
     unlockAudioContext();
-    const trackUrl = buildMusicTrackUrl(currentMusicTrack.url, auth.token);
+    const trackUrl = buildMusicTrackUrl(currentMusicTrack, auth.token);
     const sourceChanged = musicTrackUrlRef.current !== trackUrl;
     if (sourceChanged) {
       audio.pause();
@@ -2096,7 +2102,7 @@ export const Checklist = ({
     if (!musicPlaying) return;
     if (audio && !audio.paused && !audio.ended && currentMusicTrack) {
       const activeUrl = (audio.currentSrc || audio.src || "").trim();
-      const expectedUrl = buildMusicTrackUrl(currentMusicTrack.url, auth.token).trim();
+      const expectedUrl = buildMusicTrackUrl(currentMusicTrack, auth.token).trim();
       if (activeUrl && activeUrl === expectedUrl) {
         return;
       }
@@ -4251,7 +4257,7 @@ export const Checklist = ({
                 type="text"
                 value={musicSearchQuery}
                 onChange={(event) => setMusicSearchQuery(event.target.value)}
-                placeholder="Поиск по треку, исполнителю, альбому"
+                placeholder="Поиск по треку, станции, альбому"
                 className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 pr-9 text-sm text-slate-700 outline-none ring-primary/40 transition placeholder:text-slate-400 focus:ring dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500"
               />
               {musicSearchQuery ? (
@@ -4371,6 +4377,11 @@ export const Checklist = ({
                           </button>
                           <div className="relative shrink-0" ref={menuOpen ? musicTrackMenuRef : null}>
                             <div className="flex items-center gap-1">
+                              {track.source_type === "stream" ? (
+                                <span className="rounded-md bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-300">
+                                  LIVE
+                                </span>
+                              ) : null}
                               {active ? (
                                 <span className="rounded-md bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
                                   Сейчас

@@ -276,6 +276,8 @@ class RecommendationApplySerializer(serializers.Serializer):
 
 
 class WorkoutMusicTrackUploadSerializer(serializers.ModelSerializer):
+    file = serializers.FileField(required=True, allow_empty_file=False)
+
     class Meta:
         model = WorkoutMusicTrack
         fields = [

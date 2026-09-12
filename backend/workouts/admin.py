@@ -39,11 +39,20 @@ class WorkoutMusicTrackAdmin(admin.ModelAdmin):
         "title",
         "owner",
         "file",
+        "stream_url",
+        "stream_category",
         "is_active",
         "created_at",
     )
-    list_filter = ("is_active", "owner", "created_at")
-    search_fields = ("artist", "album", "title", "file", "owner__email")
+    list_filter = ("is_active", "stream_category", "owner", "created_at")
+    search_fields = (
+        "artist",
+        "album",
+        "title",
+        "file",
+        "stream_url",
+        "owner__email",
+    )
     readonly_fields = ("created_at", "updated_at")
 
 

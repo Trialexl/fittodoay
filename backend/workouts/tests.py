@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 from decimal import Decimal
+from importlib import import_module
 import json
 from pathlib import Path
 import shutil
@@ -9,7 +10,9 @@ import subprocess
 from uuid import uuid4
 
 import pytest
+from django.apps import apps as django_apps
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.management import call_command
 from django.core.files.uploadedfile import SimpleUploadedFile, TemporaryUploadedFile
 from django.db import connection
@@ -519,17 +522,82 @@ def test_music_tracks_endpoint_lists_active_tracks(tmp_path):
                 "hidden.mp3", b"fake-mp3", content_type="audio/mpeg"
             ),
         )
+        radio = WorkoutMusicTrack.objects.create(
+            title="Training Radio",
+            artist="Test Radio",
+            album="Радио · Тренировка",
+            stream_url="https://radio.example/stream.mp3",
+            stream_category=WorkoutMusicTrack.StreamCategory.WORKOUT,
+            is_active=True,
+            owner=None,
+        )
         response = client.get("/api/workouts/music/tracks/")
 
     assert response.status_code == 200
     items = response.data["items"]
-    assert len(items) == 3
     ids = {item["id"] for item in items}
-    assert ids == {first.id, global_track.id, other_track.id}
+    assert {first.id, global_track.id, other_track.id, radio.id}.issubset(ids)
     own_item = next(item for item in items if item["id"] == first.id)
     assert own_item["is_mine"] is True
     assert own_item["url"] == f"/api/workouts/music/tracks/{first.id}/file/"
+    assert own_item["source_type"] == "file"
     assert own_item["album"] == "Manual Album"
+    radio_item = next(item for item in items if item["id"] == radio.id)
+    assert radio_item == {
+        "id": radio.id,
+        "name": "Test Radio — Training Radio",
+        "title": "Training Radio",
+        "artist": "Test Radio",
+        "album": "Радио · Тренировка",
+        "filename": "",
+        "is_mine": False,
+        "source_type": "stream",
+        "stream_category": "workout",
+        "url": "https://radio.example/stream.mp3",
+    }
+
+
+@pytest.mark.django_db
+def test_music_track_requires_exactly_one_valid_source():
+    missing_source = WorkoutMusicTrack(title="Missing source")
+    with pytest.raises(DjangoValidationError):
+        missing_source.full_clean()
+
+    both_sources = WorkoutMusicTrack(
+        title="Both sources",
+        file=SimpleUploadedFile("both.mp3", b"fake-mp3", content_type="audio/mpeg"),
+        stream_url="https://radio.example/stream.mp3",
+        stream_category=WorkoutMusicTrack.StreamCategory.WORKOUT,
+    )
+    with pytest.raises(DjangoValidationError):
+        both_sources.full_clean()
+
+    insecure_stream = WorkoutMusicTrack(
+        title="HTTP stream",
+        stream_url="http://radio.example/stream.mp3",
+        stream_category=WorkoutMusicTrack.StreamCategory.RELAX,
+    )
+    with pytest.raises(DjangoValidationError):
+        insecure_stream.full_clean()
+
+
+@pytest.mark.django_db
+def test_radio_seed_contains_ten_workout_and_two_relax_streams():
+    migration = import_module("workouts.migrations.0021_seed_workout_radio_streams")
+    migration.add_radio_streams(django_apps, None)
+    urls = [station["stream_url"] for station in migration.RADIO_STREAMS]
+    streams = WorkoutMusicTrack.objects.filter(stream_url__in=urls)
+
+    assert len(urls) == len(set(urls)) == 12
+    assert (
+        streams.filter(stream_category=WorkoutMusicTrack.StreamCategory.WORKOUT).count()
+        == 10
+    )
+    assert (
+        streams.filter(stream_category=WorkoutMusicTrack.StreamCategory.RELAX).count()
+        == 2
+    )
+    assert streams.filter(owner__isnull=True, is_active=True).count() == 12
 
 
 @pytest.mark.django_db

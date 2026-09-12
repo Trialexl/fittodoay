@@ -24,6 +24,8 @@ type MusicTrack = {
   album?: string;
   filename: string;
   url: string;
+  source_type: "file" | "stream";
+  stream_category?: "workout" | "relax" | null;
 };
 
 type PersistedMusicState = {
@@ -42,9 +44,10 @@ const MUSIC_SHUFFLE_RECENT_STORAGE_KEY = "fittodoay:workout:music-shuffle-recent
 const MUSIC_SHUFFLE_RECENT_MAX = 12;
 const MUSIC_BUFFERING_TIMEOUT_MS = 15000;
 
-const buildMusicTrackUrl = (path: string, token?: string | null) => {
-  if (!token) return resolveApiUrl(path);
-  return resolveApiUrlWithParams(path, { token });
+const buildMusicTrackUrl = (track: MusicTrack, token?: string | null) => {
+  if (track.source_type === "stream") return track.url;
+  if (!token) return resolveApiUrl(track.url);
+  return resolveApiUrlWithParams(track.url, { token });
 };
 
 const describeAudioDebugState = (audio: HTMLAudioElement | null) => ({
@@ -189,6 +192,9 @@ const getTrackPathParts = (track: MusicTrack) =>
     .filter(Boolean);
 
 const getTrackFolderLabel = (track: MusicTrack) => {
+  if (track.source_type === "stream") {
+    return track.stream_category === "relax" ? "Радио · Релакс" : "Радио · Тренировка";
+  }
   const parts = getTrackPathParts(track);
   if (!parts.length) return "Без папки";
   const folderParts = parts.slice(0, -1);
@@ -348,6 +354,7 @@ export const GlobalMusicPlayer = () => {
     return Array.from(groups.values()).flat();
   }, [groupBy, tracks]);
   const currentTrack = tracks[trackIndex] ?? null;
+  const currentTrackIsStream = currentTrack?.source_type === "stream";
   const currentMetaLine = useMemo(() => getMusicTrackMetaLine(currentTrack), [currentTrack]);
 
   useEffect(() => {
@@ -415,7 +422,10 @@ export const GlobalMusicPlayer = () => {
     if (!restoreReadyRef.current && tracks.length > 0) return;
     const persisted = readPersistedMusicState();
     const persistedTime =
-      currentTrackId && persisted.trackId === currentTrackId && Number.isFinite(Number(persisted.time))
+      !currentTrackIsStream &&
+      currentTrackId &&
+      persisted.trackId === currentTrackId &&
+      Number.isFinite(Number(persisted.time))
         ? Math.max(Number(persisted.time), 0)
         : 0;
     rememberRecentTrack(currentTrackId);
@@ -429,24 +439,24 @@ export const GlobalMusicPlayer = () => {
         time: persistedTime,
       });
     }
-  }, [currentTrack?.id, rememberRecentTrack, tracks.length]);
+  }, [currentTrack?.id, currentTrackIsStream, rememberRecentTrack, tracks.length]);
 
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio || !currentTrack) return;
-    const expectedUrl = buildMusicTrackUrl(currentTrack.url, auth.token).trim();
+    const expectedUrl = buildMusicTrackUrl(currentTrack, auth.token).trim();
     const activeUrl = (audio.currentSrc || audio.src || "").trim();
     if (activeUrl === expectedUrl) return;
     if (!audio.paused && !audio.ended) return;
     audio.src = expectedUrl;
-    audio.preload = "auto";
+    audio.preload = currentTrackIsStream ? "none" : "auto";
     sourceUrlRef.current = expectedUrl;
     try {
       audio.load();
     } catch {
       // Ignore load errors here and report only on explicit playback.
     }
-  }, [auth.token, currentTrack]);
+  }, [auth.token, currentTrack, currentTrackIsStream]);
 
   const pickNextTrackIndex = useCallback(() => {
     if (!tracks.length) return null;
@@ -492,7 +502,7 @@ export const GlobalMusicPlayer = () => {
   const playTrack = useCallback(async () => {
     const audio = audioRef.current;
     if (!audio || !currentTrack) return;
-    const trackUrl = buildMusicTrackUrl(currentTrack.url, auth.token);
+    const trackUrl = buildMusicTrackUrl(currentTrack, auth.token);
     const sourceChanged = sourceUrlRef.current !== trackUrl;
     if (sourceChanged) {
       audio.pause();
@@ -523,7 +533,7 @@ export const GlobalMusicPlayer = () => {
   const pauseTrack = useCallback(() => {
     const audio = audioRef.current;
     if (!audio) return;
-    if (currentTrack?.id) {
+    if (currentTrack?.id && !currentTrackIsStream) {
       const now = Number.isFinite(audio.currentTime) && audio.currentTime > 0 ? audio.currentTime : 0;
       writePersistedMusicState({
         trackId: currentTrack.id,
@@ -531,8 +541,16 @@ export const GlobalMusicPlayer = () => {
       });
     }
     audio.pause();
+    if (currentTrackIsStream) {
+      audio.removeAttribute("src");
+      audio.load();
+      sourceUrlRef.current = "";
+      loadingSourceRef.current = "";
+      setCurrentTime(0);
+      setDuration(0);
+    }
     setPlaying(false);
-  }, [currentTrack?.id]);
+  }, [currentTrack?.id, currentTrackIsStream]);
 
   const queueTrackNext = useCallback(
     (trackId: number) => {
@@ -739,9 +757,16 @@ export const GlobalMusicPlayer = () => {
 
     const handleLoadedMeta = () => {
       clearBufferingTimeout(true);
-      const trackDuration = Number.isFinite(audio.duration) ? audio.duration : 0;
+      const trackDuration =
+        currentTrack?.source_type !== "stream" && Number.isFinite(audio.duration)
+          ? audio.duration
+          : 0;
       setDuration(trackDuration);
       loadingSourceRef.current = "";
+      if (currentTrack?.source_type === "stream") {
+        setCurrentTime(0);
+        return;
+      }
       const persisted = readPersistedMusicState();
       if (!currentTrack || persisted.trackId !== currentTrack.id) return;
       const safeTime = Math.min(Math.max(persisted.time ?? 0, 0), Math.max(trackDuration - 1, 0));
@@ -754,6 +779,10 @@ export const GlobalMusicPlayer = () => {
 
     const handleTimeUpdate = () => {
       if (seeking) return;
+      if (currentTrack?.source_type === "stream") {
+        setCurrentTime(0);
+        return;
+      }
       const now = Number.isFinite(audio.currentTime) ? audio.currentTime : 0;
       const nextSecond = Math.floor(now);
       if (secondRef.current === nextSecond) return;
@@ -778,6 +807,15 @@ export const GlobalMusicPlayer = () => {
     const handleEnded = () => {
       clearBufferingTimeout(true);
       console.warn("global_music_ended", { trackId: currentTrack?.id ?? null, trackName: currentTrack?.name ?? null, ...describeAudioDebugState(audio) });
+      if (currentTrack?.source_type === "stream") {
+        audio.removeAttribute("src");
+        audio.load();
+        sourceUrlRef.current = "";
+        loadingSourceRef.current = "";
+        setPlaying(false);
+        setError(`Поток ${currentTrack.name} завершён. Нажмите Play для переподключения.`);
+        return;
+      }
       if (currentTrack) {
         writePersistedMusicState({ trackId: currentTrack.id, time: 0 });
       }
@@ -787,6 +825,14 @@ export const GlobalMusicPlayer = () => {
       clearBufferingTimeout();
       console.error("global_music_error", { trackId: currentTrack?.id ?? null, trackName: currentTrack?.name ?? null, ...describeAudioDebugState(audio) });
       setError(currentTrack ? `Не удалось воспроизвести: ${currentTrack.name}` : "Не удалось воспроизвести трек");
+      if (currentTrack?.source_type === "stream") {
+        audio.removeAttribute("src");
+        audio.load();
+        sourceUrlRef.current = "";
+        loadingSourceRef.current = "";
+        setPlaying(false);
+        return;
+      }
       playNextTrack();
     };
     const handleAbort = () => {
@@ -849,7 +895,7 @@ export const GlobalMusicPlayer = () => {
   useEffect(() => {
     if (!shouldRender) return;
     const persistCurrentPosition = () => {
-      if (!currentTrack?.id) return;
+      if (!currentTrack?.id || currentTrack.source_type === "stream") return;
       const audio = audioRef.current;
       const rawTime = audio && Number.isFinite(audio.currentTime) ? audio.currentTime : currentTime;
       writePersistedMusicState({
@@ -870,7 +916,7 @@ export const GlobalMusicPlayer = () => {
       window.removeEventListener("pagehide", persistCurrentPosition);
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, [currentTime, currentTrack?.id, shouldRender]);
+  }, [currentTime, currentTrack, shouldRender]);
 
   const filteredTracks = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -957,47 +1003,56 @@ export const GlobalMusicPlayer = () => {
               <PlaylistIcon />
             </Button>
           </div>
-          <div className="mt-1">
-            <input
-              type="range"
-              min={0}
-              max={Math.max(duration, 1)}
-              step={1}
-              value={Math.min(currentTime, Math.max(duration, 1))}
-              onInput={(event) => {
-                const nextValue = Number((event.target as HTMLInputElement).value);
-                setCurrentTime(nextValue);
-                secondRef.current = Math.floor(nextValue);
-                const audio = audioRef.current;
-                if (audio && Number.isFinite(nextValue)) {
-                  audio.currentTime = nextValue;
-                }
-              }}
-              onChange={(event) => {
-                const nextValue = Number(event.target.value);
-                setCurrentTime(nextValue);
-                secondRef.current = Math.floor(nextValue);
-                const audio = audioRef.current;
-                if (audio && Number.isFinite(nextValue)) {
-                  audio.currentTime = nextValue;
-                }
-              }}
-              onPointerDown={() => setSeeking(true)}
-              onPointerUp={() => setSeeking(false)}
-              onMouseDown={() => setSeeking(true)}
-              onMouseUp={() => setSeeking(false)}
-              onTouchStart={() => setSeeking(true)}
-              onTouchEnd={() => setSeeking(false)}
-              onBlur={() => setSeeking(false)}
-              disabled={!currentTrack}
-              className="h-1.5 w-full cursor-pointer accent-primary disabled:cursor-not-allowed"
-              aria-label="Перемотка трека"
-            />
-            <div className="mt-0.5 flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-300">
-              <span>{formatAudioTime(currentTime)}</span>
-              <span>{formatAudioTime(duration)}</span>
+          {currentTrackIsStream ? (
+            <div className="mt-1 flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-300">
+              <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 font-semibold text-emerald-600 dark:text-emerald-300">
+                LIVE
+              </span>
+              <span>{currentTrack?.stream_category === "relax" ? "Релакс" : "Тренировка"}</span>
             </div>
-          </div>
+          ) : (
+            <div className="mt-1">
+              <input
+                type="range"
+                min={0}
+                max={Math.max(duration, 1)}
+                step={1}
+                value={Math.min(currentTime, Math.max(duration, 1))}
+                onInput={(event) => {
+                  const nextValue = Number((event.target as HTMLInputElement).value);
+                  setCurrentTime(nextValue);
+                  secondRef.current = Math.floor(nextValue);
+                  const audio = audioRef.current;
+                  if (audio && Number.isFinite(nextValue)) {
+                    audio.currentTime = nextValue;
+                  }
+                }}
+                onChange={(event) => {
+                  const nextValue = Number(event.target.value);
+                  setCurrentTime(nextValue);
+                  secondRef.current = Math.floor(nextValue);
+                  const audio = audioRef.current;
+                  if (audio && Number.isFinite(nextValue)) {
+                    audio.currentTime = nextValue;
+                  }
+                }}
+                onPointerDown={() => setSeeking(true)}
+                onPointerUp={() => setSeeking(false)}
+                onMouseDown={() => setSeeking(true)}
+                onMouseUp={() => setSeeking(false)}
+                onTouchStart={() => setSeeking(true)}
+                onTouchEnd={() => setSeeking(false)}
+                onBlur={() => setSeeking(false)}
+                disabled={!currentTrack}
+                className="h-1.5 w-full cursor-pointer accent-primary disabled:cursor-not-allowed"
+                aria-label="Перемотка трека"
+              />
+              <div className="mt-0.5 flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-300">
+                <span>{formatAudioTime(currentTime)}</span>
+                <span>{formatAudioTime(duration)}</span>
+              </div>
+            </div>
+          )}
           {error ? <p className="mt-0.5 text-[10px] text-amber-600 dark:text-amber-300">{error}</p> : null}
         </div>
       </section>
@@ -1016,7 +1071,7 @@ export const GlobalMusicPlayer = () => {
                 type="text"
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder="Поиск по треку, исполнителю, альбому"
+                placeholder="Поиск по треку, станции, альбому"
                 className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-700 outline-none ring-primary/40 transition placeholder:text-slate-400 focus:ring dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500"
               />
             </div>
@@ -1046,9 +1101,16 @@ export const GlobalMusicPlayer = () => {
                             {track.name}
                           </p>
                           <p className="truncate text-[11px] text-slate-500 dark:text-slate-400">
-                            {track.artist || track.album || track.filename}
+                            {track.source_type === "stream"
+                              ? `${track.artist || "Радио"} · ${track.stream_category === "relax" ? "Релакс" : "Тренировка"}`
+                              : track.artist || track.album || track.filename}
                           </p>
                         </button>
+                        {track.source_type === "stream" ? (
+                          <span className="rounded-md bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-300">
+                            LIVE
+                          </span>
+                        ) : null}
                         {active ? (
                           <span className="rounded-md bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold text-primary">Сейчас</span>
                         ) : null}
