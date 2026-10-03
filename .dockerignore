@@ -2,6 +2,12 @@
 .github
 .obsidian
 .venv
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
 __pycache__/
 *.pyc
 *.pyo
