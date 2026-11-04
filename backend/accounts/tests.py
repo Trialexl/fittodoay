@@ -58,9 +58,7 @@ def test_token_authenticated_preference_update_does_not_require_session_csrf():
     )
     assert login_response.status_code == 200, login_response.content
 
-    client.credentials(
-        HTTP_AUTHORIZATION=f"Token {login_response.data['token']}"
-    )
+    client.credentials(HTTP_AUTHORIZATION=f"Token {login_response.data['token']}")
     response = client.put(
         "/api/profile/preferences/",
         {"theme": "dark", "accent_color": "#a855f7"},
