@@ -3581,7 +3581,7 @@ export const Checklist = ({
           )}
         </div>
       )}
-      <section className="space-y-2">
+      <section className="workout-overview space-y-2">
         <p className="text-sm uppercase tracking-widest text-primary">Дневной чеклист</p>
         <div className="flex items-stretch gap-3">
           <section className="min-w-0 flex-1 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-700 dark:bg-slate-900/70">
@@ -3691,6 +3691,7 @@ export const Checklist = ({
           const recommendationOpen = openRecommendationFolders[folder.id] ?? false;
           return (
             <section
+              data-ui="workout-folder"
               key={folder.id}
               className={clsx(
                 "rounded-2xl border p-2.5 shadow-sm transition-all duration-200 sm:p-3",
@@ -3798,7 +3799,7 @@ export const Checklist = ({
                       <article
                           key={template.id}
                           className={clsx(
-                            "rounded-2xl border p-3 shadow-sm transition-all duration-200 sm:p-4",
+                            "workout-template rounded-2xl border p-3 shadow-sm transition-all duration-200 sm:p-4",
                             templateComplete
                               ? "completed-template-shell border-emerald-300/70 bg-emerald-50/70"
                               : "border-slate-200 bg-surface",
@@ -3860,7 +3861,7 @@ export const Checklist = ({
                           <div
                             key={exercise.template_exercise_id}
                             className={clsx(
-                              "rounded-2xl border px-2 py-2 shadow-sm transition-all duration-200 sm:px-3 sm:py-2.5",
+                              "workout-exercise rounded-2xl border px-2 py-2 shadow-sm transition-all duration-200 sm:px-3 sm:py-2.5",
                               exerciseComplete
                                 ? "completed-exercise-shell border-emerald-400/40 bg-emerald-500/10"
                                 : exerciseActive
@@ -3971,7 +3972,7 @@ export const Checklist = ({
                                   <div
                                     key={`${exercise.template_exercise_id}-${set.set_index}`}
                                     className={clsx(
-                                      "flex flex-wrap items-center gap-2 rounded-xl border px-3 py-1.5 text-xs transition sm:text-sm",
+                                      "workout-set flex flex-wrap items-center gap-2 rounded-xl border px-3 py-1.5 text-xs transition sm:text-sm",
                                       isComplete
                                         ? "completed-set-shell border-emerald-400/40 bg-emerald-500/10"
                                         : "border-slate-200 bg-surface-muted",
@@ -4237,7 +4238,7 @@ export const Checklist = ({
         onClose={() => dispatchWorkoutMusicAction({ type: "set-playlist-open", open: false })}
         title="Плейлист"
         className="h-[92vh] max-h-[92vh] sm:h-[94vh] sm:max-h-[94vh] sm:max-w-[96vw]"
-        overlayClassName="bottom-[calc(env(safe-area-inset-bottom)+84px)] sm:bottom-[calc(env(safe-area-inset-bottom)+92px)]"
+        overlayClassName="playlist-dialog bottom-[calc(env(safe-area-inset-bottom)+84px)] sm:bottom-[calc(env(safe-area-inset-bottom)+92px)]"
         mobileSheet
       >
         <div className="flex min-h-0 flex-1 overflow-hidden flex-col">

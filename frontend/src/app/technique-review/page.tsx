@@ -253,7 +253,7 @@ export default function TechniqueReviewPage() {
 
   return (
     <main className="mx-auto max-w-6xl space-y-6">
-      <header className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+      <header className="ui-page-heading rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-400">
@@ -270,9 +270,9 @@ export default function TechniqueReviewPage() {
         </div>
       </header>
 
-      <section className="grid gap-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+      <section className="technique-layout grid gap-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
         <div className="space-y-6">
-          <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          <section className="ui-surface rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
             <h2 className="text-lg font-semibold text-slate-900">Новое видео</h2>
             <div className="mt-4 space-y-4">
               <label className="block rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm text-slate-600">
@@ -304,7 +304,7 @@ export default function TechniqueReviewPage() {
             </div>
           </section>
 
-          <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          <section className="ui-surface rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
             <h2 className="text-lg font-semibold text-slate-900">Последние проверки</h2>
             <div className="mt-4 space-y-3">
               {reviews.length === 0 && (
@@ -339,7 +339,7 @@ export default function TechniqueReviewPage() {
           </section>
         </div>
 
-        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        <section className="ui-surface rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
           {!selectedReview ? (
             <div className="flex min-h-[24rem] items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-500">
               Выберите или загрузите видео, чтобы увидеть результат.

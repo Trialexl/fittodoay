@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { ModernNavigation } from "./ModernNavigation";
+import { DesignVersionSettings } from "./AppearanceSettings";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/state/AuthContext";
@@ -88,7 +90,7 @@ const MenuIcon = ({ name }: { name: "programs" | "workout" | "analytics" | "tech
 export const AppHeader = () => {
   const pathname = usePathname();
   const { user, logout } = useAuth();
-  const { theme, setTheme, accentColor, setAccentColor, saving: savingTheme } = useTheme();
+  const { theme, setTheme, accentColor, setAccentColor, designVersion, loading: loadingTheme, saving: savingTheme } = useTheme();
   const [menuOpen, setMenuOpen] = useState(false);
   const [appearanceOpen, setAppearanceOpen] = useState(false);
   const [mcpSetupOpen, setMcpSetupOpen] = useState(false);
@@ -162,7 +164,7 @@ export const AppHeader = () => {
 
   return (
     <>
-      <header className="fixed inset-x-0 top-0 z-30 border-b border-border bg-surface/90 backdrop-blur">
+      {designVersion === "v2" ? <ModernNavigation onAppearance={openAppearance} onFeedback={openFeedback} onMcp={openMcpSetup} /> : <header className="fixed inset-x-0 top-0 z-30 border-b border-border bg-surface/90 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
           <Link href={user ? "/workout" : "/"} className="text-lg font-semibold text-slate-900">
             <BrandMark />
@@ -174,6 +176,7 @@ export const AppHeader = () => {
               onClick={() =>
                 setMenuOpen((prev) => !prev)
               }
+              aria-label="Открыть меню"
               aria-haspopup="true"
               aria-expanded={menuOpen}
             >
@@ -258,13 +261,13 @@ export const AppHeader = () => {
             )}
           </div>
         </div>
-      </header>
+      </header>}
 
       <Modal
         open={appearanceOpen}
         onClose={() => setAppearanceOpen(false)}
         title="Оформление"
-        description="Настройте тему и акцентный цвет интерфейса."
+        description="Выберите интерфейс, тему и акцентный цвет."
         className="max-w-xl"
         footer={
           <Button variant="secondary" onClick={() => setAppearanceOpen(false)}>
@@ -272,12 +275,15 @@ export const AppHeader = () => {
           </Button>
         }
       >
+        <DesignVersionSettings />
         <div className="flex flex-col gap-4 text-slate-600">
           <div className="flex items-center justify-between gap-2">
             <span className="text-xs uppercase tracking-wide text-slate-400">Тема</span>
             <div className="flex rounded-full border border-slate-200 bg-slate-50 p-1">
               <button
                 type="button"
+                disabled={loadingTheme || savingTheme}
+                aria-pressed={theme === "light"}
                 onClick={() => setTheme("light")}
                 className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
                   theme === "light"
@@ -289,6 +295,8 @@ export const AppHeader = () => {
               </button>
               <button
                 type="button"
+                disabled={loadingTheme || savingTheme}
+                aria-pressed={theme === "dark"}
                 onClick={() => setTheme("dark")}
                 className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
                   theme === "dark"
@@ -316,6 +324,7 @@ export const AppHeader = () => {
                     type="button"
                     aria-label={option.label}
                     title={option.label}
+                    disabled={loadingTheme || savingTheme}
                     onClick={() => setAccentColor(option.value)}
                     className={`flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 shadow-sm transition ${
                       isActive ? "ring-2 ring-offset-2 ring-primary" : "hover:scale-105"
@@ -329,6 +338,7 @@ export const AppHeader = () => {
               <label className="flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-medium text-slate-600 shadow-sm">
                 <span className="text-slate-500">#</span>
                 <input
+                  disabled={loadingTheme || savingTheme}
                   type="color"
                   value={accentColor}
                   onChange={(event) => setAccentColor(event.target.value)}

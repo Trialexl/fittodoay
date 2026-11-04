@@ -309,7 +309,7 @@ export const AnalyticsPanels = () => {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="analytics-dashboard space-y-6">
       <div className="flex justify-end">
         <Button
           type="button"
@@ -321,7 +321,7 @@ export const AnalyticsPanels = () => {
           AI
         </Button>
       </div>
-      <div className="rounded-xl border border-slate-200 bg-white p-4">
+      <div className="analytics-panel rounded-xl border border-slate-200 bg-white p-4">
         <h3 className="font-semibold">Нагрузка по дням</h3>
         {dailyTopFive.length > 0 ? (
           <div className="mt-3 flex flex-wrap gap-2">
@@ -341,7 +341,7 @@ export const AnalyticsPanels = () => {
           <p className="mt-3 text-sm text-slate-500">Нет дней с ненулевой нагрузкой за выбранный период.</p>
         )}
       </div>
-      <div className="rounded-xl border border-slate-200 bg-white p-4">
+      <div className="analytics-panel rounded-xl border border-slate-200 bg-white p-4">
         <h3 className="font-semibold">Топ упражнений</h3>
         <div className="mt-3 divide-y text-sm">
           {exercisesTopFive.map((item) => (
@@ -359,7 +359,7 @@ export const AnalyticsPanels = () => {
       </div>
       <div
         id="body-weight"
-        className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900/70"
+        className="analytics-panel rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900/70"
       >
         <h3 className="font-semibold text-slate-900 dark:text-slate-100">Вес тела</h3>
         {bodyWeightSeries.length > 0 ? (

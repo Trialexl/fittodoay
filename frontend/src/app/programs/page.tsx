@@ -26,7 +26,7 @@ const ProgramsPageContent = () => {
 
   return (
     <div className="space-y-8">
-      <header>
+      <header className="ui-page-heading">
         <p className="text-sm uppercase tracking-widest text-primary">Программы и шаблоны</p>
         <h1 className="text-3xl font-semibold">Управление папками и днями</h1>
         <p className="text-slate-600">

@@ -588,7 +588,7 @@ export const ProgramTrendPanel = () => {
         }));
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4">
+    <div className="analytics-trend analytics-panel rounded-xl border border-slate-200 bg-white p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h3 className="font-semibold">Динамика по программам</h3>

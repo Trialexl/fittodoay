@@ -5,6 +5,7 @@ from rest_framework.authtoken.models import Token
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.contrib.auth import login as session_login
+from django.db import transaction
 
 from .models import UserProfile
 from .serializers import (
@@ -74,8 +75,9 @@ class LLMPreferencesView(APIView):
         serializer = self.serializer_class(instance=data)
         return Response(serializer.data)
 
+    @transaction.atomic
     def put(self, request, *args, **kwargs):
-        profile = request.user.profile
+        profile = UserProfile.objects.select_for_update().get(user=request.user)
         serializer = self.serializer_class(data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         preferences = profile.llm_preferences or {}
@@ -90,7 +92,9 @@ class LLMPreferencesView(APIView):
     def _with_defaults(self, data: dict | None):
         serializer = self.serializer_class()
         defaults = {field_name: None for field_name in serializer.fields.keys()}
-        defaults.update({"theme": "light", "accent_color": "#a855f7"})
+        defaults.update(
+            {"theme": "light", "accent_color": "#a855f7", "design_version": "v1"}
+        )
         defaults.update(data or {})
         return defaults
 

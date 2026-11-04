@@ -221,12 +221,12 @@ export default function AssistantPage() {
 
   return (
     <div className="space-y-6">
-      <header className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+      <header className="ui-page-heading rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
         <h1 className="text-2xl font-bold text-slate-900">Создать программу с помощником</h1>
         <p className="mt-2 text-sm text-slate-500">{helperText}</p>
       </header>
 
-      <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+      <section className="assistant-panel ui-surface rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
         {step < steps.length && currentStep && (
           <div className="space-y-5">
             <div>

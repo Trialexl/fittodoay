@@ -105,7 +105,7 @@ export const OnboardingWizard = () => {
   const currentStep = steps[step];
 
   return (
-    <div className="mx-auto max-w-xl rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+    <div className="onboarding-panel ui-surface mx-auto max-w-xl rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
       <h2 className="text-2xl font-semibold">Онбординг fitTODOay</h2>
       <p className="mt-1 text-sm text-slate-500">
         Шаг {step + 1} из {steps.length}

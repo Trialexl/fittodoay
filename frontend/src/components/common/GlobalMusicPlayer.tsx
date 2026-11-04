@@ -936,7 +936,7 @@ export const GlobalMusicPlayer = () => {
     <>
       <section
         className={clsx(
-          "fixed bottom-[calc(env(safe-area-inset-bottom)+2px)] left-3 right-3 rounded-2xl border border-slate-200 bg-white/95 p-1.5 shadow-2xl backdrop-blur dark:border-slate-700 dark:bg-slate-900/95 sm:bottom-[calc(env(safe-area-inset-bottom)+6px)] sm:left-6 sm:right-6 sm:p-2",
+          "global-music-player fixed bottom-[calc(env(safe-area-inset-bottom)+2px)] left-3 right-3 rounded-2xl border border-slate-200 bg-white/95 p-1.5 shadow-2xl backdrop-blur dark:border-slate-700 dark:bg-slate-900/95 sm:bottom-[calc(env(safe-area-inset-bottom)+6px)] sm:left-6 sm:right-6 sm:p-2",
           playlistOpen ? "z-[60]" : "z-40",
         )}
       >
@@ -1062,7 +1062,7 @@ export const GlobalMusicPlayer = () => {
           onClose={() => setPlaylistOpen(false)}
           title="Плейлист"
           className="h-[92vh] max-h-[92vh] sm:h-[94vh] sm:max-h-[94vh] sm:max-w-[96vw]"
-          overlayClassName="bottom-[calc(env(safe-area-inset-bottom)+84px)] sm:bottom-[calc(env(safe-area-inset-bottom)+92px)]"
+          overlayClassName="playlist-dialog bottom-[calc(env(safe-area-inset-bottom)+84px)] sm:bottom-[calc(env(safe-area-inset-bottom)+92px)]"
           mobileSheet
         >
           <div className="flex min-h-0 flex-1 overflow-hidden flex-col">

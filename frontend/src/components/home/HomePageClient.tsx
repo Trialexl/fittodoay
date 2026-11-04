@@ -105,16 +105,18 @@ export const HomePageClient = ({ greetingFontClassName }: Props) => {
   });
 
   return (
-    <main className="flex min-h-[calc(100vh-80px)] flex-col items-center justify-center px-4">
-      <section className="w-full max-w-4xl text-center">
+    <main className="auth-screen flex min-h-[calc(100vh-80px)] flex-col items-center justify-center px-4">
+      <section className="auth-intro w-full max-w-4xl text-center">
+        <p className="auth-editorial">fitTODOay / ВАШ ЛИЧНЫЙ РИТМ</p>
         <p
-          className={`${greetingFontClassName} fade-once text-primary text-[clamp(6rem,27vw,13.5rem)] leading-none tracking-[0.03em]`}
+          className={`${greetingFontClassName} auth-greeting fade-once text-primary text-[clamp(6rem,27vw,13.5rem)] leading-none tracking-[0.03em]`}
           style={{ width: "70vw", maxWidth: "100%", margin: "0 auto" }}
         >
           Привет
         </p>
+        <p className="auth-description">Меньше отвлечений. Больше движения. Ваши программы, подходы и прогресс — в одном пространстве.</p>
       </section>
-      <section className="mt-8 w-full max-w-md rounded-[32px] border border-slate-200 bg-white/90 p-8 text-center shadow-xl backdrop-blur">
+      <section className="auth-card mt-8 w-full max-w-md rounded-[32px] border border-slate-200 bg-white/90 p-8 text-center shadow-xl backdrop-blur">
         <BrandMark className="mx-auto text-xs tracking-[0.3em] text-slate-400" />
         <p className="mt-2 text-sm text-slate-500">
           Всё, что нужно для тренировки: чеклист дня, таймер отдыха и чистый интерфейс.

@@ -96,7 +96,7 @@ export const RestTimerOverlay = ({
 
     const bar = (
       <div className="pointer-events-none fixed inset-0 z-50">
-        <div className="pointer-events-auto fixed bottom-[calc(env(safe-area-inset-bottom)+114px)] left-3 right-3 rounded-2xl border border-white/30 bg-slate-900/90 px-4 py-3 text-white shadow-lg backdrop-blur sm:bottom-[calc(env(safe-area-inset-bottom)+122px)] sm:left-6 sm:right-6">
+        <div className="timer-collapsed pointer-events-auto fixed bottom-[calc(env(safe-area-inset-bottom)+114px)] left-3 right-3 rounded-2xl border border-white/30 bg-slate-900/90 px-4 py-3 text-white shadow-lg backdrop-blur sm:bottom-[calc(env(safe-area-inset-bottom)+122px)] sm:left-6 sm:right-6">
           <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-sm">
             {showTimer && (
@@ -125,7 +125,7 @@ export const RestTimerOverlay = ({
   }
 
   const overlay = (
-    <div className="fixed inset-0 z-50 bg-slate-900/90 text-white">
+    <div className="timer-overlay fixed inset-0 z-50 bg-slate-900/90 text-white">
       <div className="relative flex h-full w-full flex-col overflow-hidden p-6">
         <div className="absolute right-6 top-6 flex items-center gap-3 text-slate-200">
           {showTimer && (

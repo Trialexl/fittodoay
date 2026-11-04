@@ -59,7 +59,7 @@ export const ExecutionTimerOverlay = ({
   if (!pending || !mounted) return null;
 
   const overlay = (
-    <div className="fixed inset-0 z-50 bg-slate-900/90 text-white">
+    <div className="timer-overlay fixed inset-0 z-50 bg-slate-900/90 text-white">
       <div className="relative flex h-full w-full flex-col overflow-hidden p-6">
         <button
           className="absolute right-6 top-6 text-slate-200 hover:text-white"

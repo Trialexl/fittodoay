@@ -18,7 +18,7 @@ export const Button = ({
 }: Props) => (
   <button
     className={clsx(
-      "inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all focus:outline-none focus:ring-2 focus:ring-offset-2",
+      "ui-button inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all focus:outline-none focus:ring-2 focus:ring-offset-2",
       variant === "primary" &&
         "bg-primary text-white shadow-sm hover:-translate-y-[1px] hover:bg-primary-dark focus:ring-primary/50",
       variant === "secondary" &&
@@ -27,9 +27,11 @@ export const Button = ({
       (disabled || loading) && "opacity-60 cursor-not-allowed",
       className,
     )}
+    data-variant={variant}
+    aria-busy={loading || undefined}
     disabled={disabled || loading}
     {...rest}
   >
-    {loading ? "..." : children}
+    {loading ? <><span className="ui-button-spinner" aria-hidden="true" /><span className="sr-only">Загрузка: </span>{children}</> : children}
   </button>
 );

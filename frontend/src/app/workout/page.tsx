@@ -209,6 +209,11 @@ const WorkoutPageContent = () => {
 
   return (
     <div className="space-y-6 overflow-x-hidden">
+      <header className="v2-only ui-page-heading">
+        <p>ВАШ ПЛАН</p>
+        <h1>Тренировка</h1>
+        <p className="text-slate-600">Записывайте подходы и отслеживайте движение к цели.</p>
+      </header>
       <Checklist
         plan={plan}
         refresh={() => void fetchPlan(normalizedSelectedDate)}

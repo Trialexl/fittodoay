@@ -413,11 +413,11 @@ export const ProgramBoard = ({ initialFocus }: ProgramBoardProps = {}) => {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap justify-end gap-3">
+      <div className="program-toolbar flex flex-wrap justify-end gap-3">
         <Button onClick={() => router.push("/assistant")}>Создать с помощником</Button>
         <Button onClick={() => setProgramModal({ mode: "create" })}>Новая программа</Button>
       </div>
-      <div className="space-y-4">
+      <div className="program-grid space-y-4">
         {folders?.map((folder) => (
           <FolderCallout
             key={folder.id}
@@ -638,7 +638,7 @@ const FolderCallout = ({
   );
 
   return (
-    <div className="rounded-3xl border border-slate-300 bg-slate-200 px-5 py-4 shadow-sm">
+    <div className="program-folder rounded-3xl border border-slate-300 bg-slate-200 px-5 py-4 shadow-sm">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <button
           className="flex min-w-0 flex-1 items-center gap-3 text-left"

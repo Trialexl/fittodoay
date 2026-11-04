@@ -57,6 +57,9 @@ class LLMPreferencesSerializer(serializers.Serializer):
     theme = serializers.ChoiceField(
         choices=[("light", "light"), ("dark", "dark")], required=False, allow_null=True
     )
+    design_version = serializers.ChoiceField(
+        choices=[("v1", "Классический"), ("v2", "Современный")], required=False
+    )
     accent_color = serializers.RegexField(
         regex=r"^#(?:[0-9a-fA-F]{6})$",
         required=False,

@@ -10,10 +10,11 @@ type Props = InputHTMLAttributes<HTMLInputElement> & {
 
 export const Input = forwardRef<HTMLInputElement, Props>(
   ({ label, error, className, ...rest }, ref) => (
-    <label className="mb-3 flex flex-col gap-1.5 text-sm">
+    <label className="ui-input-label mb-3 flex flex-col gap-1.5 text-sm">
       {label && <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</span>}
       <input
         ref={ref}
+        aria-invalid={Boolean(error) || undefined}
         className={clsx(
           "form-field",
           error && "border-red-500",
