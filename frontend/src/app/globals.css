@@ -2,6 +2,13 @@
 @tailwind components;
 @tailwind utilities;
 
+/* A distinct current-track state in both playlist entry points and both designs. */
+[data-theme] [data-ui="music-playlist-track"][data-current="true"] {
+  border-color: rgb(var(--color-primary) / .8);
+  background-color: rgb(var(--color-primary) / .16);
+  box-shadow: inset 4px 0 0 rgb(var(--color-primary));
+}
+
 :root {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --color-primary: 168 85 247;

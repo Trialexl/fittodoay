@@ -1,5 +1,6 @@
 "use client";
 
+import { usePlaylistReveal } from "@/hooks/usePlaylistReveal";
 import Link from "next/link";
 import clsx from "clsx";
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
@@ -1212,12 +1213,14 @@ export const Checklist = ({
   const [chatCancelling, setChatCancelling] = useState(false);
   const [isRestOverlayCollapsed, setIsRestOverlayCollapsed] = useState(false);
   const [musicTrackIndex, setMusicTrackIndex] = useState(0);
+  const [globalMusicTrackId, setGlobalMusicTrackId] = useState<number | null>(null);
+  const [musicPreferenceError, setMusicPreferenceError] = useState<string | null>(null);
   const [musicPlaying, setMusicPlaying] = useState(false);
   const [musicUploading, setMusicUploading] = useState(false);
   const [musicQueue, setMusicQueue] = useState<number[]>([]);
   const [musicDeletingTrackId, setMusicDeletingTrackId] = useState<number | null>(null);
   const [musicPlaylistOpen, setMusicPlaylistOpen] = useState(false);
-  const [musicGroupBy, setMusicGroupBy] = useState<MusicGroupBy>("none");
+  const [musicGroupBy, setMusicGroupBy] = useState<MusicGroupBy>("folder");
   const [musicSearchQuery, setMusicSearchQuery] = useState("");
   const [openMusicTrackMenuId, setOpenMusicTrackMenuId] = useState<number | null>(null);
   const [musicCurrentTime, setMusicCurrentTime] = useState(0);
@@ -1353,6 +1356,8 @@ export const Checklist = ({
     const handleMusicState = (event: Event) => {
       const detail = (event as CustomEvent<WorkoutMusicStateSnapshot>).detail;
       if (!detail) return;
+      setGlobalMusicTrackId(detail.trackId);
+      setMusicPreferenceError(detail.preferenceError ?? null);
       const nextIndex =
         detail.trackId !== null ? musicTracks.findIndex((track) => track.id === detail.trackId) : -1;
       if (nextIndex >= 0) {
@@ -1417,7 +1422,16 @@ export const Checklist = ({
     });
     return Array.from(groups.values()).flat();
   }, [musicGroupBy, musicTracks]);
-  const currentMusicTrack = musicTracks[musicTrackIndex] ?? null;
+  const currentMusicTrack = useGlobalMusicPlayerOnly
+    ? musicTracks.find((track) => track.id === globalMusicTrackId) ?? null
+    : musicTracks[musicTrackIndex] ?? null;
+  const musicPlaylistListRef = usePlaylistReveal(musicPlaylistOpen, currentMusicTrack?.id ?? null, musicGroupBy, musicSearchQuery);
+  useEffect(() => {
+    if (musicPlaylistOpen) {
+      setMusicSearchQuery("");
+      dispatchWorkoutMusicAction({ type: "request-state" });
+    }
+  }, [musicPlaylistOpen]);
   const syncMusicUiFromAudio = useCallback(() => {
     if (useGlobalMusicPlayerOnly) return;
     const audio = musicAudioRef.current;
@@ -4294,7 +4308,10 @@ export const Checklist = ({
               </select>
             </div>
           </div>
-          <div className="min-h-0 max-h-full flex-1 space-y-2 overflow-y-auto overscroll-contain pr-1 pb-[110px] sm:pb-[118px]">
+          {musicPreferenceError && <div role="status" className="mb-2 text-xs text-amber-600">
+            {musicPreferenceError} <button type="button" onClick={() => dispatchWorkoutMusicAction({ type: "set-group-by", value: musicGroupBy })} className="underline">Повторить сохранение</button>
+          </div>}
+          <div ref={musicPlaylistListRef} className="min-h-0 max-h-full flex-1 space-y-2 overflow-y-auto overscroll-contain pr-1 pb-[110px] sm:pb-[118px]">
             {musicQueue.length ? (
               <div className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 dark:border-amber-400/40 dark:bg-amber-500/10">
                 <div className="flex items-center justify-between gap-2">
@@ -4345,12 +4362,15 @@ export const Checklist = ({
                   {group.tracks.map((track) => {
                     const index = musicTrackIndexById.get(track.id);
                     if (index === undefined) return null;
-                    const active = index === musicTrackIndex;
+                    const active = currentMusicTrack?.id === track.id;
                     const inQueue = musicQueue.includes(track.id);
                     const menuOpen = openMusicTrackMenuId === track.id;
                     return (
                       <div
                         key={track.id}
+                        aria-current={active ? "true" : undefined}
+                        data-current={active}
+                        data-ui="music-playlist-track"
                         className={clsx(
                           "rounded-xl border px-2.5 py-1.5 transition",
                           active
@@ -4385,7 +4405,7 @@ export const Checklist = ({
                               ) : null}
                               {active ? (
                                 <span className="rounded-md bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
-                                  Сейчас
+                                  {musicPlaying ? "Играет" : "Выбран"}
                                 </span>
                               ) : inQueue ? (
                                 <span className="rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">

@@ -93,7 +93,12 @@ class LLMPreferencesView(APIView):
         serializer = self.serializer_class()
         defaults = {field_name: None for field_name in serializer.fields.keys()}
         defaults.update(
-            {"theme": "light", "accent_color": "#a855f7", "design_version": "v1"}
+            {
+                "theme": "light",
+                "accent_color": "#a855f7",
+                "design_version": "v1",
+                "music_group_by": "folder",
+            }
         )
         defaults.update(data or {})
         return defaults

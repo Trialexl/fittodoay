@@ -12,8 +12,9 @@ import {
   WORKOUT_MUSIC_ACTION_EVENT,
   dispatchWorkoutMusicState,
   type WorkoutMusicAction,
-  type WorkoutMusicGroupBy,
 } from "@/lib/workoutMusicEvents";
+import { useMusicGrouping } from "@/hooks/useMusicGrouping";
+import { usePlaylistReveal } from "@/hooks/usePlaylistReveal";
 import { useAuth } from "@/state/AuthContext";
 
 type MusicTrack = {
@@ -301,11 +302,11 @@ export const GlobalMusicPlayer = () => {
   const restoreReadyRef = useRef(false);
   const secondRef = useRef(-1);
   const bufferingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [trackIndex, setTrackIndex] = useState(0);
+  const [selectedTrackId, setSelectedTrackId] = useState<number | null>(null);
   const [playing, setPlaying] = useState(false);
   const [queue, setQueue] = useState<number[]>([]);
   const [shuffle, setShuffle] = useState(false);
-  const [groupBy, setGroupBy] = useState<WorkoutMusicGroupBy>("none");
+  const { groupBy, setGroupBy, error: preferenceError } = useMusicGrouping(auth.token, auth.user?.id);
   const [playlistOpen, setPlaylistOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [currentTime, setCurrentTime] = useState(0);
@@ -353,7 +354,9 @@ export const GlobalMusicPlayer = () => {
     });
     return Array.from(groups.values()).flat();
   }, [groupBy, tracks]);
-  const currentTrack = tracks[trackIndex] ?? null;
+  const currentTrack = tracks.find((track) => track.id === selectedTrackId) ?? tracks[0] ?? null;
+  const trackIndex = currentTrack ? trackIndexById.get(currentTrack.id) ?? 0 : 0;
+  const playlistListRef = usePlaylistReveal(playlistOpen && !onWorkoutRoute, currentTrack?.id ?? null, groupBy, searchQuery);
   const currentTrackIsStream = currentTrack?.source_type === "stream";
   const currentMetaLine = useMemo(() => getMusicTrackMetaLine(currentTrack), [currentTrack]);
 
@@ -384,16 +387,17 @@ export const GlobalMusicPlayer = () => {
     if (persisted.trackId) {
       const idx = tracks.findIndex((track) => track.id === persisted.trackId);
       if (idx >= 0) {
-        if (trackIndex !== idx) {
-          setTrackIndex(idx);
+        if (selectedTrackId !== persisted.trackId) {
+          setSelectedTrackId(tracks[idx].id);
           return;
         }
         restoreReadyRef.current = true;
         return;
       }
     }
+    if (selectedTrackId === null) setSelectedTrackId(tracks[0].id);
     restoreReadyRef.current = true;
-  }, [trackIndex, tracks]);
+  }, [selectedTrackId, tracks]);
 
   useEffect(() => {
     const allowedIds = new Set(tracks.map((track) => track.id));
@@ -578,19 +582,19 @@ export const GlobalMusicPlayer = () => {
       setPlaying(false);
       return;
     }
-    setTrackIndex(nextIdx);
+    setSelectedTrackId(tracks[nextIdx].id);
     setPlaying(true);
-  }, [pickNextTrackIndex]);
+  }, [pickNextTrackIndex, tracks]);
 
   const selectTrack = useCallback(
     (index: number, options?: { play?: boolean }) => {
       if (!tracks.length || index < 0 || index >= tracks.length) return;
-      setTrackIndex(index);
+      setSelectedTrackId(tracks[index].id);
       if (options?.play) {
         setPlaying(true);
       }
     },
-    [tracks.length],
+    [tracks],
   );
 
   useEffect(() => {
@@ -610,6 +614,7 @@ export const GlobalMusicPlayer = () => {
             currentTime,
             duration,
             error,
+            preferenceError,
           });
           return;
         case "play":
@@ -662,6 +667,8 @@ export const GlobalMusicPlayer = () => {
     duration,
     error,
     groupBy,
+    setGroupBy,
+    preferenceError,
     pauseTrack,
     playNextTrack,
     playTrack,
@@ -688,8 +695,9 @@ export const GlobalMusicPlayer = () => {
       currentTime,
       duration,
       error,
+      preferenceError,
     });
-  }, [currentTime, currentTrack?.id, duration, error, groupBy, playing, playlistOpen, queue, shuffle, shouldRender]);
+  }, [currentTime, currentTrack?.id, duration, error, preferenceError, groupBy, playing, playlistOpen, queue, shuffle, shouldRender]);
 
   useEffect(() => {
     if (typeof navigator === "undefined" || !("mediaSession" in navigator)) return;
@@ -920,15 +928,19 @@ export const GlobalMusicPlayer = () => {
 
   const filteredTracks = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
-    if (!query) return tracks;
-    return tracks.filter((track) => {
+    if (!query) return groupedPlaybackTracks;
+    return groupedPlaybackTracks.filter((track) => {
       const haystack = [track.name, track.title, track.artist, track.album, track.filename]
         .filter(Boolean)
         .join(" ")
         .toLowerCase();
       return haystack.includes(query);
     });
-  }, [searchQuery, tracks]);
+  }, [searchQuery, groupedPlaybackTracks]);
+
+  useEffect(() => {
+    if (playlistOpen) setSearchQuery("");
+  }, [playlistOpen]);
 
   if (!shouldRender) return null;
 
@@ -1075,15 +1087,33 @@ export const GlobalMusicPlayer = () => {
                 className="h-9 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-700 outline-none ring-primary/40 transition placeholder:text-slate-400 focus:ring dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500"
               />
             </div>
-            <div className="min-h-0 max-h-full flex-1 space-y-1.5 overflow-y-auto overscroll-contain pr-1 pb-[110px] sm:pb-[118px]">
+            <label className="mb-2 flex items-center justify-between gap-2 text-xs">
+              Группировка
+              <select aria-label="Группировка" value={groupBy} onChange={(event) => setGroupBy(event.target.value as typeof groupBy)} className="form-select h-8 rounded-lg border px-2">
+                <option value="folder">По папкам</option>
+                <option value="none">Без группировки</option>
+                <option value="artist">По исполнителю</option>
+                <option value="album">По альбому</option>
+              </select>
+            </label>
+            {preferenceError && <div role="status" className="mb-2 text-xs text-amber-600">
+              {preferenceError} <button type="button" onClick={() => setGroupBy(groupBy)} className="underline">Повторить сохранение</button>
+            </div>}
+            <div ref={playlistListRef} className="min-h-0 max-h-full flex-1 space-y-1.5 overflow-y-auto overscroll-contain pr-1 pb-[110px] sm:pb-[118px]">
               {filteredTracks.length ? (
-                filteredTracks.map((track) => {
+                filteredTracks.map((track, position) => {
                   const index = tracks.findIndex((item) => item.id === track.id);
                   if (index < 0) return null;
                   const active = currentTrack?.id === track.id;
+                  const labelFor = (item: MusicTrack) => groupBy === "folder" ? getTrackFolderLabel(item) : groupBy === "artist" ? getTrackArtistLabel(item) : getTrackAlbumLabel(item);
+                  const showGroup = groupBy !== "none" && (position === 0 || labelFor(filteredTracks[position - 1]) !== labelFor(track));
                   return (
+                    <div key={track.id}>
+                    {showGroup && <p className="px-1 pb-1 pt-3 text-xs font-semibold text-slate-500">{labelFor(track)}</p>}
                     <div
-                      key={track.id}
+                      aria-current={active ? "true" : undefined}
+                      data-current={active}
+                      data-ui="music-playlist-track"
                       className={clsx(
                         "rounded-xl border px-2.5 py-1.5 transition",
                         active
@@ -1112,7 +1142,7 @@ export const GlobalMusicPlayer = () => {
                           </span>
                         ) : null}
                         {active ? (
-                          <span className="rounded-md bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold text-primary">Сейчас</span>
+                          <span className="rounded-md bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold text-primary">{playing ? "Играет" : "Выбран"}</span>
                         ) : null}
                         <Button
                           type="button"
@@ -1127,6 +1157,7 @@ export const GlobalMusicPlayer = () => {
                           <PlayIcon />
                         </Button>
                       </div>
+                    </div>
                     </div>
                   );
                 })

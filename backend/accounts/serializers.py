@@ -60,6 +60,9 @@ class LLMPreferencesSerializer(serializers.Serializer):
     design_version = serializers.ChoiceField(
         choices=[("v1", "Классический"), ("v2", "Современный")], required=False
     )
+    music_group_by = serializers.ChoiceField(
+        choices=["none", "folder", "artist", "album"], required=False
+    )
     accent_color = serializers.RegexField(
         regex=r"^#(?:[0-9a-fA-F]{6})$",
         required=False,

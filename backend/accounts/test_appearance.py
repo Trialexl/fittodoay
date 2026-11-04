@@ -31,6 +31,28 @@ def account():
 
 
 @pytest.mark.django_db
+def test_music_grouping_defaults_persists_and_preserves_other_preferences(account):
+    user, client = account
+    assert client.get("/api/profile/preferences/").data["music_group_by"] == "folder"
+    for grouping in ("none", "artist", "album", "folder"):
+        response = client.put(
+            "/api/profile/preferences/", {"music_group_by": grouping}, format="json"
+        )
+        assert response.status_code == 200
+        new_session = APIClient()
+        new_session.force_authenticate(user=type(user).objects.get(pk=user.pk))
+        assert new_session.get("/api/profile/preferences/").data["music_group_by"] == grouping
+        user.profile.refresh_from_db()
+        assert user.profile.llm_preferences["sessions_per_week"] == 3
+        assert user.profile.llm_preferences["theme"] == "dark"
+    response = client.put(
+        "/api/profile/preferences/", {"music_group_by": "invalid"}, format="json"
+    )
+    assert response.status_code == 400
+    assert client.get("/api/profile/preferences/").data["music_group_by"] == "folder"
+
+
+@pytest.mark.django_db
 def test_design_defaults_to_classic_and_persists_across_sessions(account):
     user, client = account
     assert client.get("/api/profile/preferences/").data["design_version"] == "v1"

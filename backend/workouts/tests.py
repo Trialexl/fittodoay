@@ -601,6 +601,60 @@ def test_radio_seed_contains_ten_workout_and_two_relax_streams():
 
 
 @pytest.mark.django_db
+def test_international_radio_seed_is_idempotent_and_visible_in_playlist():
+    migration = import_module("workouts.migrations.0023_add_international_radio")
+    migration.add_radio_streams(django_apps, None)
+    migration.add_radio_streams(django_apps, None)
+    urls = [station["stream_url"] for station in migration.RADIO_STREAMS]
+    streams = WorkoutMusicTrack.objects.filter(owner__isnull=True, stream_url__in=urls)
+    assert len(set(urls)) == streams.count() == 5
+    assert streams.filter(stream_category="workout").count() == 3
+    assert streams.filter(stream_category="relax").count() == 2
+    # Replaying a seed must respect an administrator's decision to hide a station.
+    hidden = streams.first()
+    hidden.is_active = False
+    hidden.save()
+    migration.add_radio_streams(django_apps, None)
+    hidden.refresh_from_db()
+    assert not hidden.is_active
+    user = User.objects.create_user(email="international-radio@example.com", password="pass")
+    client = APIClient()
+    client.force_authenticate(user=user)
+    response = client.get("/api/workouts/music/tracks/")
+    assert response.status_code == 200
+    visible = {item["id"] for item in response.data["items"]}
+    assert set(streams.filter(is_active=True).values_list("id", flat=True)) <= visible
+    assert hidden.id not in visible
+
+
+@pytest.mark.django_db
+def test_day_activity_patch_excludes_plan_and_preserves_exercises_and_history():
+    user = User.objects.create_user(email="pause-day@example.com", password="pass")
+    day, te = _build_day_with_logs(user)
+    saved_snapshot = day.plan_snapshot
+    saved_logs = list(day.set_logs.values_list("id", flat=True))
+    client = APIClient()
+    client.force_authenticate(user=user)
+    endpoint = f"/api/programs/templates/{te.template_id}/"
+    response = client.patch(endpoint, {"is_active": False}, format="json")
+    assert response.status_code == 200
+    assert client.get(endpoint).data["is_active"] is False
+    day.refresh_from_db()
+    assert day.plan_snapshot == saved_snapshot
+    next_day = generate_daily_plan(user, TEST_DATE + timedelta(days=7))
+    assert te.template_id not in next_day.source_template_ids
+    te.refresh_from_db()
+    assert te.is_active
+    assert list(day.set_logs.values_list("id", flat=True)) == saved_logs
+    assert client.patch(endpoint, {"is_active": True}, format="json").status_code == 200
+    next_day = generate_daily_plan(user, TEST_DATE + timedelta(days=14))
+    assert te.template_id in next_day.source_template_ids
+    other = User.objects.create_user(email="other-pause-day@example.com", password="pass")
+    client.force_authenticate(user=other)
+    assert client.patch(endpoint, {"is_active": False}, format="json").status_code == 404
+
+
+@pytest.mark.django_db
 def test_music_track_file_endpoint_blocks_missing_or_inactive_track(tmp_path):
     user = User.objects.create_user(email="musicfile@example.com", password="pass")
     other_user = User.objects.create_user(

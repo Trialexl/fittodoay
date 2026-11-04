@@ -26,6 +26,7 @@ export type WorkoutMusicStateSnapshot = {
   currentTime: number;
   duration: number;
   error: string | null;
+  preferenceError?: string | null;
 };
 
 export const WORKOUT_MUSIC_ACTION_EVENT = "fittodoay:workout-music:action";

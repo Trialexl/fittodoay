@@ -29,6 +29,7 @@ import {
   ExerciseReference,
   buildExerciseReference,
 } from "@/components/exercises/exerciseInfo";
+import { DayActivitySwitch } from "@/components/programs/DayActivitySwitch";
 import { TemplateEditor } from "@/components/templates/TemplateEditor";
 
 type Folder = {
@@ -56,6 +57,7 @@ type TemplateExerciseSummary = {
 
 type TemplateSummary = {
   id: number;
+  is_active: boolean;
   name: string;
   comment?: string;
   schedule_type?: string;
@@ -706,6 +708,8 @@ const FolderCallout = ({
                   onEditExercise(template.id, template.name, exerciseId, () => mutate())
                 }
                 onReorderExercises={(orderedIds) => onReorderExercises(template.id, orderedIds)}
+                folderActive={folder.is_active}
+                onActivitySaved={(active) => mutate((current) => current?.map((item) => item.id === template.id ? { ...item, is_active: active } : item), { revalidate: true })}
                 isReordering={reorderingTemplateId === template.id}
               />
             ))}
@@ -745,6 +749,8 @@ const TemplateCard = ({
   onEditExercise,
   onReorderExercises,
   isReordering,
+  folderActive,
+  onActivitySaved,
 }: {
   template: TemplateSummary;
   expanded: boolean;
@@ -754,10 +760,12 @@ const TemplateCard = ({
   onEditExercise: (exerciseId: number) => void;
   onReorderExercises: (orderedIds: number[]) => void;
   isReordering: boolean;
+  folderActive: boolean;
+  onActivitySaved: (active: boolean) => Promise<unknown>;
 }) => {
   const templateMuscles = collectTemplateMuscles(template);
   return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-100 px-4 py-3">
+    <div className="program-template rounded-2xl border border-slate-200 bg-slate-100 px-4 py-3">
     <div className="flex items-start justify-between gap-3">
       <button
         className="flex flex-1 items-center gap-3 text-left"
@@ -782,6 +790,7 @@ const TemplateCard = ({
         <IconButton label="Настроить шаблон" icon={<EditIcon />} onClick={onEdit} />
       </div>
     </div>
+    <DayActivitySwitch id={template.id} name={template.name} active={template.is_active} folderActive={folderActive} onSaved={onActivitySaved} />
     <div
       className={`overflow-hidden transition-[max-height,opacity] duration-500 ease-out ${expanded ? "max-h-[800px] opacity-100" : "max-h-0 opacity-0"}`}
     >
