@@ -3728,7 +3728,7 @@ export const Checklist = ({
                   : "border-slate-200 bg-surface-muted",
               )}
             >
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <div className="workout-folder-heading flex flex-col gap-2 sm:flex-row sm:items-center">
                 <button
                   type="button"
                   className="flex w-full flex-1 items-center gap-1 text-left"
@@ -3741,14 +3741,14 @@ export const Checklist = ({
                   aria-expanded={expanded}
                 >
                   <span className="text-base text-slate-400">{expanded ? "▾" : "▸"}</span>
-                  <div className="flex items-center gap-2">
+                  <div className="workout-folder-title flex items-center gap-2">
                     {folderComplete && <CompletionIcon />}
                     <h3 className={clsx("text-base font-semibold text-slate-900 sm:text-lg", folderComplete && "completed-title")}>
                       {folder.name}
                     </h3>
                   </div>
                 </button>
-                <div className="flex w-full items-center justify-end gap-1.5 sm:ml-auto sm:w-auto sm:gap-2">
+                <div className="workout-folder-tools flex w-full items-center justify-end gap-1.5 sm:ml-auto sm:w-auto sm:gap-2">
                   <Button
                     type="button"
                     variant="secondary"

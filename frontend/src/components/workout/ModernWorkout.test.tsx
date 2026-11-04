@@ -23,7 +23,10 @@ it('keeps exercise disclosure, details and editing as separate controls', () => 
   fireEvent.click(screen.getByRole('button', { name: `Детали упражнения: ${name}` }));
   expect(info).toHaveBeenCalledOnce();
   expect(toggle).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole('button', { expanded: true }));
+  const disclosure = screen.getByRole('button', { expanded: true });
+  expect(disclosure.textContent).toContain('▾');
+  expect(disclosure.textContent).not.toMatch(/[+−]/);
+  fireEvent.click(disclosure);
   expect(toggle).toHaveBeenCalledOnce();
   expect(screen.getByRole('link').getAttribute('href')).toBe('/programs?exercise=7');
 });

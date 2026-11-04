@@ -166,7 +166,7 @@ export function ModernExerciseHeading({
         <span className="session-exercise-name">{name}</span>
         <span className="session-exercise-caption">
           {completed} из {total} подходов{' '}
-          <span aria-hidden="true">{expanded ? '−' : '+'}</span>
+          <span aria-hidden="true">{expanded ? '▾' : '▸'}</span>
         </span>
       </button>
       <div className="session-exercise-tools">

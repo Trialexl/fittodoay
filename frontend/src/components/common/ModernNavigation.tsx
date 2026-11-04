@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { BrandMark } from './BrandMark';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/state/AuthContext';
 
@@ -103,7 +104,7 @@ export function ModernNavigation({
   const appNavigation = Boolean(user && !publicPage);
   const active = destinations.find((destination) => destination.href === pathname);
   const mobileLabels = { workout: 'Сегодня', programs: 'Планы', analytics: 'Прогресс', technique: 'Техника', assistant: 'Помощник' };
-  const brand = <span className="modern-wordmark">fit<strong>TODO</strong>ay<span aria-hidden="true">.</span></span>;
+  const brand = <BrandMark variant="inline" />;
   return (
     <>
       <header className="modern-topbar">

@@ -89,8 +89,8 @@
 [data-design="v2"] .modern-sidebar { position: fixed; inset: 0 auto 0 0; z-index: 35; width: var(--v2-sidebar-width); display: flex; flex-direction: column; padding: 27px 14px 16px; background: #191e29; color: #e7eaf0; overflow-y: auto; }
 [data-design="v2"] .modern-brand { display: flex; align-items: center; gap: 8px; padding: 0 8px; }
 [data-design="v2"] .modern-wordmark { white-space: nowrap; font-size: 21px; letter-spacing: -.055em; font-weight: 450; }
-[data-design="v2"] .modern-wordmark strong { font-weight: 800; }
-[data-design="v2"] .modern-wordmark > span { color: rgb(var(--color-primary)); font-size: 30px; line-height: 0; }
+[data-design="v2"] .modern-wordmark strong { display: inline-flex; align-items: baseline; font-weight: 800; }
+[data-design="v2"] .modern-wordmark strong > span { align-self: center; margin-inline: .025em; }
 [data-design="v2"] .modern-brand-symbol { display: none; }
 [data-design="v2"] .modern-nav-caption { margin: 11px 8px 38px; font-size: 8px; font-weight: 550; letter-spacing: .12em; color: #9aa3b6; }
 [data-design="v2"] .modern-desktop-nav { display: grid; gap: 5px; }
@@ -142,9 +142,11 @@
 [data-design="v2"] .session-check-in label { min-width: 0; flex: 1; }
 [data-design="v2"] .session-check-in > a { display: flex; justify-content: space-between; margin-top: 22px; font-size: 10px; color: rgb(var(--color-text-muted)); }
 [data-design="v2"] .modern-sessions { padding-bottom: 0; }
-[data-design="v2"] .modern-sessions [data-ui="workout-folder"] { padding: 0; border: 0; background: transparent; box-shadow: none; }
-[data-design="v2"] .modern-sessions [data-ui="workout-folder"] > div:first-child { padding: 0 0 10px; border-bottom: 1px solid rgb(var(--color-border)); }
-[data-design="v2"] .modern-sessions [data-ui="workout-folder"] > div:first-child h3 { font-size: 12px; color: rgb(var(--color-text-muted)); font-weight: 550; }
+[data-design="v2"] .modern-sessions [data-ui="workout-folder"] { padding: 16px; border: 1px solid rgb(var(--color-border)); border-radius: 22px; background: rgb(var(--color-surface-muted)); box-shadow: none; }
+[data-design="v2"] .modern-sessions .workout-folder-heading { flex-direction: row; align-items: center; padding: 0 0 12px; border-bottom: 1px solid rgb(var(--color-border)); }
+[data-design="v2"] .workout-folder-heading > button, [data-design="v2"] .workout-folder-title { min-width: 0; }
+[data-design="v2"] .modern-sessions .workout-folder-tools { width: auto; flex-shrink: 0; }
+[data-design="v2"] .modern-sessions [data-ui="workout-folder"] > div:first-child h3 { font-size: 13px; color: rgb(var(--color-text)); font-weight: 600; }
 [data-design="v2"] .modern-sessions .workout-template { border: 0; background: transparent; padding: 0; box-shadow: none; }
 [data-design="v2"] .modern-sessions .workout-template > div:first-child { padding: 4px 0 12px; }
 [data-design="v2"] .modern-sessions .workout-template h4 { font-size: 18px; letter-spacing: -.025em; }
@@ -157,7 +159,9 @@
 [data-design="v2"] .session-exercise-caption { font-size: 10px; color: rgb(var(--color-text-muted)); }
 [data-design="v2"] .session-exercise-caption > span { margin-left: 10px; font-size: 16px; }
 [data-design="v2"] .session-exercise-tools { display: flex; gap: 4px; flex-shrink: 0; }
-[data-design="v2"] .session-exercise-tools > :is(a, button) { display: grid; place-items: center; width: 32px; height: 32px; border: 1px solid rgb(var(--color-border)); border-radius: 9px; font-size: 12px; color: rgb(var(--color-text-muted)); }
+[data-design="v2"] .session-exercise-tools > :is(a, button) { display: grid; place-items: center; width: 32px; height: 32px; border: 1px solid rgb(var(--color-border)); border-radius: 9px; font-size: 12px; color: rgb(var(--color-primary)); }
+[data-design="v2"] .session-exercise-tools > :is(a, button):hover { background: rgb(var(--color-primary) / .08); border-color: rgb(var(--color-primary) / .4); }
+[data-design="v2"] .modern-sessions a[aria-label^="Редактировать"] { color: rgb(var(--color-primary)); }
 [data-design="v2"] .session-exercise-tools svg { width: 14px; height: 14px; }
 [data-design="v2"] .session-set { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 14px; padding: 13px 0; border-top: 1px solid rgb(var(--color-border)); }
 [data-design="v2"] .session-set-number { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: rgb(var(--color-surface-muted)); color: rgb(var(--color-text-muted)); font-size: 11px; font-variant-numeric: tabular-nums; }
@@ -304,6 +308,8 @@
   [data-design="v2"] .session-check-in { padding: 16px; gap: 14px; }
   [data-design="v2"] .session-check-in > a { display: none; }
   [data-design="v2"] .session-check-in > section > div:nth-child(2) { margin-top: 10px; }
+  [data-design="v2"] .modern-sessions [data-ui="workout-folder"] { padding: 12px 10px; border-radius: 20px; }
+  [data-design="v2"] .modern-sessions .workout-template h4 { font-size: 17px; }
   [data-design="v2"] .workout-exercise { padding: 15px 12px; }
   [data-design="v2"] .session-exercise-heading { gap: 10px; }
   [data-design="v2"] .session-exercise-number { width: 30px; height: 34px; border-radius: 9px; font-size: 11px; }
