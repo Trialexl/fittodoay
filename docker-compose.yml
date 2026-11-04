@@ -101,7 +101,7 @@ services:
         max-file: "${DOCKER_LOG_MAX_FILE:-5}"
 
   db:
-    image: pgvector/pgvector:pg15
+    image: ${DB_IMAGE:-pgvector/pgvector:0.8.0-pg15}
     restart: unless-stopped
     mem_limit: ${DB_MEMORY_LIMIT:-256m}
     mem_reservation: ${DB_MEMORY_RESERVATION:-128m}
