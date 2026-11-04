@@ -422,3 +422,24 @@ class WorkoutMusicTrack(TimestampedModel):
 
 
 # Create your models here.
+
+
+class WorkoutAnalysisRun(TimestampedModel):
+    """Latest reproducible policy/legacy comparison for a real workout and program."""
+
+    workout_day = models.ForeignKey(
+        WorkoutDay, on_delete=models.CASCADE, related_name="analysis_runs"
+    )
+    program = models.ForeignKey("programs.ProgramFolder", on_delete=models.CASCADE)
+    version = models.CharField(max_length=40)
+    mode = models.CharField(max_length=16)
+    report = models.JSONField(default=dict)
+    legacy_recommendations = models.JSONField(default=list)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["workout_day", "program", "version"],
+                name="unique_workout_policy_run",
+            )
+        ]

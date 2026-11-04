@@ -67,7 +67,9 @@ def resolve_defaults(te: TemplateExercise) -> Dict[str, Any]:
         "has_weight": getattr(source, "has_weight", True),
         "has_time": getattr(source, "has_time", False),
         "weight": float(
-            te.weight_override or getattr(source, "default_weight", 0) or 0
+            te.weight_override
+            if te.weight_override is not None
+            else (getattr(source, "default_weight", 0) or 0)
         ),
         "reps": te.rep_override or getattr(source, "default_reps", None),
         "sets": te.set_override or getattr(source, "default_sets", 1),

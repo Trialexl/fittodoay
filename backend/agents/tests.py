@@ -468,7 +468,7 @@ def test_chat_prompt_requires_exercise_choice_and_technique_help():
     assert "предложи 2-4 варианта" in system_prompt
     assert "дай краткую технику выполнения" in system_prompt
     assert "Не отказывай в таком объяснении" in system_prompt
-    assert "обязательно передавай exercise_name" in system_prompt
+    assert "template_exercise_id" in system_prompt
     assert "только параметры, которые действительно нужно изменить" in system_prompt
     assert "используй available_exercises из JSON-контекста" in system_prompt
 
@@ -1693,9 +1693,10 @@ def test_post_workout_prompt_enforces_concise_reply_and_irr_scope():
 
     assert "максимум 4-6 коротких предложений" in system_prompt
     assert "историю других тренировочных дней и недельную динамику" in system_prompt
-    assert "1-3 приоритетные правки с пометками [P1]/[P2]/[P3]" in system_prompt
-    assert "IRR/RIR используй только для силовых упражнений" in system_prompt
-    assert "обязательно передавай exercise_name" in system_prompt
+    assert "готовые решения policy (включая hold)" in system_prompt
+    assert "RIR/RPE/pain неизвестны, если null" in system_prompt
+    assert "Верни assistant_reply и пустой actions" in system_prompt
+    assert "template_exercise_id" in system_prompt
 
 
 @pytest.mark.django_db
@@ -1766,7 +1767,7 @@ def test_add_exercise_uses_catalog_defaults_when_action_params_missing():
 
 
 @pytest.mark.django_db
-def test_update_weight_resolves_template_exercise_by_day_and_exercise():
+def test_update_weight_without_template_id_is_rejected_even_with_day_and_catalog_id():
     user = User.objects.create_user(
         email="agent_update_resolve@example.com", password="pass"
     )
@@ -1832,8 +1833,11 @@ def test_update_weight_resolves_template_exercise_by_day_and_exercise():
 
     assert response.status_code == 200
     te.refresh_from_db()
-    assert float(te.weight_override) == 24.0
-    assert te.rep_override == 8
+    assert float(te.weight_override) == 20.0
+    assert te.rep_override == 10
+    assert (
+        response.data["applied"][0]["reason"] == "invalid_update_template_exercise_id"
+    )
 
 
 @pytest.mark.django_db

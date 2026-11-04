@@ -14,8 +14,6 @@ from workouts.services import resolve_defaults
 
 TARGET_REP_MIN = 8
 TARGET_REP_MAX = 12
-TARGET_RIR = 2.0
-RIR_TOLERANCE = 1.0
 WEIGHT_STEP = Decimal("2.0")
 AUTO_ALIGN_THRESHOLD = Decimal("0.5")
 AUTO_DROP_THRESHOLD = Decimal("1.0")
@@ -59,14 +57,6 @@ def _round_weight_up(value: Decimal) -> float:
     if rounded < value:
         rounded += 2
     return float(rounded)
-
-
-def _estimate_rir(avg_reps: float) -> float:
-    """
-    Принимаем нижнюю границу диапазона (8 повторений) как RIR=0.
-    Относительно неё считаем, сколько повторений остаётся «в запасе».
-    """
-    return avg_reps - TARGET_REP_MIN
 
 
 def _build_snapshot_index(day: WorkoutDay):
@@ -127,7 +117,6 @@ def _build_recommendation(
     )
 
     rounded_avg = round(avg_reps, 1)
-    estimated_rir = _estimate_rir(rounded_avg)
     suggested_reps: Optional[int] = None
     suggested_weight: Optional[float] = None
     reason: Optional[str] = None
@@ -160,7 +149,7 @@ def _build_recommendation(
                 has_weight=has_weight,
                 reason=reason,
                 action="align_weight",
-                estimated_rir=round(estimated_rir, 1),
+                estimated_rir=None,
             )
         if actual_decimal and actual_decimal < planned_decimal - AUTO_DROP_THRESHOLD:
             new_weight = _round_weight_up(max(Decimal("0"), actual_decimal))
@@ -180,7 +169,7 @@ def _build_recommendation(
                 has_weight=has_weight,
                 reason=reason,
                 action="reduce_weight_to_actual",
-                estimated_rir=round(estimated_rir, 1),
+                estimated_rir=None,
             )
         if rounded_avg < TARGET_REP_MIN - 0.5:
             new_weight = max(Decimal("0"), planned_decimal - WEIGHT_STEP)
@@ -193,12 +182,10 @@ def _build_recommendation(
             reason = f"Фактически удерживаете около {rounded_avg:.1f} повт. — сконцентрируйтесь на технике, после чего вернёмся к росту повторений."
             action = "info_low_reps"
             informational = True
-        elif (
-            rounded_avg >= TARGET_REP_MAX and estimated_rir > TARGET_RIR + RIR_TOLERANCE
-        ):
+        elif rounded_avg >= TARGET_REP_MAX:
             suggested_weight = _round_weight_up(planned_decimal + WEIGHT_STEP)
             suggested_reps = TARGET_REP_MIN
-            reason = f"Повторы вышли на {rounded_avg:.1f} (RIR≈{estimated_rir:.1f}) — повышаем вес и начинаем новый цикл с 8 повторений."
+            reason = f"Повторы вышли на {rounded_avg:.1f} — повышаем вес и начинаем новый цикл с 8 повторений."
             action = "increase_weight"
         elif avg_weight is None or abs(float(avg_weight) - planned_weight) <= float(
             AUTO_ALIGN_THRESHOLD
@@ -224,7 +211,7 @@ def _build_recommendation(
         ):
             suggested_reps = target_reps
             reason = (
-                f"Средний результат {rounded_avg:.1f} повт. (RIR≈{estimated_rir:.1f}). "
+                f"Средний результат {rounded_avg:.1f} повт. "
                 f"Обновите цель на {target_reps} повторов, чтобы держать диапазон 8–12."
             )
             action = "adjust_reps"
@@ -251,7 +238,7 @@ def _build_recommendation(
         has_weight=has_weight,
         reason=reason,
         action=action,
-        estimated_rir=round(estimated_rir, 1),
+        estimated_rir=None,
         informational=informational,
     )
 
@@ -264,9 +251,9 @@ def generate_recommendations_for_day(day: WorkoutDay) -> List[Dict]:
     te_ids = list(template_index.keys())
     templates = {
         te.id: te
-        for te in TemplateExercise.objects.filter(id__in=te_ids).select_related(
-            "template__folder", "exercise", "custom_exercise"
-        )
+        for te in TemplateExercise.objects.filter(
+            id__in=te_ids, template__folder__user_id=day.user_id
+        ).select_related("template__folder", "exercise", "custom_exercise")
     }
     history_counts = {
         row["template_exercise_id"]: row["total"]
@@ -285,22 +272,17 @@ def generate_recommendations_for_day(day: WorkoutDay) -> List[Dict]:
         if log.template_exercise_id:
             logs_by_te[log.template_exercise_id].append(log)
 
-    folder_completed: Dict[int, bool] = {
-        folder_id: True for folder_id in folder_names.keys()
-    }
-    for te_id, meta in template_index.items():
-        expected = meta.get("expected_sets") or 0
-        actual = len(logs_by_te.get(te_id, []))
-        if expected and actual < expected:
-            folder_completed[meta["folder_id"]] = False
-
     folders_payload: List[Dict] = []
     for folder_id, folder_name in folder_names.items():
-        if not folder_completed.get(folder_id):
-            continue
         folder_recs: List[Dict] = []
         for te_id, meta in template_index.items():
             if meta["folder_id"] != folder_id:
+                continue
+            expected = meta.get("expected_sets") or 0
+            exercise_logs = logs_by_te.get(te_id, [])
+            if not expected or {log.set_index for log in exercise_logs} != set(
+                range(1, expected + 1)
+            ):
                 continue
             te = templates.get(te_id)
             if not te:

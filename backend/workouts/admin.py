@@ -2,6 +2,7 @@ from django.contrib import admin
 
 from .models import (
     TechniqueReview,
+    WorkoutAnalysisRun,
     WorkoutDay,
     WorkoutMusicTrack,
     WorkoutSetLog,
@@ -79,3 +80,25 @@ class TechniqueReviewAdmin(admin.ModelAdmin):
 
 
 # Register your models here.
+
+
+@admin.register(WorkoutAnalysisRun)
+class WorkoutAnalysisRunAdmin(admin.ModelAdmin):
+    list_display = ("workout_day", "program", "version", "mode", "updated_at")
+    list_filter = ("mode", "version")
+    readonly_fields = (
+        "workout_day",
+        "program",
+        "version",
+        "mode",
+        "report",
+        "legacy_recommendations",
+        "created_at",
+        "updated_at",
+    )
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False

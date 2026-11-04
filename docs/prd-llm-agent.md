@@ -151,3 +151,10 @@ Frontend Wizard → Backend endpoint `/api/llm-agent/programs/`
 3. Интегрировать OpenRouter SDK/HTTP клиент.
 4. Реализовать фронтовый визард.
 
+
+## 11. Post-workout progression-v1 (04.11.2026)
+
+Рекомендации после тренировки рассчитывает backend policy engine. LLM объясняет готовые
+решения, её actions в `post_workout_review` не принимаются. Контракт, ограничения,
+shadow rollout, журнал и сценарий проверки описаны в [workout-progression.md](workout-progression.md).
+Начальный режим — shadow: новые предложения сохраняются для сравнения, программа не изменяется.

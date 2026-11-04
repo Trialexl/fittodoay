@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List
 
 import httpx
+from django.conf import settings
 from django.db import models, transaction
 from django.db.models import Prefetch
 
@@ -20,6 +21,7 @@ from agents.models import LLMRequestLog, LLMProgramMessage, LLMProgramThread
 from workouts.models import Exercise_DB, ExerciseMuscle
 from workouts.models import WorkoutDay, WorkoutSetLog
 from workouts.recommendations import generate_recommendations_for_day
+from workouts.progression import record_analysis, validate_policy_action
 from pgvector.django import L2Distance
 
 logger = logging.getLogger(__name__)
@@ -442,6 +444,8 @@ class LLMProgramChatService:
 
     def __init__(self, thread: LLMProgramThread):
         self.thread = thread
+        self._review_actions = []
+        self._action_validation_errors = []
 
     def send(
         self,
@@ -451,6 +455,8 @@ class LLMProgramChatService:
         workout_date: date | None = None,
     ) -> LLMProgramMessage:
         """Сохраняет сообщение пользователя, дергает LLM (текстовый ответ), сохраняет ответ."""
+        self._review_actions = []
+        self._action_validation_errors = []
         LLMProgramMessage.objects.create(
             thread=self.thread,
             role=LLMProgramMessage.Role.USER,
@@ -498,6 +504,8 @@ class LLMProgramChatService:
         actions = (
             parsed.get("actions") if isinstance(parsed.get("actions"), list) else []
         )
+        if chat_mode == "post_workout_review":
+            actions = self._review_actions
         actions = self._normalize_actions_for_display(actions)
         proposal_status = (
             LLMProgramMessage.ProposalStatus.PENDING
@@ -521,7 +529,11 @@ class LLMProgramChatService:
         self.thread.save(update_fields=["updated_at"])
         self._log_request(
             payload=payload,
-            response={"raw": raw, "parsed": parsed},
+            response={
+                "raw": raw,
+                "parsed": parsed,
+                "action_validation_errors": self._action_validation_errors,
+            },
             success=True,
             status="chat_ok",
         )
@@ -529,11 +541,13 @@ class LLMProgramChatService:
 
     def apply_actions(self, message_id: int):
         """Применяет подтверждённый пользователем набор действий из конкретного сообщения."""
-        message = self._get_actionable_message(message_id)
-        actions = message.actions or []
-        if not actions:
-            raise LLMInvalidResponse("no_actions_to_apply")
         with transaction.atomic():
+            # Serialize repeated confirmation requests before checking pending status.
+            self.thread.messages.select_for_update().filter(pk=message_id).first()
+            message = self._get_actionable_message(message_id)
+            actions = message.actions or []
+            if not actions:
+                raise LLMInvalidResponse("no_actions_to_apply")
             results = []
             applied_count = 0
             for action in actions:
@@ -594,6 +608,24 @@ class LLMProgramChatService:
         return message
 
     def _apply_action(self, action: Dict[str, Any]) -> Dict[str, Any]:
+        if action.get("policy_version"):
+            if settings.WORKOUT_PROGRESSION_MODE != "active":
+                raise LLMInvalidResponse("policy_shadow_only")
+            action = action.get("policy_action", action)
+            try:
+                te = validate_policy_action(self.thread.user, action, for_update=True)
+            except ValueError as exc:
+                raise LLMInvalidResponse(str(exc)) from exc
+            if te.template.folder_id != self.thread.program_id:
+                raise LLMInvalidResponse("invalid_policy_program")
+            field_map = {"weight": "weight_override", "reps": "rep_override"}
+            fields = []
+            for key, change in action["changes"].items():
+                field = field_map[key]
+                setattr(te, field, change["to"])
+                fields.append(field)
+            te.save(update_fields=fields)
+            return {"type": "update_exercise", "template_exercise_id": te.pk}
         raw_action_type = (
             action.get("type") or action.get("action_type") or action.get("action")
         )
@@ -773,29 +805,7 @@ class LLMProgramChatService:
         return {"type": "remove_exercise", "template_exercise_id": target.id}
 
     def _update_weight(self, action: Dict[str, Any]) -> Dict[str, Any]:
-        te_id = action.get("template_exercise_id")
-        te = None
-        if te_id:
-            te = TemplateExercise.objects.filter(
-                id=te_id,
-                template__folder=self.thread.program,
-                template__folder__user=self.thread.user,
-            ).first()
-        if not te:
-            day = self._resolve_day(action)
-            exercise = self._resolve_exercise(action)
-            qs = TemplateExercise.objects.filter(
-                template__folder=self.thread.program,
-                template__folder__user=self.thread.user,
-                is_active=True,
-            )
-            if day:
-                qs = qs.filter(template=day)
-            if exercise:
-                qs = qs.filter(exercise=exercise)
-            te = qs.order_by("sort_order", "id").first()
-        if not te:
-            raise LLMInvalidResponse("invalid_update_weight_action")
+        te = self._strict_update_target(action)
         changed_fields = []
         for field in (
             "weight_override",
@@ -807,7 +817,7 @@ class LLMProgramChatService:
         ):
             key = field.replace("_override", "")
             if field == "note":
-                value = action.get("note", "")
+                value = action.get("note")
             else:
                 aliases = {
                     "rep": ("reps", "rep"),
@@ -827,6 +837,63 @@ class LLMProgramChatService:
         if changed_fields:
             te.save(update_fields=changed_fields)
         return {"type": "update_weight", "template_exercise_id": te.id}
+
+    def _strict_update_target(self, action):
+        te_id = action.get("template_exercise_id")
+        if isinstance(te_id, bool) or not str(te_id or "").isdigit():
+            raise LLMInvalidResponse("invalid_update_template_exercise_id")
+        te = (
+            TemplateExercise.objects.filter(
+                pk=te_id,
+                template__folder=self.thread.program,
+                template__folder__user=self.thread.user,
+                is_active=True,
+            )
+            .select_related("template", "exercise", "custom_exercise")
+            .first()
+        )
+        if not te:
+            raise LLMInvalidResponse("invalid_update_template_exercise_id")
+        source = te.exercise or te.custom_exercise
+        if action.get("exercise_id") is not None:
+            raise LLMInvalidResponse("catalog_id_not_allowed_for_update")
+        name = action.get("exercise_name") or action.get("name")
+        if not source:
+            raise LLMInvalidResponse("update_exercise_source_missing")
+        names = {
+            str(value).strip().casefold()
+            for value in (source.name, getattr(source, "name_en", None))
+            if value
+        }
+        if name and str(name).strip().casefold() not in names:
+            raise LLMInvalidResponse("update_exercise_name_mismatch")
+        if action.get("day_id") is not None and str(action["day_id"]) != str(
+            te.template_id
+        ):
+            raise LLMInvalidResponse("update_day_mismatch")
+        day_name = action.get("day_name") or action.get("day")
+        if (
+            day_name
+            and str(day_name).strip().casefold() != te.template.name.strip().casefold()
+        ):
+            weekday = self._extract_weekday(str(day_name))
+            ordinal = self._extract_day_order_index(str(day_name))
+            resolved = (
+                self._find_day_by_weekday(weekday[0])
+                if weekday
+                else (
+                    self._find_day_by_order_index(ordinal)
+                    if ordinal is not None
+                    else None
+                )
+            )
+            if not resolved or resolved.pk != te.template_id:
+                raise LLMInvalidResponse("update_day_mismatch")
+        if action.get("program_id") is not None and str(action["program_id"]) != str(
+            self.thread.program_id
+        ):
+            raise LLMInvalidResponse("update_program_mismatch")
+        return te
 
     def _build_exercise_defaults(
         self, exercise: Exercise_DB, action: Dict[str, Any]
@@ -1011,7 +1078,11 @@ class LLMProgramChatService:
         chat_mode: str = "program_edit",
         workout_date: date | None = None,
     ) -> List[Dict[str, Any]]:
-        shortlist = self._build_shortlist(self._build_shortlist_query(user_message))
+        shortlist = (
+            []
+            if chat_mode == "post_workout_review"
+            else self._build_shortlist(self._build_shortlist_query(user_message))
+        )
         if chat_mode == "post_workout_review":
             system_prompt = (
                 "Ты фитнес-ассистент и эксперт по прогрессии нагрузки. "
@@ -1021,12 +1092,11 @@ class LLMProgramChatService:
                 "Обязательно учитывай не только текущий день, но и историю других тренировочных дней и недельную динамику по программе. "
                 "Пиши коротко и предметно: максимум 4-6 коротких предложений, без мотивационных абзацев и повторов. "
                 "Каждый вывод должен опираться на числа из контекста (дата, процент выполнения, средний вес/повторы, тоннаж). "
-                "Формат ответа: 1) краткая оценка, 2) 1-3 приоритетные правки с пометками [P1]/[P2]/[P3], 3) что проверить на следующей тренировке. "
+                "Формат ответа: краткая оценка, готовые решения policy (включая hold), что проверить на следующей тренировке. "
                 "Если предлагаешь числовые правки, всегда указывай упражнение, текущие значения и предлагаемые значения (было → станет). "
                 "Избегай общих фраз вроде 'продолжайте в том же духе' без фактов. "
-                "IRR/RIR используй только для силовых упражнений с повторениями и рабочим весом; не применяй IRR к timed/static/cardio упражнениям. "
-                "Если предлагаешь изменить программу, формируй actions для подтверждения пользователем. "
-                f"Вот доступные упражнения (используй их id): {json.dumps(shortlist, ensure_ascii=False)}"
+                "RIR/RPE/pain неизвестны, если null; не вычисляй их из повторов и не объясняй результат болью. "
+                "Не принимай решений об изменении программы: объясняй только policy_decisions и validated_actions. "
             )
         else:
             system_prompt = (
@@ -1034,51 +1104,67 @@ class LLMProgramChatService:
                 "Всегда отвечай на русском. "
                 f"Вот доступные упражнения (используй их id): {json.dumps(shortlist, ensure_ascii=False)}"
             )
-        if mode == "chat":
+        if chat_mode != "post_workout_review":
+            if mode == "chat":
+                system_prompt += (
+                    " Верни JSON без Markdown с полями: "
+                    '{"assistant_reply": string, "actions": Array<object>}. '
+                    "assistant_reply — это понятный человеку ответ простым языком. "
+                    "actions — только конкретные изменения для подтверждения пользователем; если изменений нет, верни пустой массив. "
+                    "В каждом action обязательно передавай exercise_name на русском (человекочитаемое название упражнения). "
+                    "В action передавай только параметры, которые действительно нужно изменить (не дублируй неизменные sets/reps/weight/time/rest). "
+                    "Если пользователь указывает день недели (например, 'среда'), используй это как day_name. "
+                    "Если такого дня в программе нет, все равно формируй действия с этим day_name — система создаст день автоматически. "
+                    "Если пользователь просит добавить упражнение, которого нет в available_exercises, не подменяй его похожим молча. "
+                    "Предложи создать пользовательское упражнение и верни action create_custom_exercise только когда пользователь явно согласился. "
+                    "Для create_custom_exercise обязательны: day_id/day_name, exercise_name, target_muscles, has_weight, has_time, default_sets, default_rest, "
+                    "а также default_reps для упражнений на повторы или default_time для timed/static упражнений. "
+                    "Если пользователь просит помочь с выбором упражнения, обязательно предложи 2-4 варианта и коротко объясни, чем они отличаются и кому подходят. "
+                    "Если пользователь просит показать, перечислить или вывести упражнения из базы/каталога, используй available_exercises из JSON-контекста; "
+                    "если список неполный из-за размера каталога, прямо скажи, что показываешь релевантную выборку, и предложи сузить запрос по мышце или оборудованию. "
+                    "Если пользователь просит 'как делать', дай краткую технику выполнения: исходное положение, движение, дыхание, типичные ошибки и безопасный диапазон нагрузки. "
+                    "Не отказывай в таком объяснении по общим причинам, если запрос относится к обычным упражнениям из фитнес-каталога. "
+                    "Если обсуждается прогресс, дай оценку по факту, выдели сильные/слабые места и предложи 1-3 приоритета на ближайшие тренировки. "
+                    "Не используй IRR/RIR для timed/static/cardio движений; для них давай рекомендации по технике, темпу и объему. "
+                    "Если данных недостаточно для уверенного вывода, прямо укажи это и не придумывай числа. "
+                    "Не применяй изменения самостоятельно, не отвечай служебным текстом."
+                )
+            else:
+                system_prompt += (
+                    " Сформируй действия в строгом JSON без Markdown: "
+                    '{"assistant_reply": string, '
+                    '"actions": [{'
+                    '"type": "add_exercise"|"replace_exercise"|"update_weight"|"create_custom_exercise", '
+                    '"day_id": number?, "day_name": string?, '
+                    '"deactivate_exercise_id": number?, '
+                    '"template_exercise_id": number?, '
+                    '"exercise_id": string?, "exercise_name": string?, '
+                    '"sets": number|null?, "reps": number|null?, "weight": number|null?, '
+                    '"time": number|null?, "rest": number|null?, "target_muscles": string?, '
+                    '"has_weight": boolean?, "has_time": boolean?, "default_sets": number?, '
+                    '"default_reps": number?, "default_time": number?, "default_rest": number?, '
+                    '"default_weight": number|null?, "description": string?, "note": string?'
+                    "}]} "
+                    "assistant_reply — кратко для человека (что предлагаешь, зачем). "
+                    "Всегда заполняй exercise_name на русском для каждого action. "
+                    "Передавай только действительно изменяемые параметры (не дублируй поля, которые должны остаться без изменений). "
+                    "Используй exercise_id только из списка available_exercises; если даешь exercise_name для системного упражнения, она должна совпадать с каталогом. "
+                    "create_custom_exercise используй только для упражнения, которого нет в available_exercises, и только после явного согласия пользователя."
+                )
+        system_prompt += (
+            " Для изменения существующего упражнения обязателен template_exercise_id; "
+            "exercise_id разрешён только для добавления или замены. Не подменяй идентификаторы."
+        )
+        if chat_mode == "post_workout_review":
             system_prompt += (
-                " Верни JSON без Markdown с полями: "
-                '{"assistant_reply": string, "actions": Array<object>}. '
-                "assistant_reply — это понятный человеку ответ простым языком. "
-                "actions — только конкретные изменения для подтверждения пользователем; если изменений нет, верни пустой массив. "
-                "В каждом action обязательно передавай exercise_name на русском (человекочитаемое название упражнения). "
-                "В action передавай только параметры, которые действительно нужно изменить (не дублируй неизменные sets/reps/weight/time/rest). "
-                "Если пользователь указывает день недели (например, 'среда'), используй это как day_name. "
-                "Если такого дня в программе нет, все равно формируй действия с этим day_name — система создаст день автоматически. "
-                "Если пользователь просит добавить упражнение, которого нет в available_exercises, не подменяй его похожим молча. "
-                "Предложи создать пользовательское упражнение и верни action create_custom_exercise только когда пользователь явно согласился. "
-                "Для create_custom_exercise обязательны: day_id/day_name, exercise_name, target_muscles, has_weight, has_time, default_sets, default_rest, "
-                "а также default_reps для упражнений на повторы или default_time для timed/static упражнений. "
-                "Если пользователь просит помочь с выбором упражнения, обязательно предложи 2-4 варианта и коротко объясни, чем они отличаются и кому подходят. "
-                "Если пользователь просит показать, перечислить или вывести упражнения из базы/каталога, используй available_exercises из JSON-контекста; "
-                "если список неполный из-за размера каталога, прямо скажи, что показываешь релевантную выборку, и предложи сузить запрос по мышце или оборудованию. "
-                "Если пользователь просит 'как делать', дай краткую технику выполнения: исходное положение, движение, дыхание, типичные ошибки и безопасный диапазон нагрузки. "
-                "Не отказывай в таком объяснении по общим причинам, если запрос относится к обычным упражнениям из фитнес-каталога. "
-                "Если обсуждается прогресс, дай оценку по факту, выдели сильные/слабые места и предложи 1-3 приоритета на ближайшие тренировки. "
-                "Не используй IRR/RIR для timed/static/cardio движений; для них давай рекомендации по технике, темпу и объему. "
-                "Если данных недостаточно для уверенного вывода, прямо укажи это и не придумывай числа. "
-                "Не применяй изменения самостоятельно, не отвечай служебным текстом."
-            )
-        else:
-            system_prompt += (
-                " Сформируй действия в строгом JSON без Markdown: "
-                '{"assistant_reply": string, '
-                '"actions": [{'
-                '"type": "add_exercise"|"replace_exercise"|"update_weight"|"create_custom_exercise", '
-                '"day_id": number?, "day_name": string?, '
-                '"deactivate_exercise_id": number?, '
-                '"template_exercise_id": number?, '
-                '"exercise_id": string?, "exercise_name": string?, '
-                '"sets": number|null?, "reps": number|null?, "weight": number|null?, '
-                '"time": number|null?, "rest": number|null?, "target_muscles": string?, '
-                '"has_weight": boolean?, "has_time": boolean?, "default_sets": number?, '
-                '"default_reps": number?, "default_time": number?, "default_rest": number?, '
-                '"default_weight": number|null?, "description": string?, "note": string?'
-                "}]} "
-                "assistant_reply — кратко для человека (что предлагаешь, зачем). "
-                "Всегда заполняй exercise_name на русском для каждого action. "
-                "Передавай только действительно изменяемые параметры (не дублируй поля, которые должны остаться без изменений). "
-                "Используй exercise_id только из списка available_exercises; если даешь exercise_name для системного упражнения, она должна совпадать с каталогом. "
-                "create_custom_exercise используй только для упражнения, которого нет в available_exercises, и только после явного согласия пользователя."
+                " В этом режиме ты только объясняешь готовые решения backend. "
+                'Верни JSON без Markdown: {"assistant_reply": string, "actions": []}. '
+                "Верни assistant_reply и пустой actions. Не меняй ID, числа, режимы и решения. "
+                "current_session — текущий результат, previous_sessions — история; "
+                "exercise_trend содержит исторические средние, а не текущий рабочий вес. "
+                "При return_after_break главным контекстом является перерыв. "
+                "В shadow mode изменения только сравниваются в журнале: не предлагай применить их. "
+                "Отсутствие подходов означает отсутствие данных, а не отказ."
             )
         context = {
             "program": self._serialize_program(),
@@ -1089,6 +1175,7 @@ class LLMProgramChatService:
             context["progress_context"] = self._build_post_workout_context(
                 workout_date=workout_date
             )
+            self._review_actions = context["progress_context"]["validated_actions"]
         history = []
         for msg in self.thread.messages.order_by("-id")[:12][::-1]:
             history.append({"role": msg.role, "content": msg.content})
@@ -1179,7 +1266,11 @@ class LLMProgramChatService:
     ) -> Dict[str, Any]:
         program_id = self.thread.program_id
         candidate_days = list(
-            WorkoutDay.objects.filter(user=self.thread.user)
+            WorkoutDay.objects.filter(
+                user=self.thread.user, date__lte=workout_date or timezone.localdate()
+            )
+            .filter(set_logs__isnull=False)
+            .distinct()
             .order_by("-date")
             .prefetch_related(
                 Prefetch(
@@ -1196,6 +1287,11 @@ class LLMProgramChatService:
             ids = self._extract_folder_ids_from_day(day)
             if program_id not in ids:
                 continue
+            relevant_ids = self._extract_program_template_exercise_ids(day, program_id)
+            if not any(
+                log.template_exercise_id in relevant_ids for log in day.set_logs.all()
+            ):
+                continue
             day_entries.append((day, ids))
 
         target_day = None
@@ -1204,14 +1300,16 @@ class LLMProgramChatService:
                 if day.date == workout_date:
                     target_day = day
                     break
-        if target_day is None and day_entries:
+        if target_day is None and day_entries and workout_date is None:
             target_day = day_entries[0][0]
 
         serialized_days = [
             self._serialize_day_progress(day, program_id)
             for day, _ids in day_entries[:16]
         ]
-        latest_summary = serialized_days[0] if serialized_days else None
+        latest_summary = (
+            self._serialize_day_progress(target_day, program_id) if target_day else None
+        )
         exercise_trend = self._build_exercise_trend(day_entries[:16], program_id)
         weekly_trend = self._build_weekly_program_trend(serialized_days)
         day_type_trend = self._build_day_type_trend(serialized_days)
@@ -1226,7 +1324,41 @@ class LLMProgramChatService:
                     )
                     break
 
+        policy_report = (
+            record_analysis(target_day, program_id, legacy=algorithm_recommendations)
+            if target_day
+            else None
+        )
+        validated_actions = []
+        rejected = {}
+        if policy_report:
+            for action in policy_report["actions"]:
+                try:
+                    validate_policy_action(self.thread.user, action)
+                except ValueError as exc:
+                    rejected[action["template_exercise_id"]] = str(exc)
+                    self._action_validation_errors.append(str(exc))
+                    continue
+                if policy_report["rollout_mode"] == "active":
+                    validated_actions.append(action)
+        policy_decisions = []
+        for decision in policy_report["decisions"] if policy_report else []:
+            if decision["template_exercise_id"] in rejected:
+                decision = {
+                    **decision,
+                    "decision": "hold",
+                    "changes": {},
+                    "reason_code": rejected[decision["template_exercise_id"]],
+                }
+            policy_decisions.append(decision)
+        # Capture old/new comparison in DB, but expose only policy decisions to the LLM.
         return {
+            "policy_rollout_mode": settings.WORKOUT_PROGRESSION_MODE,
+            "policy_decisions": policy_decisions,
+            "workout_analysis_snapshot": (
+                policy_report["snapshot"] if policy_report else None
+            ),
+            "validated_actions": validated_actions,
             "program_id": program_id,
             "program_name": self.thread.program.name,
             "requested_workout_date": (
@@ -1237,7 +1369,7 @@ class LLMProgramChatService:
             "weekly_trend": weekly_trend,
             "day_type_trend": day_type_trend,
             "exercise_trend": exercise_trend,
-            "algorithm_recommendations": algorithm_recommendations,
+            "algorithm_recommendations": validated_actions,
         }
 
     def _extract_folder_ids_from_day(self, day: WorkoutDay) -> set[int]:
@@ -1400,6 +1532,8 @@ class LLMProgramChatService:
     ) -> List[Dict[str, Any]]:
         weekly: Dict[str, Dict[str, Any]] = {}
         for day_payload in serialized_days:
+            if not day_payload.get("logged_sets"):
+                continue
             try:
                 current = date.fromisoformat(day_payload["date"])
             except (TypeError, ValueError):
@@ -1444,8 +1578,12 @@ class LLMProgramChatService:
     ) -> List[Dict[str, Any]]:
         by_day_type: Dict[str, Dict[str, Any]] = {}
         for day_payload in serialized_days:
+            if not day_payload.get("logged_sets"):
+                continue
             day_date = day_payload.get("date")
             for template in day_payload.get("template_summaries") or []:
+                if not template.get("logged_sets"):
+                    continue
                 day_name = str(template.get("template_name") or "").strip()
                 if not day_name:
                     continue
@@ -1629,6 +1767,25 @@ class LLMProgramChatService:
             if not isinstance(raw_action, dict):
                 continue
             action = dict(raw_action)
+            if action.get("policy_version"):
+                if settings.WORKOUT_PROGRESSION_MODE != "active":
+                    continue
+                try:
+                    te = validate_policy_action(self.thread.user, action)
+                except ValueError:
+                    continue
+                if te.template.folder_id != self.thread.program_id:
+                    continue
+                # Existing UI understands flat update_weight fields; keep proof unchanged.
+                display = dict(action)
+                display["type"] = "update_weight"
+                # Validation compares canonical type independently from the UI adapter.
+                display["policy_action"] = action
+                display["day_name"] = te.template.name
+                for key, change in action["changes"].items():
+                    display[key] = change["to"]
+                normalized.append(display)
+                continue
             action_type = (
                 str(
                     action.get("type")
@@ -1661,6 +1818,13 @@ class LLMProgramChatService:
                 continue
             if normalized_type:
                 action["type"] = normalized_type
+            if normalized_type == "update_weight":
+                try:
+                    self._strict_update_target(action)
+                except LLMInvalidResponse as exc:
+                    self._action_validation_errors.append(str(exc))
+                    logger.warning("Rejected update action: %s", exc)
+                    continue
             if normalized_type != "create_custom_exercise":
                 self._attach_localized_exercise_name(action)
             self._attach_day_name(action)
