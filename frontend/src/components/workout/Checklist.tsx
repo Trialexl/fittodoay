@@ -1,6 +1,8 @@
 "use client";
 
 import { usePlaylistReveal } from "@/hooks/usePlaylistReveal";
+import { useTheme } from "@/state/ThemeContext";
+import { WorkoutOverview, ModernExerciseHeading, ModernSetRow } from "./ModernWorkout";
 import Link from "next/link";
 import clsx from "clsx";
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
@@ -1014,6 +1016,8 @@ export const Checklist = ({
   onOpenCalendar: () => void;
 }) => {
   const auth = useAuth();
+  const { designVersion } = useTheme();
+  const modern = designVersion === "v2";
   const audioContextRef = useRef<AudioContext | null>(null);
   const musicAudioRef = useRef<HTMLAudioElement | null>(null);
   const musicUploadInputRef = useRef<HTMLInputElement | null>(null);
@@ -3579,25 +3583,10 @@ export const Checklist = ({
     Number.isFinite(inputWeighInNumeric) &&
     Math.abs(currentWeighInNumeric - inputWeighInNumeric) <= 0.05;
 
-  return (
-    <>
-      {(pendingCount > 0 || offlineSyncError) && (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-3 text-sm text-amber-900">
-          {pendingCount > 0 && (
-            <p>
-              {isOfflineSyncing
-                ? `Синхронизируем ${pendingCount} подход(ов)…`
-                : `${pendingCount} подход(ов) сохранены локально и будут отправлены при появлении интернета.`}
-            </p>
-          )}
-          {offlineSyncError && (
-            <p className="mt-1 text-xs text-amber-800">{offlineSyncError}</p>
-          )}
-        </div>
-      )}
-      <section className="workout-overview space-y-2">
-        <p className="text-sm uppercase tracking-widest text-primary">Дневной чеклист</p>
-        <div className="flex items-stretch gap-3">
+  const sessionExercises = plan?.folders.flatMap((folder) => folder.templates.flatMap((template) => template.exercises.filter(isExerciseActive))) ?? [];
+  const sessionTotal = sessionExercises.reduce((sum, exercise) => sum + exercise.sets.length, 0);
+  const sessionCompleted = sessionExercises.reduce((sum, exercise) => sum + exercise.sets.filter((set) => getLogForSet(exercise.template_exercise_id, set.set_index)).length, 0);
+  const weighInControl = (
           <section className="min-w-0 flex-1 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-700 dark:bg-slate-900/70">
             <div className="flex items-center justify-between gap-2">
               <h3 className="min-w-0 flex-1 text-sm font-semibold text-slate-900 dark:text-slate-100">
@@ -3625,6 +3614,7 @@ export const Checklist = ({
                   value={weighInValue}
                   onChange={(event) => setWeighInValue(event.target.value)}
                   placeholder="Вес, кг"
+                  aria-label="Вес перед тренировкой, кг"
                   className={clsx(
                     "form-field h-[42px] transition-colors",
                     isWeighInFixed &&
@@ -3652,6 +3642,29 @@ export const Checklist = ({
               <p className="mt-2 text-xs text-red-500">{weighInError}</p>
             ) : null}
           </section>
+  );
+
+  return (
+    <>
+      {(pendingCount > 0 || offlineSyncError) && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-3 text-sm text-amber-900">
+          {pendingCount > 0 && (
+            <p>
+              {isOfflineSyncing
+                ? `Синхронизируем ${pendingCount} подход(ов)…`
+                : `${pendingCount} подход(ов) сохранены локально и будут отправлены при появлении интернета.`}
+            </p>
+          )}
+          {offlineSyncError && (
+            <p className="mt-1 text-xs text-amber-800">{offlineSyncError}</p>
+          )}
+        </div>
+      )}
+      {modern ? <WorkoutOverview date={headerDate} completed={sessionCompleted} total={sessionTotal} exercises={sessionExercises.length} load={dailyLoad} muscles={todayMuscles.map(([muscle]) => muscle)} onCalendar={onOpenCalendar} weighIn={weighInControl} /> : (
+      <section className="workout-overview space-y-2">
+        <p className="text-sm uppercase tracking-widest text-primary">Дневной чеклист</p>
+        <div className="flex items-stretch gap-3">
+          {weighInControl}
           <button
             type="button"
             className="inline-flex w-[124px] shrink-0 flex-col items-center justify-center rounded-2xl border border-slate-200 bg-white px-3 py-2 text-center shadow-sm transition hover:border-primary hover:text-primary dark:border-slate-700 dark:bg-slate-900/70"
@@ -3665,7 +3678,8 @@ export const Checklist = ({
           </button>
         </div>
       </section>
-      {todayMuscles.length > 0 && (
+      )}
+      {!modern && todayMuscles.length > 0 && (
         <section className="rounded-2xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm dark:border-slate-700 dark:bg-slate-900/70">
           <div className="flex flex-wrap gap-1.5">
             {todayMuscles.slice(0, 6).map(([muscle, count]) => (
@@ -3682,7 +3696,7 @@ export const Checklist = ({
           </div>
         </section>
       )}
-      <div className="space-y-4 pb-[102px] sm:space-y-5 sm:pb-[110px]">
+      <div className={clsx("workout-sessions space-y-4 pb-[102px] sm:space-y-5 sm:pb-[110px]", modern && "modern-sessions")}>
         {!plan ? (
           <div className="rounded-2xl border border-dashed border-slate-300 bg-white/60 p-6 text-center">
             <p className="text-sm font-medium text-slate-600">Загружаем план тренировки…</p>
@@ -3859,7 +3873,7 @@ export const Checklist = ({
                           >
                             {templateExpanded && (
                               <div className="space-y-2.5 sm:space-y-3.5">
-                                {activeExercises.map((exercise) => {
+                                {activeExercises.map((exercise, exercisePosition) => {
                             const exerciseActive = isExerciseActive(exercise);
                             if (!exerciseActive) return null;
                             const exerciseComplete = isExerciseComplete(exercise);
@@ -3883,6 +3897,10 @@ export const Checklist = ({
                                   : "border-dashed border-slate-300 bg-surface-muted",
                             )}
                           >
+                            {modern ? <ModernExerciseHeading name={exercise.source.name} number={exercisePosition + 1} completed={completedSets} total={exercise.sets.length} expanded={exerciseExpanded}
+                              onToggle={() => toggleExercise(exercise.template_exercise_id)}
+                              onInfo={canShowInfo ? () => openExerciseInfo({ name: exercise.source.name, text: exerciseInfo ?? "", images: exercise.source.images ?? [], sourceId: exercise.source.id, folderId: folder.id }) : undefined}
+                              editHref={`/programs?template=${template.id}&templateName=${encodeURIComponent(template.name)}&exercise=${exercise.template_exercise_id}`} /> : (
                             <div className="flex w-full flex-wrap items-center gap-1">
                               <button
                                 type="button"
@@ -3954,6 +3972,7 @@ export const Checklist = ({
                                 <EditIcon />
                               </Link>
                             </div>
+                            )}
                             {exercise.note && (
                               <p className={clsx("mt-1 text-[11px] text-slate-500", exerciseComplete && "completed-subtitle")}>
                                 {exercise.note}
@@ -3982,6 +4001,9 @@ export const Checklist = ({
                                   set.set_index && set.set_index > 0
                                     ? set.set_index
                                     : setPosition + 1;
+                                if (modern) return <ModernSetRow key={`${exercise.template_exercise_id}-${set.set_index}`} number={setNumber} plan={formatPlanSet(exercise, set)} actual={log ? formatLogValues(exercise, log) : undefined} complete={isComplete} offline={isOfflineLog} active={isActiveSet} timed={isTimedExercise} disabled={actionDisabled}
+                                  onEdit={() => { if (log) openEditModal(exercise, log); }}
+                                  onAction={() => { if (isTimedExercise) startTimedExecution(exercise, set, template, folder.id); else openRestOverlay(exercise, set, undefined, template, folder.id); }} />;
                                 return (
                                   <div
                                     key={`${exercise.template_exercise_id}-${set.set_index}`}

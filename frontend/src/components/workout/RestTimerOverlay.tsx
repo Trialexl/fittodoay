@@ -1,11 +1,13 @@
-"use client";
+'use client';
 
-import { Button } from "@/components/ui/Button";
-import { AdjustNumberControl } from "@/components/workout/AdjustNumberControl";
-import { useEffect, useMemo, useState } from "react";
-import { createPortal } from "react-dom";
+import { useTheme } from '@/state/ThemeContext';
+import { WorkoutTimerScreen, MinimizedWorkoutTimer } from './WorkoutTimerScreen';
+import { Button } from '@/components/ui/Button';
+import { AdjustNumberControl } from '@/components/workout/AdjustNumberControl';
+import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 
-import type { PendingSet } from "./Checklist";
+import type { PendingSet } from './Checklist';
 
 type Props = {
   pending: PendingSet | null;
@@ -13,7 +15,7 @@ type Props = {
   remaining: number;
   duration: number;
   values: { reps: string; weight: string; time: string };
-  onChange: (field: "reps" | "weight" | "time", value: string) => void;
+  onChange: (field: 'reps' | 'weight' | 'time', value: string) => void;
   onSave?: () => void;
   onSkip: () => void;
   onClose: () => void;
@@ -36,6 +38,8 @@ export const RestTimerOverlay = ({
   hideCollapsed = false,
   error,
 }: Props) => {
+  const { designVersion } = useTheme();
+  const modern = designVersion === 'v2';
   const [mounted, setMounted] = useState(false);
   const [visibleCallout, setVisibleCallout] = useState<string[] | null>(null);
   const [collapsed, setCollapsed] = useState(false);
@@ -47,12 +51,12 @@ export const RestTimerOverlay = ({
 
   useEffect(() => {
     if (!pending || !mounted || collapsed) {
-      document.body.style.overflow = "";
+      document.body.style.overflow = '';
       return;
     }
-    document.body.style.overflow = "hidden";
+    document.body.style.overflow = 'hidden';
     return () => {
-      document.body.style.overflow = "";
+      document.body.style.overflow = '';
     };
   }, [pending, mounted, collapsed]);
 
@@ -66,9 +70,9 @@ export const RestTimerOverlay = ({
   const showGoCue = showTimer && !isFinalSet && displayRemaining === 1;
   const showCongrats = showTimer && isFinalSet;
   const calloutText = useMemo(() => {
-    if (showCongrats) return ["На сегодня всё.", "Ты молодец!"];
-    if (showGoCue) return ["Давай дальше"];
-    if (showPrepCue) return ["Приготовься"];
+    if (showCongrats) return ['На сегодня всё.', 'Ты молодец!'];
+    if (showGoCue) return ['Давай дальше'];
+    if (showPrepCue) return ['Приготовься'];
     return null;
   }, [showCongrats, showGoCue, showPrepCue]);
 
@@ -94,35 +98,111 @@ export const RestTimerOverlay = ({
   if (collapsed) {
     if (hideCollapsed) return null;
 
+    if (modern)
+      return createPortal(
+        <MinimizedWorkoutTimer
+          remaining={displayRemaining}
+          duration={duration}
+          exerciseName={pending.exerciseName}
+          onExpand={() => setCollapsed(false)}
+          onClose={onClose}
+        />,
+        document.body,
+      );
+
     const bar = (
       <div className="pointer-events-none fixed inset-0 z-50">
         <div className="timer-collapsed pointer-events-auto fixed bottom-[calc(env(safe-area-inset-bottom)+114px)] left-3 right-3 rounded-2xl border border-white/30 bg-slate-900/90 px-4 py-3 text-white shadow-lg backdrop-blur sm:bottom-[calc(env(safe-area-inset-bottom)+122px)] sm:left-6 sm:right-6">
           <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-sm">
-            {showTimer && (
-              <span className="text-xs uppercase tracking-[0.4em] text-violet-200">
-                {displayRemaining}s
-              </span>
-            )}
-            <span className="font-semibold">{pending.exerciseName}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              className="rounded-full border border-white/30 px-3 py-1 text-xs uppercase tracking-wide hover:bg-white/10"
-              onClick={() => setCollapsed(false)}
-            >
-              Развернуть
-            </button>
-            <button className="text-lg text-white/70 hover:text-white" onClick={onClose} aria-label="Закрыть">
-              ×
-            </button>
-          </div>
+            <div className="flex items-center gap-2 text-sm">
+              {showTimer && (
+                <span className="text-xs uppercase tracking-[0.4em] text-violet-200">
+                  {displayRemaining}s
+                </span>
+              )}
+              <span className="font-semibold">{pending.exerciseName}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                className="rounded-full border border-white/30 px-3 py-1 text-xs uppercase tracking-wide hover:bg-white/10"
+                onClick={() => setCollapsed(false)}
+              >
+                Развернуть
+              </button>
+              <button
+                className="text-lg text-white/70 hover:text-white"
+                onClick={onClose}
+                aria-label="Закрыть"
+              >
+                ×
+              </button>
+            </div>
           </div>
         </div>
       </div>
     );
     return createPortal(bar, document.body);
   }
+
+  if (modern)
+    return createPortal(
+      <WorkoutTimerScreen
+        mode="rest"
+        exerciseName={pending.exerciseName}
+        setLabel={`Подход ${pending.setIndex}`}
+        remaining={displayRemaining}
+        duration={duration}
+        showTimer={showTimer}
+        active={isTimerActive}
+        callout={visibleCallout}
+        error={error}
+        onClose={onClose}
+        onCollapse={showTimer ? () => setCollapsed(true) : undefined}
+        controls={
+          !pending.hasTime ? (
+            <>
+              <AdjustNumberControl
+                label="Повторы"
+                value={values.reps}
+                onChange={(value) => onChange('reps', value)}
+                step={1}
+                inputMode="numeric"
+              />
+              {pending.hasWeight && (
+                <AdjustNumberControl
+                  label="Вес (кг)"
+                  value={values.weight}
+                  onChange={(value) => onChange('weight', value)}
+                  step={2}
+                  inputMode="decimal"
+                />
+              )}
+            </>
+          ) : (
+            <AdjustNumberControl
+              label="Время (сек)"
+              value={values.time}
+              onChange={(value) => onChange('time', value)}
+              step={1}
+              inputMode="numeric"
+            />
+          )
+        }
+        actions={
+          <button type="button" className="timer-focus-primary" onClick={onSkip}>
+            <span>
+              {showTimer && displayRemaining > 0
+                ? 'Пропустить отдых'
+                : 'Сохранить подход'}
+            </span>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M5 12h14m-6-6 6 6-6 6" />
+            </svg>
+          </button>
+        }
+      />,
+      document.body,
+    );
 
   const overlay = (
     <div className="timer-overlay fixed inset-0 z-50 bg-slate-900/90 text-white">
@@ -136,7 +216,11 @@ export const RestTimerOverlay = ({
               Свернуть
             </button>
           )}
-          <button className="text-xl hover:text-white" onClick={onClose} aria-label="Закрыть">
+          <button
+            className="text-xl hover:text-white"
+            onClick={onClose}
+            aria-label="Закрыть"
+          >
             ×
           </button>
         </div>
@@ -154,19 +238,30 @@ export const RestTimerOverlay = ({
             </div>
           )}
           {showTimer && (
-            <div className="text-xs uppercase tracking-[0.6em] text-slate-200 sm:text-sm">Отдых</div>
+            <div className="text-xs uppercase tracking-[0.6em] text-slate-200 sm:text-sm">
+              Отдых
+            </div>
           )}
           <p className="text-3xl font-semibold sm:text-4xl">{pending.exerciseName}</p>
           {showTimer && (
             <div className="flex flex-col items-center">
               <div className="relative flex h-40 w-40 items-center justify-center rounded-full border border-white/30 sm:h-48 sm:w-48">
-                <span className="text-4xl font-bold tabular-nums sm:text-5xl">{displayRemaining}s</span>
+                <span className="text-4xl font-bold tabular-nums sm:text-5xl">
+                  {displayRemaining}s
+                </span>
                 <svg
                   className="absolute inset-0 h-full w-full"
                   viewBox="0 0 160 160"
                   preserveAspectRatio="xMidYMid meet"
                 >
-                  <circle cx="80" cy="80" r="70" stroke="rgba(255,255,255,0.2)" strokeWidth="8" fill="none" />
+                  <circle
+                    cx="80"
+                    cy="80"
+                    r="70"
+                    stroke="rgba(255,255,255,0.2)"
+                    strokeWidth="8"
+                    fill="none"
+                  />
                   <circle
                     cx="80"
                     cy="80"
@@ -179,7 +274,9 @@ export const RestTimerOverlay = ({
                   />
                 </svg>
               </div>
-              {!isTimerActive && <p className="mt-2 text-xs text-slate-200">Отдых завершён</p>}
+              {!isTimerActive && (
+                <p className="mt-2 text-xs text-slate-200">Отдых завершён</p>
+              )}
             </div>
           )}
           <div className="w-full max-w-md space-y-3 text-left text-slate-200">
@@ -188,7 +285,7 @@ export const RestTimerOverlay = ({
                 <AdjustNumberControl
                   label="Повторы"
                   value={values.reps}
-                  onChange={(value) => onChange("reps", value)}
+                  onChange={(value) => onChange('reps', value)}
                   step={1}
                   inputMode="numeric"
                   className="min-w-[140px] flex-1"
@@ -197,7 +294,7 @@ export const RestTimerOverlay = ({
                   <AdjustNumberControl
                     label="Вес (кг)"
                     value={values.weight}
-                    onChange={(value) => onChange("weight", value)}
+                    onChange={(value) => onChange('weight', value)}
                     step={2}
                     inputMode="decimal"
                     className="min-w-[140px] flex-1"
@@ -209,7 +306,7 @@ export const RestTimerOverlay = ({
                 <AdjustNumberControl
                   label="Время (сек)"
                   value={values.time}
-                  onChange={(value) => onChange("time", value)}
+                  onChange={(value) => onChange('time', value)}
                   step={1}
                   inputMode="numeric"
                   className="min-w-[140px]"
@@ -219,7 +316,11 @@ export const RestTimerOverlay = ({
           </div>
           {error && <p className="text-sm text-red-300">{error}</p>}
           <div className="flex flex-wrap justify-center gap-3">
-            <Button variant="secondary" className="bg-white text-slate-900" onClick={onSkip}>
+            <Button
+              variant="secondary"
+              className="bg-white text-slate-900"
+              onClick={onSkip}
+            >
               Пропустить отдых
             </Button>
           </div>

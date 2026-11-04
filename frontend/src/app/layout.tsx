@@ -3,6 +3,7 @@ import Script from 'next/script';
 import { AppFrame } from '@/components/providers/AppFrame';
 import './globals.css';
 import './design-v2.css';
+import './timer-v2.css';
 import { AppProviders } from '@/components/providers/AppProviders';
 import { ClientChrome } from '@/components/providers/ClientChrome';
 

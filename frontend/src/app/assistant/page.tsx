@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { apiFetch, ApiError } from "@/lib/api";
 import { useAuth } from "@/state/AuthContext";
+import { useTheme } from "@/state/ThemeContext";
 
 const defaultValues = {
   gender: "male",
@@ -61,6 +62,7 @@ const helperText = "Ответьте на несколько вопросов �
 export default function AssistantPage() {
   const router = useRouter();
   const { token, user, loading } = useAuth();
+  const { designVersion } = useTheme();
   const [step, setStep] = useState(0);
   const [form, setForm] = useState(defaultValues);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -227,6 +229,11 @@ export default function AssistantPage() {
       </header>
 
       <section className="assistant-panel ui-surface rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        {designVersion === "v2" && <ol className="assistant-journey" aria-label="Этапы создания программы">
+          {steps.map((item, index) => <li key={item.title} aria-current={index === step ? "step" : undefined} data-complete={index < step}>
+            <span>{index < step ? "✓" : String(index + 1).padStart(2, "0")}</span><strong>{item.title}</strong>
+          </li>)}
+        </ol>}
         {step < steps.length && currentStep && (
           <div className="space-y-5">
             <div>

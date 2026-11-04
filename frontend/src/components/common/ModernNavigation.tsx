@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/state/AuthContext';
-import { BrandMark } from '@/components/common/BrandMark';
+
 
 const destinations = [
   { href: '/workout', label: 'Тренировка', icon: 'workout' },
@@ -102,6 +102,8 @@ export function ModernNavigation({
   const publicPage = ['/', '/login', '/register', '/onboarding'].includes(pathname);
   const appNavigation = Boolean(user && !publicPage);
   const active = destinations.find((destination) => destination.href === pathname);
+  const mobileLabels = { workout: 'Сегодня', programs: 'Планы', analytics: 'Прогресс', technique: 'Техника', assistant: 'Помощник' };
+  const brand = <span className="modern-wordmark">fit<strong>TODO</strong>ay<span aria-hidden="true">.</span></span>;
   return (
     <>
       <header className="modern-topbar">
@@ -110,10 +112,10 @@ export function ModernNavigation({
           className="modern-mobile-brand"
           aria-label="fitTODOay — главная"
         >
-          <BrandMark />
+          {brand}
         </Link>
         <div className="modern-location">
-          <span>Ваше пространство</span>
+          <span>Личное пространство</span>
           <strong>{active?.label ?? 'fitTODOay'}</strong>
         </div>
         <div className="modern-topbar-actions">
@@ -149,9 +151,9 @@ export function ModernNavigation({
               <span className="modern-brand-symbol">
                 <AppIcon name="workout" />
               </span>
-              <BrandMark />
+              {brand}
             </Link>
-            <p className="modern-nav-caption">Тренируйтесь в своём ритме</p>
+            <p className="modern-nav-caption">ТВОЙ РИТМ. ТВОЙ ПРОГРЕСС.</p>
             <nav className="modern-desktop-nav" aria-label="Основная навигация">
               {destinations.map((item) => (
                 <Link
@@ -209,12 +211,12 @@ export function ModernNavigation({
                 <span>
                   <AppIcon name={item.icon} />
                 </span>
-                <span>{item.label}</span>
+                <span>{mobileLabels[item.icon]}</span>
               </Link>
             ))}
           </nav>
           <details className="modern-mobile-more">
-            <summary aria-label="Меню аккаунта">Аккаунт</summary>
+            <summary aria-label="Меню аккаунта">Ещё <span aria-hidden="true">⌄</span></summary>
             <div>
               <p>{user?.email}</p>
               <button type="button" onClick={onMcp}>

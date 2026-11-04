@@ -2,6 +2,7 @@
 
 import { apiFetch } from "@/lib/api";
 import { useAuth } from "@/state/AuthContext";
+import { useTheme } from "@/state/ThemeContext";
 import useSWR from "swr";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -82,6 +83,7 @@ const AiSparkIcon = ({ className }: { className?: string }) => (
 export const AnalyticsPanels = () => {
   const router = useRouter();
   const { token } = useAuth();
+  const { designVersion } = useTheme();
   const [chatOpen, setChatOpen] = useState(false);
   const [chatThreadId, setChatThreadId] = useState<number | null>(null);
   const [chatInput, setChatInput] = useState("");
@@ -310,7 +312,12 @@ export const AnalyticsPanels = () => {
 
   return (
     <div className="analytics-dashboard space-y-6">
-      <div className="flex justify-end">
+      {designVersion === "v2" && <section className="progress-summary" aria-label="Сводка прогресса">
+        <div><span>Тренировок с нагрузкой</span><strong>{daily ? daily.items.filter((item) => Number(item.load) > 0).length : "—"}</strong><small>В доступной истории</small></div>
+        <div><span>Подходов выполнено</span><strong>{exercises ? exercises.items.reduce((sum, item) => sum + Number(item.sets || 0), 0) : "—"}</strong><small>По упражнениям в истории</small></div>
+        <div><span>Последний вес</span><strong>{bodyWeightSeries.length ? `${[...bodyWeightSeries].sort((a, b) => b.date.localeCompare(a.date))[0].weight_kg} кг` : "—"}</strong><small>{bodyWeightSeries.length ? "Последнее измерение" : "Добавьте измерение перед тренировкой"}</small></div>
+      </section>}
+      <div className="analytics-actions flex justify-end">
         <Button
           type="button"
           variant="secondary"

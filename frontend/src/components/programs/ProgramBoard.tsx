@@ -29,6 +29,8 @@ import {
   ExerciseReference,
   buildExerciseReference,
 } from "@/components/exercises/exerciseInfo";
+import { useTheme } from "@/state/ThemeContext";
+import { ProgramNavigator } from "./ProgramNavigator";
 import { DayActivitySwitch } from "@/components/programs/DayActivitySwitch";
 import { TemplateEditor } from "@/components/templates/TemplateEditor";
 
@@ -171,6 +173,9 @@ type ApplyActionsResponse = {
 export const ProgramBoard = ({ initialFocus }: ProgramBoardProps = {}) => {
   const router = useRouter();
   const { token } = useAuth();
+  const { designVersion } = useTheme();
+  const modern = designVersion === "v2";
+  const [selectedFolderId, setSelectedFolderId] = useState<number | undefined>(initialFocus?.folderId);
   const {
     data: folders,
     isLoading,
@@ -283,7 +288,7 @@ export const ProgramBoard = ({ initialFocus }: ProgramBoardProps = {}) => {
   const toggleFolder = (id: number) =>
     setExpandedFolders((prev) => ({ ...prev, [id]: !prev[id] }));
   const toggleTemplate = (id: number) =>
-    setExpandedTemplates((prev) => ({ ...prev, [id]: !prev[id] }));
+    setExpandedTemplates((prev) => ({ ...prev, [id]: !(prev[id] ?? modern) }));
 
   useEffect(() => {
     if (initialHandled) return;
@@ -411,21 +416,26 @@ export const ProgramBoard = ({ initialFocus }: ProgramBoardProps = {}) => {
     }
   };
 
+  const selectedFolder = folders?.find((folder) => folder.id === selectedFolderId) ?? folders?.[0];
+  const visibleFolders = modern ? (selectedFolder ? [selectedFolder] : []) : folders;
+
   if (isLoading) return <p className="text-sm text-slate-500">Загружаем программы…</p>;
 
   return (
-    <div className="space-y-6">
+    <div className={clsx("space-y-6", modern && "modern-program-board")}>
       <div className="program-toolbar flex flex-wrap justify-end gap-3">
         <Button onClick={() => router.push("/assistant")}>Создать с помощником</Button>
         <Button onClick={() => setProgramModal({ mode: "create" })}>Новая программа</Button>
       </div>
+      <div className={modern ? "program-workspace" : undefined}>
+        {modern && <ProgramNavigator folders={folders ?? []} selectedId={selectedFolder?.id} onSelect={setSelectedFolderId} onCreate={() => setProgramModal({ mode: "create" })} />}
       <div className="program-grid space-y-4">
-        {folders?.map((folder) => (
+        {visibleFolders?.map((folder) => (
           <FolderCallout
             key={folder.id}
             folder={folder}
-            expanded={!!expandedFolders[folder.id]}
-            onToggle={() => toggleFolder(folder.id)}
+            expanded={modern || !!expandedFolders[folder.id]}
+            onToggle={() => { if (!modern) toggleFolder(folder.id); }}
             onEdit={() => setProgramModal({ mode: "edit", folder })}
             onCreateTemplate={(refresh) =>
               setTemplateModal({ mode: "create", folderId: folder.id, refresh })
@@ -433,6 +443,7 @@ export const ProgramBoard = ({ initialFocus }: ProgramBoardProps = {}) => {
             onEditTemplate={(templateId, refresh) =>
               setTemplateModal({ mode: "edit", templateId, refresh })
             }
+            modern={modern}
             templateExpanded={expandedTemplates}
             onToggleTemplate={toggleTemplate}
             onOpenChat={() => openChatForFolder(folder)}
@@ -458,6 +469,7 @@ export const ProgramBoard = ({ initialFocus }: ProgramBoardProps = {}) => {
             onReorderExercises={reorderExercises}
           />
         ))}
+      </div>
       </div>
       <ProgramModal
         state={programModal}
@@ -596,6 +608,7 @@ export const ProgramBoard = ({ initialFocus }: ProgramBoardProps = {}) => {
 
 const FolderCallout = ({
   folder,
+  modern = false,
   expanded,
   onToggle,
   onEdit,
@@ -610,6 +623,7 @@ const FolderCallout = ({
   onOpenChat,
 }: {
   folder: Folder;
+  modern?: boolean;
   expanded: boolean;
   onToggle: () => void;
   onEdit: () => void;
@@ -644,11 +658,12 @@ const FolderCallout = ({
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <button
           className="flex min-w-0 flex-1 items-center gap-3 text-left"
-          onClick={onToggle}
-          aria-expanded={expanded}
+          onClick={modern ? onEdit : onToggle}
+          aria-expanded={modern ? undefined : expanded}
+          aria-label={modern ? `Настроить программу: ${folder.name}` : undefined}
           type="button"
         >
-          <ChevronIcon expanded={expanded} />
+          {!modern && <ChevronIcon expanded={expanded} />}
           <div className="min-w-0">
             <p className="text-base font-semibold leading-tight text-slate-900 sm:text-lg">{folder.name}</p>
             {folder.comment && <p className="text-sm text-slate-500 hidden sm:block">{folder.comment}</p>}
@@ -680,7 +695,7 @@ const FolderCallout = ({
         </div>
       </div>
       <div
-        className={`overflow-hidden transition-[max-height,opacity] duration-500 ease-out ${expanded ? "max-h-[1200px] opacity-100" : "max-h-0 opacity-0"}`}
+        className={modern ? "program-days" : `overflow-hidden transition-[max-height,opacity] duration-500 ease-out ${expanded ? "max-h-[1200px] opacity-100" : "max-h-0 opacity-0"}`}
       >
         {expanded && (
         <div className="mt-4 border-t border-slate-100 pt-4">
@@ -693,7 +708,7 @@ const FolderCallout = ({
               <TemplateCard
                 key={template.id}
                 template={template}
-                expanded={!!templateExpanded[template.id]}
+                expanded={modern ? templateExpanded[template.id] !== false : !!templateExpanded[template.id]}
                 onToggle={() => onToggleTemplate(template.id)}
                 onEdit={() => onEditTemplate(template.id, () => mutate())}
                 onAddExercise={() =>

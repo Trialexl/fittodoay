@@ -4,11 +4,13 @@ import { Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ProgramBoard } from "@/components/programs/ProgramBoard";
 import { useAuth } from "@/state/AuthContext";
+import { useTheme } from "@/state/ThemeContext";
 
 const ProgramsPageContent = () => {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, loading } = useAuth();
+  const { designVersion } = useTheme();
   const parseId = (value: string | null) => (value ? Number(value) : undefined);
   const folderId = parseId(searchParams.get("folder"));
   const templateId = parseId(searchParams.get("template"));
@@ -28,10 +30,9 @@ const ProgramsPageContent = () => {
     <div className="space-y-8">
       <header className="ui-page-heading">
         <p className="text-sm uppercase tracking-widest text-primary">Программы и шаблоны</p>
-        <h1 className="text-3xl font-semibold">Управление папками и днями</h1>
+        <h1 className="text-3xl font-semibold">{designVersion === "v2" ? "Мои программы" : "Управление папками и днями"}</h1>
         <p className="text-slate-600">
-          Активируйте папки, создавайте шаблоны, добавляйте упражнения из каталога
-          или собственные варианты.
+          {designVersion === "v2" ? "Выбирайте программу, настраивайте дни и упражнения." : "Активируйте папки, создавайте шаблоны, добавляйте упражнения из каталога или собственные варианты."}
         </p>
       </header>
       <ProgramBoard

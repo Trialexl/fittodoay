@@ -77,6 +77,7 @@ export const AdjustNumberControl = ({
         </AdjustButton>
         <input
           type="number"
+          aria-label={label}
           inputMode={inputMode}
           value={value}
           onChange={(e) => onChange(e.target.value)}

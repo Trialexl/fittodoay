@@ -1,8 +1,10 @@
-"use client";
+'use client';
 
-import { Button } from "@/components/ui/Button";
-import { useEffect, useMemo, useState } from "react";
-import { createPortal } from "react-dom";
+import { useTheme } from '@/state/ThemeContext';
+import { WorkoutTimerScreen } from './WorkoutTimerScreen';
+import { Button } from '@/components/ui/Button';
+import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 type Props = {
   pending: { exerciseName: string; duration: number } | null;
@@ -21,6 +23,7 @@ export const ExecutionTimerOverlay = ({
   onCancel,
   onFinishEarly,
 }: Props) => {
+  const { designVersion } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [visibleCallout, setVisibleCallout] = useState<string[] | null>(null);
 
@@ -31,9 +34,9 @@ export const ExecutionTimerOverlay = ({
 
   useEffect(() => {
     if (!pending || !mounted) return;
-    document.body.style.overflow = "hidden";
+    document.body.style.overflow = 'hidden';
     return () => {
-      document.body.style.overflow = "";
+      document.body.style.overflow = '';
     };
   }, [pending, mounted]);
 
@@ -41,8 +44,8 @@ export const ExecutionTimerOverlay = ({
   const showAlmost = duration >= 10 && displayRemaining === 10;
   const showFinal = displayRemaining === 1;
   const calloutText = useMemo(() => {
-    if (showFinal) return ["СУПЕР"];
-    if (showAlmost) return ["Еще чуть-чуть"];
+    if (showFinal) return ['СУПЕР'];
+    if (showAlmost) return ['Еще чуть-чуть'];
     return null;
   }, [showFinal, showAlmost]);
 
@@ -57,6 +60,37 @@ export const ExecutionTimerOverlay = ({
   }, [calloutText, pending]);
 
   if (!pending || !mounted) return null;
+
+  if (designVersion === 'v2')
+    return createPortal(
+      <WorkoutTimerScreen
+        mode="execution"
+        exerciseName={pending.exerciseName}
+        remaining={displayRemaining}
+        duration={duration}
+        active={isTimerActive}
+        callout={visibleCallout}
+        onClose={onCancel}
+        actions={
+          <>
+            <button
+              type="button"
+              className="timer-focus-primary"
+              onClick={() => onFinishEarly?.(Math.max(duration - displayRemaining, 0))}
+            >
+              Завершить раньше
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m5 12 5 5L20 7" />
+              </svg>
+            </button>
+            <button type="button" className="timer-focus-secondary" onClick={onCancel}>
+              Прервать
+            </button>
+          </>
+        }
+      />,
+      document.body,
+    );
 
   const overlay = (
     <div className="timer-overlay fixed inset-0 z-50 bg-slate-900/90 text-white">
@@ -81,13 +115,24 @@ export const ExecutionTimerOverlay = ({
               ))}
             </div>
           )}
-          <p className="text-xs uppercase tracking-[0.6em] text-slate-200 sm:text-sm">Выполнение</p>
+          <p className="text-xs uppercase tracking-[0.6em] text-slate-200 sm:text-sm">
+            Выполнение
+          </p>
           <p className="text-3xl font-semibold sm:text-4xl">{pending.exerciseName}</p>
           <div className="flex flex-col items-center">
             <div className="relative flex h-40 w-40 items-center justify-center rounded-full border border-white/30 sm:h-48 sm:w-48">
-              <span className="text-4xl font-bold tabular-nums sm:text-5xl">{displayRemaining}s</span>
+              <span className="text-4xl font-bold tabular-nums sm:text-5xl">
+                {displayRemaining}s
+              </span>
               <svg className="absolute inset-0 h-full w-full">
-                <circle cx="80" cy="80" r="70" stroke="rgba(255,255,255,0.2)" strokeWidth="8" fill="none" />
+                <circle
+                  cx="80"
+                  cy="80"
+                  r="70"
+                  stroke="rgba(255,255,255,0.2)"
+                  strokeWidth="8"
+                  fill="none"
+                />
                 <circle
                   cx="80"
                   cy="80"
