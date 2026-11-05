@@ -60,6 +60,10 @@ class LLMPreferencesSerializer(serializers.Serializer):
     design_version = serializers.ChoiceField(
         choices=[("v1", "Классический"), ("v2", "Современный")], required=False
     )
+    muscle_summary_view = serializers.ChoiceField(
+        choices=[("chips", "Плашки в сводке"), ("bars", "Отдельный виджет")],
+        required=False,
+    )
     music_group_by = serializers.ChoiceField(
         choices=["none", "folder", "artist", "album"], required=False
     )

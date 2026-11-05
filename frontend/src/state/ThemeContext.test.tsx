@@ -209,3 +209,31 @@ describe('appearance settings controls', () => {
     expect(profile.design_version).toBe('v2');
   });
 });
+
+describe('muscle summary preference', () => {
+  it('defaults to chips, retries failed widget saves and restores the server choice', async () => {
+    profile.design_version = 'v2';
+    const settings = () => <ThemeProvider><DesignVersionSettings /><Harness /></ThemeProvider>;
+    const mounted = render(settings());
+    await waitFor(() => expect(state().loading).toBe(false));
+    expect((screen.getByRole('radio', { name: /Плашки в сводке/ }) as HTMLInputElement).checked).toBe(true);
+    mocks.api.mockRejectedValueOnce(new Error('offline'));
+    fireEvent.click(screen.getByRole('radio', { name: /Отдельный виджет/ }));
+    await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
+    expect((screen.getByRole('radio', { name: /Отдельный виджет/ }) as HTMLInputElement).checked).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Повторить сохранение' }));
+    await waitFor(() => expect(state().saving).toBe(false));
+    expect(profile.muscle_summary_view).toBe('bars');
+    mounted.unmount();
+    localStorage.clear();
+    render(settings());
+    await waitFor(() => expect(state().loading).toBe(false));
+    expect((screen.getByRole('radio', { name: /Отдельный виджет/ }) as HTMLInputElement).checked).toBe(true);
+    fireEvent.click(screen.getByRole('radio', { name: /Классический/ }));
+    await waitFor(() => expect(state().saving).toBe(false));
+    expect(screen.queryByText('Группы мышц на тренировке')).toBeNull();
+    fireEvent.click(screen.getByRole('radio', { name: /Современный/ }));
+    await waitFor(() => expect(state().saving).toBe(false));
+    expect((screen.getByRole('radio', { name: /Отдельный виджет/ }) as HTMLInputElement).checked).toBe(true);
+  });
+});

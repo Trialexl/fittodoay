@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
-import { ModernExerciseHeading, ModernSetRow, WorkoutOverview } from './ModernWorkout';
+import { ModernExerciseHeading, ModernSetRow, WorkoutOverview, MuscleProgressWidget } from './ModernWorkout';
 
 afterEach(cleanup);
 
@@ -68,7 +68,10 @@ it('shows actual progress including an empty rest day without invalid percentage
     total: 12,
     exercises: 4,
     load: 864,
-    muscles: ['Спина', 'Плечи'],
+    muscleGroups: [
+      { name: 'спина', total: 4, completed: 3 },
+      { name: 'плечи', total: 2, completed: 0 },
+    ],
     onCalendar: calendar,
     weighIn: <input aria-label="Вес" defaultValue="80" />,
   };
@@ -77,9 +80,37 @@ it('shows actual progress including an empty rest day without invalid percentage
   fireEvent.click(screen.getByRole('button', { name: 'Открыть календарь тренировок' }));
   expect(calendar).toHaveBeenCalledOnce();
   view.rerender(
-    <WorkoutOverview {...props} total={0} completed={0} exercises={0} muscles={[]} />,
+    <WorkoutOverview {...props} total={0} completed={0} exercises={0} muscleGroups={[]} />,
   );
   expect(screen.getByText('Время восстановиться')).toBeTruthy();
   expect(document.body.textContent).not.toContain('NaN');
   expect((screen.getByRole('textbox') as HTMLInputElement).value).toBe('80');
+});
+
+it('shows all muscle counts by default and switches to completed-versus-planned bars', () => {
+  const groups = Array.from({ length: 8 }, (_, i) => ({ name: `группа ${i + 1}`, total: 4, completed: 3 }));
+  const props = {
+    date: '2026-11-05', completed: 9, total: 12, exercises: 4, load: 800,
+    muscleGroups: groups, weighIn: <input aria-label="Вес" defaultValue="73" />,
+  };
+  const view = render(<WorkoutOverview {...props} />);
+  const chips = screen.getByRole('list', { name: 'Количество упражнений по группам мышц' });
+  expect(chips.children.length).toBe(8);
+  expect(screen.queryByRole('progressbar')).toBeNull();
+  view.rerender(<WorkoutOverview {...props} muscleSummaryView="bars" />);
+  expect(screen.queryByRole('list')).toBeNull();
+  const bar = screen.getByRole('progressbar', { name: 'группа 1: выполнено упражнений' });
+  expect(bar.getAttribute('aria-valuemax')).toBe('4');
+  expect(bar.getAttribute('aria-valuenow')).toBe('3');
+  expect(bar.getAttribute('aria-valuetext')).toBe('Выполнено 3 из 4');
+  expect(bar.parentElement!.querySelector<HTMLElement>('.session-muscle-completed')!.style.width).toBe('75%');
+  expect((screen.getByLabelText('Вес') as HTMLInputElement).value).toBe('73');
+  view.rerender(<WorkoutOverview {...props} muscleGroups={[{ ...groups[0], completed: 4 }]} muscleSummaryView="bars" />);
+  expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBe('4');
+  expect(document.querySelector<HTMLElement>('.session-muscle-completed')!.style.width).toBe('100%');
+});
+
+it('does not show a muscle widget without muscle data', () => {
+  render(<MuscleProgressWidget groups={[]} />);
+  expect(screen.queryByRole('region')).toBeNull();
 });

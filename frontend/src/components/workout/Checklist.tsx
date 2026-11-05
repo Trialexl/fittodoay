@@ -2,6 +2,7 @@
 
 import { usePlaylistReveal } from "@/hooks/usePlaylistReveal";
 import { useTheme } from "@/state/ThemeContext";
+import { summarizeMuscles } from "@/lib/muscleSummary";
 import { WorkoutOverview, ModernExerciseHeading, ModernSetRow } from "./ModernWorkout";
 import Link from "next/link";
 import clsx from "clsx";
@@ -1016,7 +1017,7 @@ export const Checklist = ({
   onOpenCalendar: () => void;
 }) => {
   const auth = useAuth();
-  const { designVersion } = useTheme();
+  const { designVersion, muscleSummaryView } = useTheme();
   const modern = designVersion === "v2";
   const audioContextRef = useRef<AudioContext | null>(null);
   const musicAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -3584,6 +3585,7 @@ export const Checklist = ({
     Math.abs(currentWeighInNumeric - inputWeighInNumeric) <= 0.05;
 
   const sessionExercises = plan?.folders.flatMap((folder) => folder.templates.flatMap((template) => template.exercises.filter(isExerciseActive))) ?? [];
+  const muscleGroups = summarizeMuscles(sessionExercises, (exerciseId, setIndex) => logsBySet.has(keyForSet(exerciseId, setIndex)));
   const sessionTotal = sessionExercises.reduce((sum, exercise) => sum + exercise.sets.length, 0);
   const sessionCompleted = sessionExercises.reduce((sum, exercise) => sum + exercise.sets.filter((set) => getLogForSet(exercise.template_exercise_id, set.set_index)).length, 0);
   const weighInControl = (
@@ -3660,7 +3662,7 @@ export const Checklist = ({
           )}
         </div>
       )}
-      {modern ? <WorkoutOverview date={headerDate} completed={sessionCompleted} total={sessionTotal} exercises={sessionExercises.length} load={dailyLoad} muscles={todayMuscles.map(([muscle]) => muscle)} onCalendar={onOpenCalendar} weighIn={weighInControl} /> : (
+      {modern ? <WorkoutOverview date={headerDate} completed={sessionCompleted} total={sessionTotal} exercises={sessionExercises.length} load={dailyLoad} muscleGroups={muscleGroups} muscleSummaryView={muscleSummaryView} onCalendar={onOpenCalendar} weighIn={weighInControl} /> : (
       <section className="workout-overview space-y-2">
         <p className="text-sm uppercase tracking-widest text-primary">Дневной чеклист</p>
         <div className="flex items-stretch gap-3">

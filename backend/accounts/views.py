@@ -97,6 +97,7 @@ class LLMPreferencesView(APIView):
                 "theme": "light",
                 "accent_color": "#a855f7",
                 "design_version": "v1",
+                "muscle_summary_view": "chips",
                 "music_group_by": "folder",
             }
         )

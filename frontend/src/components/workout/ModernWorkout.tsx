@@ -2,6 +2,48 @@
 
 import Link from 'next/link';
 import { type ReactNode } from 'react';
+import type { MuscleSummaryView } from '@/state/ThemeContext';
+import type { MuscleSummary } from '@/lib/muscleSummary';
+
+export function MuscleProgressWidget({ groups }: { groups: MuscleSummary[] }) {
+  if (!groups.length) return null;
+  const maxTotal = Math.max(...groups.map((group) => group.total));
+  return (
+    <section className="session-muscle-widget" aria-label="Упражнения по группам мышц">
+      <header>
+        <h2>Группы мышц</h2>
+        <span>упражнений</span>
+      </header>
+      <div className="session-muscle-bars" aria-live="polite">
+        {groups.map(({ name, total, completed }) => (
+          <div className="session-muscle-row" key={name}>
+            <span className="session-muscle-name">{name}</span>
+            <span className="session-muscle-track" aria-hidden="true">
+              <span className="session-muscle-planned" style={{ width: `${(total / maxTotal) * 100}%` }}>
+                <span className="session-muscle-completed" style={{ width: `${(completed / total) * 100}%` }} />
+              </span>
+            </span>
+            <span
+              className="session-muscle-count"
+              role="progressbar"
+              aria-label={`${name}: выполнено упражнений`}
+              aria-valuemin={0}
+              aria-valuemax={total}
+              aria-valuenow={completed}
+              aria-valuetext={`Выполнено ${completed} из ${total}`}
+            >
+              <strong>{completed}</strong> из {total}
+            </span>
+          </div>
+        ))}
+      </div>
+      <footer>
+        <span><i className="session-muscle-legend-complete" aria-hidden="true" />Выполнено</span>
+        <span><i className="session-muscle-legend-planned" aria-hidden="true" />Осталось</span>
+      </footer>
+    </section>
+  );
+}
 
 export function WorkoutOverview({
   date,
@@ -9,7 +51,8 @@ export function WorkoutOverview({
   total,
   exercises,
   load,
-  muscles,
+  muscleGroups,
+  muscleSummaryView = 'chips',
   onCalendar,
   weighIn,
 }: {
@@ -18,7 +61,8 @@ export function WorkoutOverview({
   total: number;
   exercises: number;
   load: number;
-  muscles: string[];
+  muscleGroups: MuscleSummary[];
+  muscleSummaryView?: MuscleSummaryView;
   onCalendar?: () => void;
   weighIn: ReactNode;
 }) {
@@ -64,15 +108,15 @@ export function WorkoutOverview({
           <span aria-hidden="true">⌄</span>
         </button>
       </header>
-      <div className="session-dashboard">
+      <div className="session-dashboard" data-muscle-view={muscleSummaryView}>
         <section className="session-focus" aria-label="Прогресс тренировки">
           <div className="session-focus-copy">
             <span className="session-kicker">
               {total > 0 && completed === total ? 'ВСЁ ВЫПОЛНЕНО' : 'СЕГОДНЯ В ФОКУСЕ'}
             </span>
             <h2>
-              {muscles.length
-                ? muscles.slice(0, 2).join(' + ')
+              {muscleGroups.length
+                ? muscleGroups.slice(0, 2).map((group) => group.name).join(' + ')
                 : total
                   ? 'Твой следующий подход'
                   : 'Время восстановиться'}
@@ -121,6 +165,16 @@ export function WorkoutOverview({
               Выполнено подходов: {completed} из {total}
             </span>
           </div>
+          {muscleSummaryView === 'chips' && muscleGroups.length > 0 && (
+            <ul className="session-muscle-chips" aria-label="Количество упражнений по группам мышц">
+              {muscleGroups.map((group) => (
+                <li key={group.name}>
+                  <span>{group.name}</span>
+                  <strong>{group.total}</strong>
+                </li>
+              ))}
+            </ul>
+          )}
         </section>
         <aside className="session-check-in">
           {weighIn}
@@ -128,6 +182,7 @@ export function WorkoutOverview({
             История измерений <span aria-hidden="true">↗</span>
           </Link>
         </aside>
+        {muscleSummaryView === 'bars' && <MuscleProgressWidget groups={muscleGroups} />}
       </div>
     </div>
   );

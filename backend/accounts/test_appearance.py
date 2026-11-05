@@ -53,6 +53,38 @@ def test_music_grouping_defaults_persists_and_preserves_other_preferences(accoun
 
 
 @pytest.mark.django_db
+def test_muscle_summary_defaults_persists_and_preserves_other_preferences(account):
+    user, client = account
+    assert client.get("/api/profile/preferences/").data["muscle_summary_view"] == "chips"
+    for mode in ("bars", "chips"):
+        response = client.put(
+            "/api/profile/preferences/", {"muscle_summary_view": mode}, format="json"
+        )
+        assert response.status_code == 200
+        assert response.data["muscle_summary_view"] == mode
+        new_session = APIClient()
+        new_session.force_authenticate(user=type(user).objects.get(pk=user.pk))
+        assert new_session.get("/api/profile/preferences/").data["muscle_summary_view"] == mode
+        client.put("/api/profile/preferences/", {"theme": "light"}, format="json")
+        user.profile.refresh_from_db()
+        assert user.profile.llm_preferences["muscle_summary_view"] == mode
+        assert user.profile.llm_preferences["sessions_per_week"] == 3
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("invalid", ["other", "", None, 2])
+def test_invalid_muscle_summary_does_not_change_preferences(account, invalid):
+    user, client = account
+    response = client.put(
+        "/api/profile/preferences/", {"muscle_summary_view": invalid}, format="json"
+    )
+    assert response.status_code == 400
+    user.profile.refresh_from_db()
+    assert "muscle_summary_view" not in user.profile.llm_preferences
+
+
+
+@pytest.mark.django_db
 def test_design_defaults_to_classic_and_persists_across_sessions(account):
     user, client = account
     assert client.get("/api/profile/preferences/").data["design_version"] == "v1"

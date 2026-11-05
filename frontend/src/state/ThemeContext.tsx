@@ -14,11 +14,18 @@ import { useAuth } from '@/state/AuthContext';
 
 type ThemeMode = 'light' | 'dark';
 export type DesignVersion = 'v1' | 'v2';
-type Appearance = { theme: ThemeMode; accentColor: string; designVersion: DesignVersion };
+export type MuscleSummaryView = 'chips' | 'bars';
+type Appearance = {
+  theme: ThemeMode;
+  accentColor: string;
+  designVersion: DesignVersion;
+  muscleSummaryView: MuscleSummaryView;
+};
 type ThemeContextValue = Appearance & {
   setTheme: (mode: ThemeMode) => void;
   setAccentColor: (color: string) => void;
   setDesignVersion: (version: DesignVersion) => void;
+  setMuscleSummaryView: (view: MuscleSummaryView) => void;
   retrySave: () => void;
   loading: boolean;
   saving: boolean;
@@ -30,6 +37,7 @@ const DEFAULTS: Appearance = {
   theme: 'light',
   accentColor: '#a855f7',
   designVersion: 'v1',
+  muscleSummaryView: 'chips',
 };
 const HEX_PATTERN = /^#[0-9a-fA-F]{6}$/;
 const normalize = (data: Partial<Appearance>): Appearance => ({
@@ -38,12 +46,14 @@ const normalize = (data: Partial<Appearance>): Appearance => ({
     ? data.accentColor!.toLowerCase()
     : DEFAULTS.accentColor,
   designVersion: data.designVersion === 'v2' ? 'v2' : 'v1',
+  muscleSummaryView: data.muscleSummaryView === 'bars' ? 'bars' : 'chips',
 });
 const fromApi = (data: Record<string, unknown>) =>
   normalize({
     theme: data.theme as ThemeMode,
     accentColor: data.accent_color as string,
     designVersion: data.design_version as DesignVersion,
+    muscleSummaryView: data.muscle_summary_view as MuscleSummaryView,
   });
 
 function apply(appearance: Appearance) {
@@ -168,6 +178,7 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
                 theme: next.theme,
                 accent_color: next.accentColor,
                 design_version: next.designVersion,
+                muscle_summary_view: next.muscleSummaryView,
               }),
             },
           );
@@ -201,6 +212,8 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
       },
       setDesignVersion: (designVersion) =>
         persist(normalize({ ...current.current, designVersion })),
+      setMuscleSummaryView: (muscleSummaryView) =>
+        persist(normalize({ ...current.current, muscleSummaryView })),
       retrySave: () => persist(current.current),
     }),
     [appearance, error, loading, persist, saving],

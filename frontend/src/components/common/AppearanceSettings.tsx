@@ -5,7 +5,7 @@ import { useAuth } from '@/state/AuthContext';
 import { Button } from '@/components/ui/Button';
 
 export function DesignVersionSettings() {
-  const { designVersion, setDesignVersion, loading, saving, error, retrySave } =
+  const { designVersion, setDesignVersion, muscleSummaryView, setMuscleSummaryView, loading, saving, error, retrySave } =
     useTheme();
   const { user } = useAuth();
   const designs: { value: DesignVersion; name: string; description: string }[] = [
@@ -59,6 +59,35 @@ export function DesignVersionSettings() {
           </label>
         ))}
       </div>
+      {designVersion === 'v2' && (
+        <fieldset className="muscle-view-settings">
+          <legend>Группы мышц на тренировке</legend>
+          <div className="design-choice-grid">
+            <label className="design-choice" data-selected={muscleSummaryView === 'chips'}>
+              <input
+                type="radio"
+                name="muscle-summary-view"
+                value="chips"
+                checked={muscleSummaryView === 'chips'}
+                onChange={() => setMuscleSummaryView('chips')}
+              />
+              <span className="design-choice-title">Плашки в сводке</span>
+              <span className="design-choice-description">Количество упражнений на каждую группу в верхней карточке.</span>
+            </label>
+            <label className="design-choice" data-selected={muscleSummaryView === 'bars'}>
+              <input
+                type="radio"
+                name="muscle-summary-view"
+                value="bars"
+                checked={muscleSummaryView === 'bars'}
+                onChange={() => setMuscleSummaryView('bars')}
+              />
+              <span className="design-choice-title">Отдельный виджет</span>
+              <span className="design-choice-description">Общее и выполненное количество упражнений со шкалой прогресса.</span>
+            </label>
+          </div>
+        </fieldset>
+      )}
       <div aria-live="polite" className="appearance-save-status">
         {loading
           ? 'Загружаем настройки…'
