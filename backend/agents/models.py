@@ -82,3 +82,25 @@ class LLMProgramMessage(TimestampedModel):
 
     def __str__(self):
         return f"{self.role} message {self.id} in thread {self.thread_id}"
+
+
+def draft_expiration():
+    from datetime import timedelta
+    from django.utils import timezone
+
+    return timezone.now() + timedelta(days=1)
+
+
+class LLMProgramDraft(TimestampedModel):
+    """Reviewed generation is saved only after explicit, idempotent confirmation."""
+
+    import uuid
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="llm_program_drafts"
+    )
+    plan = models.JSONField()
+    profile_snapshot = models.JSONField(default=dict)
+    expires_at = models.DateTimeField(default=draft_expiration)
+    applied_result = models.JSONField(null=True, blank=True)

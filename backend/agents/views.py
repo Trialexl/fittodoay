@@ -39,6 +39,7 @@ class LLMProgramView(APIView):
     request_serializer = LLMProgramRequestSerializer
     response_serializer = LLMProgramResponseSerializer
     preferences_serializer = LLMPreferencesSerializer
+    preview = False
 
     def post(self, request, *args, **kwargs):
         serializer = self.request_serializer(data=request.data, partial=True)
@@ -53,7 +54,7 @@ class LLMProgramView(APIView):
 
         try:
             service = LLMProgramGenerationService(user=request.user)
-            result = service.generate(merged_preferences)
+            result = service.generate(merged_preferences, preview=self.preview)
         except LLMUnavailableError:
             logger.info("LLM unavailable for user %s", request.user.id)
             return Response(
@@ -76,7 +77,9 @@ class LLMProgramView(APIView):
             )
 
         response = self.response_serializer(result)
-        return Response(response.data, status=status.HTTP_201_CREATED)
+        return Response(
+            result if self.preview else response.data, status=status.HTTP_201_CREATED
+        )
 
     def _normalize(self, data):
         normalized = {}
@@ -201,3 +204,32 @@ class LLMProgramCancelView(APIView):
         except LLMInvalidResponse as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(result, status=status.HTTP_200_OK)
+
+
+class LLMProgramPreviewView(LLMProgramView):
+    preview = True
+
+
+class LLMProgramDraftApplyView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, draft_id):
+        try:
+            result = LLMProgramGenerationService(request.user).apply_draft(draft_id)
+        except LLMInvalidResponse as exc:
+            code = str(exc)
+            messages = {
+                "draft_expired": "Черновик устарел. Сгенерируйте программу заново.",
+                "draft_profile_changed": "Профиль изменился. Сгенерируйте программу с актуальными условиями.",
+                "draft_not_found": "Черновик не найден.",
+            }
+            return Response(
+                {
+                    "detail": code,
+                    "message": messages.get(
+                        code, "Черновик больше нельзя применить. Создайте новый."
+                    ),
+                },
+                status=404 if code == "draft_not_found" else 409,
+            )
+        return Response(result)

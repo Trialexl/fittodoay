@@ -470,11 +470,11 @@ def test_chat_prompt_requires_exercise_choice_and_technique_help():
     assert "Не отказывай в таком объяснении" in system_prompt
     assert "template_exercise_id" in system_prompt
     assert "только параметры, которые действительно нужно изменить" in system_prompt
-    assert "используй available_exercises из JSON-контекста" in system_prompt
+    assert "сначала вызови search_exercises" in system_prompt
 
 
 @pytest.mark.django_db
-def test_chat_shortlist_uses_recent_context_for_catalog_list_request():
+def test_chat_preserves_history_but_uses_tools_instead_of_eager_shortlist():
     user = User.objects.create_user(
         email="agent_catalog_context@example.com", password="pass"
     )
@@ -549,8 +549,10 @@ def test_chat_shortlist_uses_recent_context_for_catalog_list_request():
     context = json.loads(messages[1]["content"])
     names = {item["name"] for item in context["available_exercises"]}
 
-    assert "Тяга штанги в наклоне" in names
-    assert "Жим плеч" not in names
+    assert names == set()
+    assert "search_exercises" in messages[0]["content"]
+    assert any(item["content"] == "посоветуй упражнения для спины" for item in messages)
+    assert messages[-1]["content"] == "выведи все что у нас есть в базе"
 
 
 @pytest.mark.django_db
@@ -1321,7 +1323,7 @@ def test_apply_actions_supports_create_exercise_alias():
 
 
 @pytest.mark.django_db
-def test_apply_actions_resolves_noisy_exercise_identifier():
+def test_apply_actions_rejects_invented_exercise_identifier():
     user = User.objects.create_user(
         email="agent_noisy_ex_id@example.com", password="pass"
     )
@@ -1375,9 +1377,8 @@ def test_apply_actions_resolves_noisy_exercise_identifier():
     )
 
     assert response.status_code == 200
-    assert TemplateExercise.objects.filter(
-        template=day, exercise_id="assisted_pull_up"
-    ).exists()
+    assert response.data["applied"][0]["status"] == "skipped"
+    assert not TemplateExercise.objects.filter(template=day).exists()
 
 
 @pytest.mark.django_db

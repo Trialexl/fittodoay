@@ -105,17 +105,30 @@ def register_domain_tools(mcp: FastMCP) -> None:
         return await _call("GET", "/api/profile/")
 
     @mcp.tool(
-        description="Найти упражнения каталога по названию и мышцам.", annotations=READ
+        description="Найти упражнения по названию, оборудованию, основным и вспомогательным мышцам. primary_only=true — только по явному запросу исключительно основных мышц.",
+        annotations=READ,
     )
     async def search_exercises(
         query: str | None = None,
         muscles: str | None = None,
+        equipment: str | None = None,
+        primary_only: bool = False,
+        limit: int = 20,
+        offset: int = 0,
         ordering: Literal["name", "-name"] | None = None,
     ) -> Any:
         return await _call(
             "GET",
             "/api/exercises/",
-            query={"q": query, "muscles": muscles, "ordering": ordering},
+            query={
+                "q": query,
+                "muscles": muscles,
+                "equipment": equipment,
+                "primary_only": str(primary_only).lower(),
+                "limit": limit,
+                "offset": offset,
+                "ordering": ordering,
+            },
         )
 
     @mcp.tool(

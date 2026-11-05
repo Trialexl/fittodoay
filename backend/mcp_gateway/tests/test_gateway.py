@@ -353,3 +353,16 @@ def test_template_source_and_workout_log_upsert_are_exact():
     assert WorkoutSetLog.objects.count() == 1
     assert first["actual_weight"] == second["actual_weight"] == "42.50"
     assert second["actual_time"] == 90
+
+
+def test_mcp_search_includes_secondary_muscles_unless_explicitly_disabled():
+    with patch("mcp_gateway.domain_tools._call", new_callable=AsyncMock) as api:
+        api.return_value = []
+        asyncio.run(mcp.call_tool("search_exercises", {"muscles": "широчайшие"}))
+        assert api.call_args.kwargs["query"]["primary_only"] == "false"
+        asyncio.run(
+            mcp.call_tool(
+                "search_exercises", {"muscles": "широчайшие", "primary_only": True}
+            )
+        )
+        assert api.call_args.kwargs["query"]["primary_only"] == "true"

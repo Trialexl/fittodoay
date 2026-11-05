@@ -13,7 +13,7 @@ import {
 } from "@dnd-kit/core";
 import { arrayMove, SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import useSWR from "swr";
+import useSWR, { useSWRConfig } from "swr";
 import { useRouter } from "next/navigation";
 
 import { apiFetch, resolveApiUrl } from "@/lib/api";
@@ -173,6 +173,7 @@ type ApplyActionsResponse = {
 export const ProgramBoard = ({ initialFocus }: ProgramBoardProps = {}) => {
   const router = useRouter();
   const { token } = useAuth();
+  const { mutate: refreshCache } = useSWRConfig();
   const { designVersion } = useTheme();
   const modern = designVersion === "v2";
   const [selectedFolderId, setSelectedFolderId] = useState<number | undefined>(initialFocus?.folderId);
@@ -195,6 +196,7 @@ export const ProgramBoard = ({ initialFocus }: ProgramBoardProps = {}) => {
   });
   const [chatInput, setChatInput] = useState("");
   const [chatError, setChatError] = useState<string | null>(null);
+  const [chatNotice, setChatNotice] = useState<string | null>(null);
   const [chatLoading, setChatLoading] = useState(false);
   const [applying, setApplying] = useState(false);
   const [cancelling, setCancelling] = useState(false);
@@ -345,6 +347,7 @@ export const ProgramBoard = ({ initialFocus }: ProgramBoardProps = {}) => {
     if (!token || !chatState.threadId || !chatInput.trim()) return;
     setChatLoading(true);
     setChatError(null);
+    setChatNotice(null);
     scrollChatToBottom();
     try {
       await apiFetch(`/api/llm-agent/threads/${chatState.threadId}/messages/`, {
@@ -367,6 +370,7 @@ export const ProgramBoard = ({ initialFocus }: ProgramBoardProps = {}) => {
     if (!token || !chatState.threadId || !latestPendingProposal) return;
     setApplying(true);
     setChatError(null);
+    setChatNotice(null);
     try {
       const result = await apiFetch<ApplyActionsResponse>(
         `/api/llm-agent/threads/${chatState.threadId}/apply/`,
@@ -386,9 +390,14 @@ export const ProgramBoard = ({ initialFocus }: ProgramBoardProps = {}) => {
         refreshChat();
         return;
       }
-      refreshChat();
-      refreshFolders();
-      setChatState((prev) => ({ ...prev, open: false }));
+      const skipped = applied.filter((item) => item?.status === "skipped");
+      setChatNotice(`Применено: ${applied.length - skipped.length}. Пропущено: ${skipped.length}.`);
+      if (skipped.length) setChatError(skipped.map((item) => humanizeChatError(String(item.reason ?? "Не удалось применить действие"))).join(" "));
+      await Promise.allSettled([
+        refreshChat(),
+        refreshFolders(),
+        refreshCache([`/api/programs/templates/?folder=${chatState.folder?.id}`, token]),
+      ]);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Не удалось применить изменения";
       setChatError(humanizeChatError(message));
@@ -557,7 +566,8 @@ export const ProgramBoard = ({ initialFocus }: ProgramBoardProps = {}) => {
             )}
           </div>
           <div className="sticky bottom-0 mt-3 border-t border-slate-200/80 bg-white/95 pt-2 backdrop-blur dark:border-slate-700 dark:bg-slate-900/95">
-            {chatError && <p className="mb-2 text-sm text-red-500">{chatError}</p>}
+            {chatNotice && <p role="status" className="mb-2 text-sm text-slate-600">{chatNotice}</p>}
+            {chatError && <p role="alert" className="mb-2 text-sm text-red-500">{chatError}</p>}
             {latestPendingProposal && (
               <div className="mb-2 flex items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 dark:border-amber-500/40 dark:bg-amber-500/10">
                 <p className="text-xs text-amber-700 dark:text-amber-300">Есть неподтвержденные изменения.</p>
@@ -1783,6 +1793,9 @@ const TemplateExerciseModal = ({
 };
 
 const humanizeChatError = (message: string) => {
+  if (message.includes("proposal_stale")) return "Программа изменилась после предложения. Попросите помощника подготовить новое.";
+  if (message.includes("invalid_action_fields")) return "Изменение содержит недопустимые параметры. Попросите помощника уточнить предложение.";
+  if (message.includes("ambiguous") || message.includes("not_found") || message.includes("target_required")) return "Не удалось однозначно определить упражнение или день. Уточните выбор у помощника.";
   const normalized = (message || "").toLowerCase();
   if (
     normalized.includes("add_exercise requires valid day_id/day_name and exercise_id/exercise_name")

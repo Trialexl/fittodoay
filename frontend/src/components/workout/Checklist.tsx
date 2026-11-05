@@ -982,6 +982,9 @@ const describeAction = (
 };
 
 const humanizeChatError = (raw: string) => {
+  if (raw.includes("proposal_stale")) return "Программа изменилась после предложения. Попросите помощника подготовить новое.";
+  if (raw.includes("invalid_action_fields")) return "Изменение содержит недопустимые параметры. Попросите помощника уточнить предложение.";
+  if (raw.includes("ambiguous") || raw.includes("not_found") || raw.includes("target_required")) return "Не удалось однозначно определить упражнение или день. Уточните выбор у помощника.";
   if (!raw) return "Не удалось выполнить действие";
   if (raw.includes("invalid_update_weight_action")) {
     return "Не удалось применить изменение: ассистент не указал, какое упражнение нужно изменить.";
@@ -1213,6 +1216,7 @@ export const Checklist = ({
   }>({ open: false });
   const [chatInput, setChatInput] = useState("");
   const [chatError, setChatError] = useState<string | null>(null);
+  const [chatNotice, setChatNotice] = useState<string | null>(null);
   const [chatLoading, setChatLoading] = useState(false);
   const [chatApplying, setChatApplying] = useState(false);
   const [chatCancelling, setChatCancelling] = useState(false);
@@ -3293,6 +3297,7 @@ export const Checklist = ({
     if (!auth.token || !chatState.threadId || !chatInput.trim()) return;
     setChatLoading(true);
     setChatError(null);
+    setChatNotice(null);
     scrollChatToBottom();
     try {
       await apiFetch(`/api/llm-agent/threads/${chatState.threadId}/messages/`, {
@@ -3319,6 +3324,7 @@ export const Checklist = ({
     if (!auth.token || !chatState.threadId || !latestPendingProposal) return;
     setChatApplying(true);
     setChatError(null);
+    setChatNotice(null);
     try {
       const result = await apiFetch<ApplyActionsResponse>(
         `/api/llm-agent/threads/${chatState.threadId}/apply/`,
@@ -3340,7 +3346,9 @@ export const Checklist = ({
       }
       refreshChat();
       refresh();
-      setChatState((prev) => ({ ...prev, open: false }));
+      const skipped = applied.filter((item) => item?.status === "skipped");
+      setChatNotice(`Применено: ${applied.length - skipped.length}. Пропущено: ${skipped.length}.`);
+      if (skipped.length) setChatError(skipped.map((item) => humanizeChatError(String(item.reason ?? "Не удалось применить действие"))).join(" "));
     } catch (error) {
       const message = error instanceof Error ? error.message : "Не удалось применить изменения";
       setChatError(humanizeChatError(message));
@@ -4730,7 +4738,8 @@ export const Checklist = ({
             )}
           </div>
           <div className="sticky bottom-0 mt-3 border-t border-slate-200/80 bg-white/95 pt-2 backdrop-blur dark:border-slate-700 dark:bg-slate-900/95">
-            {chatError && <p className="mb-2 text-sm text-red-500">{chatError}</p>}
+            {chatNotice && <p role="status" className="mb-2 text-sm text-slate-600">{chatNotice}</p>}
+            {chatError && <p role="alert" className="mb-2 text-sm text-red-500">{chatError}</p>}
             {latestPendingProposal && (
               <div className="mb-2 flex items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 dark:border-amber-500/40 dark:bg-amber-500/10">
                 <p className="text-xs text-amber-700 dark:text-amber-300">Есть неподтвержденные изменения.</p>

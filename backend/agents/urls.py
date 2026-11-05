@@ -6,11 +6,23 @@ from .views import (
     LLMProgramMessageView,
     LLMProgramThreadView,
     LLMProgramView,
+    LLMProgramPreviewView,
+    LLMProgramDraftApplyView,
 )
 
 app_name = "agents"
 
 urlpatterns = [
+    path(
+        "llm-agent/programs/preview/",
+        LLMProgramPreviewView.as_view(),
+        name="llm-program-preview",
+    ),
+    path(
+        "llm-agent/programs/drafts/<uuid:draft_id>/apply/",
+        LLMProgramDraftApplyView.as_view(),
+        name="llm-program-draft-apply",
+    ),
     path("llm-agent/programs/", LLMProgramView.as_view(), name="llm-programs"),
     path(
         "llm-agent/threads/", LLMProgramThreadView.as_view(), name="llm-thread-create"

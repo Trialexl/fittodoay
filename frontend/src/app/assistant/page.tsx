@@ -32,6 +32,11 @@ type PreferencesPayload = {
   notes?: string | null;
 };
 
+type ProgramPreview = {
+  draft_id: string;
+  plan: { programs: { name: string; days: { name: string; schedule_config: { days_of_week: number[] }; exercises: { exercise_id: string; exercise_name: string; sets: number; reps?: number | null; weight?: number | null; time?: number | null; rest?: number | null }[] }[] }[] };
+};
+
 type GeneratedProgram = {
   id: number;
   name: string;
@@ -67,6 +72,7 @@ export default function AssistantPage() {
   const [form, setForm] = useState(defaultValues);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [preview, setPreview] = useState<ProgramPreview | null>(null);
   const [result, setResult] = useState<LLMResponse | null>(null);
 
   useEffect(() => {
@@ -194,11 +200,12 @@ export default function AssistantPage() {
         session_duration: form.session_duration ? Number(form.session_duration) : null,
         notes: form.notes?.trim() ? form.notes.trim() : null,
       };
-      const response = await apiFetch<LLMResponse>("/api/llm-agent/programs/", {
+      const response = await apiFetch<ProgramPreview>("/api/llm-agent/programs/preview/", {
         method: "POST",
         body: JSON.stringify(payload),
       });
-      setResult(response);
+      setPreview(response);
+      setResult(null);
       nextStep();
     } catch (err) {
       if (err instanceof ApiError) {
@@ -210,6 +217,21 @@ export default function AssistantPage() {
       } else {
         setError("Не удалось создать программу");
       }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const confirmPreview = async () => {
+    if (!preview) return;
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      const response = await apiFetch<LLMResponse>(`/api/llm-agent/programs/drafts/${preview.draft_id}/apply/`, { method: "POST" });
+      setResult(response);
+      setPreview(null);
+    } catch (err) {
+      setError(err instanceof ApiError && err.payload && typeof err.payload === "object" && "message" in err.payload ? String(err.payload.message) : "Не удалось сохранить программу. Можно повторить: дубликат не создастся.");
     } finally {
       setIsSubmitting(false);
     }
@@ -302,6 +324,37 @@ export default function AssistantPage() {
                   Сгенерировать программу
                 </Button>
               )}
+            </div>
+          </div>
+        )}
+
+        {step >= steps.length && preview && !result && (
+          <div className="space-y-4">
+            <h2 className="text-xl font-semibold text-slate-900">Проверьте программу</h2>
+            <p className="text-sm text-slate-500">Программа сохранится после подтверждения. Проверьте упражнения, расписание и нагрузку.</p>
+            {preview.plan.programs.map((program, index) => (
+              <section key={index} className="space-y-4">
+                <h3 className="text-lg font-semibold">{program.name}</h3>
+                {program.days.map((day, dayIndex) => (
+                  <div key={dayIndex} className="rounded-2xl border border-border bg-surface-muted p-4">
+                    <h4 className="font-semibold">{day.name}</h4>
+                    <p className="mt-1 text-xs text-slate-500">{day.schedule_config.days_of_week.map((weekday) => ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"][weekday]).join(", ")}</p>
+                    <ul className="mt-3 space-y-3">
+                      {day.exercises.map((exercise, exerciseIndex) => (
+                        <li key={exerciseIndex} className="text-sm">
+                          <strong className="font-medium">{exercise.exercise_name}</strong>
+                          <p className="text-xs text-slate-500">{exercise.sets} × {exercise.time != null ? `${exercise.time} сек.` : `${exercise.reps} повт.`}{exercise.weight != null ? ` · ${exercise.weight} кг` : ""}{exercise.rest != null ? ` · отдых ${exercise.rest} сек.` : ""}</p>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </section>
+            ))}
+            {error && <p role="alert" className="text-sm text-red-500">{error}</p>}
+            <div className="flex flex-wrap gap-3">
+              <Button onClick={confirmPreview} loading={isSubmitting}>Сохранить программу</Button>
+              <Button variant="secondary" disabled={isSubmitting} onClick={() => { setPreview(null); setError(null); setStep(steps.length - 1); }}>Изменить пожелания</Button>
             </div>
           </div>
         )}
