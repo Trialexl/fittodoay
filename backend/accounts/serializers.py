@@ -61,7 +61,11 @@ class LLMPreferencesSerializer(serializers.Serializer):
         choices=[("v1", "Классический"), ("v2", "Современный")], required=False
     )
     muscle_summary_view = serializers.ChoiceField(
-        choices=[("chips", "Плашки в сводке"), ("bars", "Отдельный виджет")],
+        choices=[
+            ("chips", "Плашки в сводке"),
+            ("bars", "Отдельный виджет"),
+            ("row", "Раскрываемая строка"),
+        ],
         required=False,
     )
     music_group_by = serializers.ChoiceField(

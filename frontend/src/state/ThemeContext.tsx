@@ -14,7 +14,7 @@ import { useAuth } from '@/state/AuthContext';
 
 type ThemeMode = 'light' | 'dark';
 export type DesignVersion = 'v1' | 'v2';
-export type MuscleSummaryView = 'chips' | 'bars';
+export type MuscleSummaryView = 'chips' | 'bars' | 'row';
 type Appearance = {
   theme: ThemeMode;
   accentColor: string;
@@ -46,7 +46,8 @@ const normalize = (data: Partial<Appearance>): Appearance => ({
     ? data.accentColor!.toLowerCase()
     : DEFAULTS.accentColor,
   designVersion: data.designVersion === 'v2' ? 'v2' : 'v1',
-  muscleSummaryView: data.muscleSummaryView === 'bars' ? 'bars' : 'chips',
+  muscleSummaryView: data.muscleSummaryView === 'bars' || data.muscleSummaryView === 'row'
+    ? data.muscleSummaryView : 'chips',
 });
 const fromApi = (data: Record<string, unknown>) =>
   normalize({

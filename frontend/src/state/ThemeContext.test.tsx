@@ -211,6 +211,23 @@ describe('appearance settings controls', () => {
 });
 
 describe('muscle summary preference', () => {
+  it('saves the disclosure row and restores it from the profile without local cache', async () => {
+    profile.design_version = 'v2';
+    const settings = () => <ThemeProvider><DesignVersionSettings /><Harness /></ThemeProvider>;
+    const mounted = render(settings());
+    await waitFor(() => expect(state().loading).toBe(false));
+    fireEvent.click(screen.getByRole('radio', { name: /Раскрываемая строка/ }));
+    await waitFor(() => expect(state().saving).toBe(false));
+    expect(profile.muscle_summary_view).toBe('row');
+    mounted.unmount();
+    localStorage.clear();
+    render(settings());
+    await waitFor(() => expect(state().loading).toBe(false));
+    expect((screen.getByRole('radio', { name: /Раскрываемая строка/ }) as HTMLInputElement).checked).toBe(true);
+    fireEvent.click(screen.getByText('Dark'));
+    await waitFor(() => expect(state().saving).toBe(false));
+    expect(profile.muscle_summary_view).toBe('row');
+  });
   it('defaults to chips, retries failed widget saves and restores the server choice', async () => {
     profile.design_version = 'v2';
     const settings = () => <ThemeProvider><DesignVersionSettings /><Harness /></ThemeProvider>;

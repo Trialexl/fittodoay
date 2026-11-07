@@ -56,7 +56,7 @@ def test_music_grouping_defaults_persists_and_preserves_other_preferences(accoun
 def test_muscle_summary_defaults_persists_and_preserves_other_preferences(account):
     user, client = account
     assert client.get("/api/profile/preferences/").data["muscle_summary_view"] == "chips"
-    for mode in ("bars", "chips"):
+    for mode in ("bars", "row", "chips"):
         response = client.put(
             "/api/profile/preferences/", {"muscle_summary_view": mode}, format="json"
         )

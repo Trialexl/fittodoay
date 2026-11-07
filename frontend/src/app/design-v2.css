@@ -400,16 +400,33 @@
 .muscle-view-settings { border: 0; padding: 0; margin: 1.25rem 0 0; min-width: 0; }
 .muscle-view-settings legend { margin-bottom: .7rem; }
 .muscle-view-settings .design-choice-title { padding-right: 1.25rem; }
+.muscle-view-settings .design-choice-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 [data-design="v2"] .session-focus { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
-[data-design="v2"] .session-muscle-chips { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 7px; margin: 0; padding: 18px 0 0; border-top: 1px solid #ffffff1a; list-style: none; }
+[data-design="v2"] .session-muscle-chip-section { grid-column: 1 / -1; min-width: 0; padding-top: 16px; border-top: 1px solid #ffffff1a; }
+[data-design="v2"] .session-muscle-chips { display: flex; flex-wrap: wrap; gap: 7px; margin: 0; padding: 0; list-style: none; }
 [data-design="v2"] .session-muscle-chips li { display: inline-flex; align-items: baseline; gap: 9px; min-width: 0; max-width: 100%; padding: 6px 10px; border-radius: 9px; background: #ffffff0b; color: #e5eaf3; font-size: 12px; }
 [data-design="v2"] .session-muscle-chips li > span::first-letter { text-transform: uppercase; }
 [data-design="v2"] .session-muscle-chips li > span { overflow-wrap: anywhere; }
 [data-design="v2"] .session-muscle-chips strong { color: color-mix(in srgb, rgb(var(--color-primary)), white 30%); font-weight: 650; font-variant-numeric: tabular-nums; }
 [data-design="v2"] .session-muscle-widget { grid-column: 1 / -1; padding: 22px; border: 1px solid rgb(var(--color-border)); border-radius: 20px; background: rgb(var(--color-surface)); min-width: 0; }
-[data-design="v2"] .session-muscle-widget > header { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 18px; }
-[data-design="v2"] .session-muscle-widget h2 { font-size: 15px; font-weight: 650; }
-[data-design="v2"] .session-muscle-widget header > span { font-size: 11px; color: rgb(var(--color-text-muted)); }
+[data-design="v2"] .session-muscle-toggle { display: flex; align-items: center; justify-content: space-between; gap: 14px; width: 100%; min-width: 0; min-height: 44px; padding: 0; border: 0; background: transparent; text-align: left; color: inherit; cursor: pointer; }
+[data-design="v2"] .session-muscle-toggle > span { min-width: 0; overflow-wrap: anywhere; }
+[data-design="v2"] .session-muscle-toggle strong { display: block; font-size: 14px; font-weight: 650; line-height: 1.5; }
+[data-design="v2"] .session-muscle-toggle small { display: block; margin-top: 3px; font-size: 11px; color: rgb(var(--color-text-muted)); }
+[data-design="v2"] .session-muscle-toggle svg { flex-shrink: 0; width: 18px; height: 18px; color: rgb(var(--color-primary)); }
+[data-design="v2"] .session-muscle-toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
+[data-design="v2"] .session-muscle-toggle:focus-visible { outline: 2px solid rgb(var(--color-primary)); outline-offset: 5px; border-radius: 4px; }
+[data-design="v2"] .session-muscle-content { padding-top: 16px; }
+[data-design="v2"] .session-muscle-chip-section .session-muscle-toggle { color: #e5eaf3; }
+[data-design="v2"] .session-muscle-chip-section .session-muscle-toggle strong { font-size: 12px; }
+[data-design="v2"] .session-muscle-disclosure-row { padding: 16px 20px; }
+[data-design="v2"] .session-muscle-disclosure-row .session-muscle-toggle strong { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+[data-design="v2"] .session-muscle-disclosure-row .session-muscle-toggle strong::first-letter { text-transform: uppercase; }
+[data-design="v2"] .session-muscle-detail-list { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+[data-design="v2"] .session-muscle-detail-list li { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; font-size: 13px; }
+[data-design="v2"] .session-muscle-detail-list li > span { min-width: 0; overflow-wrap: anywhere; }
+[data-design="v2"] .session-muscle-detail-list li > span::first-letter { text-transform: uppercase; }
+[data-design="v2"] .session-muscle-detail-list strong { color: rgb(var(--color-primary)); font-variant-numeric: tabular-nums; }
 [data-design="v2"] .session-muscle-bars { display: grid; gap: 14px; }
 [data-design="v2"] .session-muscle-row { display: grid; grid-template-columns: minmax(90px, 1fr) minmax(0, 3fr) auto; gap: 16px; align-items: center; font-size: 12px; }
 [data-design="v2"] .session-muscle-name { overflow-wrap: anywhere; }
@@ -419,7 +436,7 @@
 [data-design="v2"] .session-muscle-completed { display: block; height: 100%; border-radius: inherit; background: rgb(var(--color-primary)); transition: width 200ms ease; }
 [data-design="v2"] .session-muscle-count { white-space: nowrap; font-variant-numeric: tabular-nums; color: rgb(var(--color-text-muted)); }
 [data-design="v2"] .session-muscle-count strong { color: rgb(var(--color-text)); font-weight: 650; }
-[data-design="v2"] .session-muscle-widget > footer { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 20px; font-size: 11px; color: rgb(var(--color-text-muted)); }
+[data-design="v2"] .session-muscle-widget footer { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 20px; font-size: 11px; color: rgb(var(--color-text-muted)); }
 [data-design="v2"] .session-muscle-widget footer > span { display: inline-flex; align-items: center; gap: 6px; }
 [data-design="v2"] .session-muscle-widget footer i { width: 8px; height: 8px; border-radius: 3px; background: rgb(var(--color-primary)); }
 [data-design="v2"] .session-muscle-widget footer .session-muscle-legend-planned { background: rgb(var(--color-primary) / .18); }
@@ -428,7 +445,8 @@
 }
 @media (max-width: 540px) {
   .muscle-view-settings .design-choice-grid { grid-template-columns: minmax(0, 1fr); }
-  [data-design="v2"] .session-muscle-chips { margin-top: 12px; padding-top: 14px; gap: 6px; }
+  [data-design="v2"] .session-muscle-chip-section { margin-top: 12px; padding-top: 14px; }
+  [data-design="v2"] .session-muscle-chips { gap: 6px; }
   [data-design="v2"] .session-muscle-chips li { font-size: 11px; padding: 6px 9px; }
   [data-design="v2"] .session-muscle-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr) auto; gap: 10px; }
 }

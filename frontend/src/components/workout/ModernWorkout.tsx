@@ -1,19 +1,44 @@
 'use client';
 
 import Link from 'next/link';
-import { type ReactNode } from 'react';
+import { useId, useState, type ReactNode } from 'react';
 import type { MuscleSummaryView } from '@/state/ThemeContext';
 import type { MuscleSummary } from '@/lib/muscleSummary';
+
+function MuscleDisclosure({ title, subtitle, className, initiallyCollapsed = false, children }: {
+  title: string;
+  subtitle?: string;
+  className: string;
+  initiallyCollapsed?: boolean;
+  children: ReactNode;
+}) {
+  const [expanded, setExpanded] = useState(!initiallyCollapsed);
+  const contentId = useId();
+  return (
+    <section className={className} aria-label="Упражнения по группам мышц">
+      <button
+        type="button"
+        className="session-muscle-toggle"
+        aria-label={expanded ? 'Скрыть группы мышц' : 'Показать группы мышц'}
+        aria-expanded={expanded}
+        aria-controls={contentId}
+        onClick={() => setExpanded((value) => !value)}
+      >
+        <span><strong>{title}</strong>{subtitle && <small>{subtitle}</small>}</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+          <path d="m6 9 6 6 6-6" />
+        </svg>
+      </button>
+      <div id={contentId} className="session-muscle-content" hidden={!expanded}>{children}</div>
+    </section>
+  );
+}
 
 export function MuscleProgressWidget({ groups }: { groups: MuscleSummary[] }) {
   if (!groups.length) return null;
   const maxTotal = Math.max(...groups.map((group) => group.total));
   return (
-    <section className="session-muscle-widget" aria-label="Упражнения по группам мышц">
-      <header>
-        <h2>Группы мышц</h2>
-        <span>упражнений</span>
-      </header>
+    <MuscleDisclosure title="Группы мышц" subtitle="Упражнения: выполнено / всего" className="session-muscle-widget">
       <div className="session-muscle-bars" aria-live="polite">
         {groups.map(({ name, total, completed }) => (
           <div className="session-muscle-row" key={name}>
@@ -41,7 +66,7 @@ export function MuscleProgressWidget({ groups }: { groups: MuscleSummary[] }) {
         <span><i className="session-muscle-legend-complete" aria-hidden="true" />Выполнено</span>
         <span><i className="session-muscle-legend-planned" aria-hidden="true" />Осталось</span>
       </footer>
-    </section>
+    </MuscleDisclosure>
   );
 }
 
@@ -166,6 +191,7 @@ export function WorkoutOverview({
             </span>
           </div>
           {muscleSummaryView === 'chips' && muscleGroups.length > 0 && (
+            <MuscleDisclosure title="Группы мышц" className="session-muscle-chip-section">
             <ul className="session-muscle-chips" aria-label="Количество упражнений по группам мышц">
               {muscleGroups.map((group) => (
                 <li key={group.name}>
@@ -174,6 +200,7 @@ export function WorkoutOverview({
                 </li>
               ))}
             </ul>
+            </MuscleDisclosure>
           )}
         </section>
         <aside className="session-check-in">
@@ -183,6 +210,18 @@ export function WorkoutOverview({
           </Link>
         </aside>
         {muscleSummaryView === 'bars' && <MuscleProgressWidget groups={muscleGroups} />}
+        {muscleSummaryView === 'row' && muscleGroups.length > 0 && (
+          <MuscleDisclosure
+            title={muscleGroups.slice(0, 3).map((group) => `${group.name} ×${group.total}`).join(' · ')}
+            subtitle={`Групп мышц: ${muscleGroups.length}`}
+            className="session-muscle-widget session-muscle-disclosure-row"
+            initiallyCollapsed
+          >
+            <ul className="session-muscle-detail-list" aria-label="Количество упражнений по группам мышц">
+              {muscleGroups.map((group) => <li key={group.name}><span>{group.name}</span><strong>{group.total}</strong></li>)}
+            </ul>
+          </MuscleDisclosure>
+        )}
       </div>
     </div>
   );

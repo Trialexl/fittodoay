@@ -114,3 +114,29 @@ it('does not show a muscle widget without muscle data', () => {
   render(<MuscleProgressWidget groups={[]} />);
   expect(screen.queryByRole('region')).toBeNull();
 });
+
+it.each(['chips', 'bars', 'row'] as const)('collapses %s without losing progress updates or weight input', (mode) => {
+  const props = {
+    date: '2026-11-07', completed: 9, total: 12, exercises: 4, load: 800,
+    muscleGroups: [{ name: 'спина', total: 4, completed: 3 }, { name: 'плечи', total: 2, completed: 0 }],
+    muscleSummaryView: mode, weighIn: <input aria-label="Вес" defaultValue="73" />,
+  };
+  const view = render(<WorkoutOverview {...props} />);
+  if (mode === 'row') {
+    expect(screen.queryByRole('list')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Показать группы мышц' }).getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(screen.getByRole('button', { name: 'Показать группы мышц' }));
+  }
+  if (mode === 'bars') expect(screen.getAllByRole('progressbar')).toHaveLength(2);
+  else expect(screen.getByRole('list').children).toHaveLength(2);
+  fireEvent.click(screen.getByRole('button', { name: 'Скрыть группы мышц' }));
+  expect(screen.queryByRole('list')).toBeNull();
+  expect(screen.queryByRole('progressbar')).toBeNull();
+  fireEvent.change(screen.getByLabelText('Вес'), { target: { value: '74' } });
+  view.rerender(<WorkoutOverview {...props} muscleGroups={[{ name: 'спина', total: 4, completed: 4 }]} />);
+  expect(screen.getByRole('button', { name: 'Показать группы мышц' }).getAttribute('aria-expanded')).toBe('false');
+  fireEvent.click(screen.getByRole('button', { name: 'Показать группы мышц' }));
+  if (mode === 'bars') expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBe('4');
+  else expect(screen.getByRole('list').children).toHaveLength(1);
+  expect((screen.getByLabelText('Вес') as HTMLInputElement).value).toBe('74');
+});

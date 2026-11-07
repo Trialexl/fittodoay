@@ -85,6 +85,17 @@ export function DesignVersionSettings() {
               <span className="design-choice-title">Отдельный виджет</span>
               <span className="design-choice-description">Общее и выполненное количество упражнений со шкалой прогресса.</span>
             </label>
+            <label className="design-choice" data-selected={muscleSummaryView === 'row'}>
+              <input
+                type="radio"
+                name="muscle-summary-view"
+                value="row"
+                checked={muscleSummaryView === 'row'}
+                onChange={() => setMuscleSummaryView('row')}
+              />
+              <span className="design-choice-title">Раскрываемая строка</span>
+              <span className="design-choice-description">Краткая строка с основными группами. Полный список раскрывается нажатием.</span>
+            </label>
           </div>
         </fieldset>
       )}
