@@ -375,3 +375,32 @@ def test_catalog_id_remembered_from_history_is_reread_before_proposal(
     assert TemplateExercise.objects.count() == before
     assert "exercise_not_read_by_tool" in requests[1][-1]["content"]
     assert json.loads(requests[2][-1]["content"])["id"] == te.exercise_id
+
+
+def test_model_cannot_drop_secondary_muscles_without_user_request(chat, monkeypatch):
+    user, te, service = chat
+    from workouts.models import ExerciseMuscle
+
+    ExerciseMuscle.objects.create(
+        exercise=te.exercise, name_ru="Плечи", name_en="shoulders", is_primary=False
+    )
+    seen = []
+
+    def completion(_self, messages, tools, trace, **kwargs):
+        result = tools.execute(
+            "search_exercises", {"muscles": "плечи", "primary_only": True}
+        )
+        seen.append(result)
+        return '{"assistant_reply":"Проверено","actions":[]}'
+
+    monkeypatch.setattr(OpenRouterClient, "create_tool_completion", completion)
+    service.send("Найди упражнение на плечи")
+    assert seen[-1]["filters"]["primary_only"] is False
+    assert seen[-1]["total"] == 1
+    service.send("Найди упражнение только на основные мышцы плеч")
+    assert seen[-1]["filters"]["primary_only"] is True
+    service.send("Ищи только основные мышцы: плечи")
+    assert seen[-1]["filters"]["primary_only"] is True
+    assert seen[-1]["total"] == 0
+    service.send("Учитывай не только основные мышцы плеч")
+    assert seen[-1]["filters"]["primary_only"] is False

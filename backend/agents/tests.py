@@ -1479,7 +1479,8 @@ def test_chat_send_passes_post_workout_context_mode_and_date(monkeypatch):
         workout_date=date(2026, 2, 23),
     )
 
-    assert assistant.content == "Разобрал прогресс"
+    assert assistant.content.startswith("Разобрал прогресс")
+    assert "Разбор не изменил программу" in assistant.content
     assert captured["mode"] == "chat"
     assert captured["chat_mode"] == "post_workout_review"
     assert captured["workout_date"] == date(2026, 2, 23)

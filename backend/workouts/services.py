@@ -125,6 +125,17 @@ def _template_display_name(template: DayTemplate) -> str:
 def generate_daily_plan(user, target_date: date | None = None) -> WorkoutDay:
     target_date = target_date or date.today()
     day, _ = WorkoutDay.objects.get_or_create(user=user, date=target_date)
+    logged_ids = set(day.set_logs.values_list("template_exercise_id", flat=True))
+    # Reviewing a past workout must not replace its targets with today's program.
+    if logged_ids and target_date < date.today() and day.plan_snapshot:
+        return day
+    started_exercises = {
+        entry["template_exercise_id"]: entry
+        for folder in (day.plan_snapshot or {}).get("folders", [])
+        for template in folder.get("templates", [])
+        for entry in template.get("exercises", [])
+        if entry.get("template_exercise_id") in logged_ids
+    }
 
     prefetch_templates = Prefetch(
         "templates",
@@ -181,6 +192,14 @@ def generate_daily_plan(user, target_date: date | None = None) -> WorkoutDay:
             template_ids.append(template.id)
             exercises_payload = []
             for te in template.template_exercises.all():
+                # A recommendation changes the next workout, not the exercise
+                # whose execution is already recorded. Other entries stay live.
+                started = started_exercises.get(te.id)
+                if started:
+                    exercises_payload.append(started)
+                    if started.get("is_active") is not False:
+                        total_sets += len(started.get("sets") or [])
+                    continue
                 source = te.exercise or te.custom_exercise
                 if source is None:
                     continue
@@ -248,12 +267,21 @@ def generate_daily_plan(user, target_date: date | None = None) -> WorkoutDay:
     day.save(
         update_fields=["plan_snapshot", "source_folder_ids", "source_template_ids"]
     )
+    update_workout_status(day)
     return day
 
 
 def update_workout_status(day: WorkoutDay):
-    total_sets = day.plan_snapshot.get("total_sets") or 0
-    if total_sets and day.set_logs.count() >= total_sets:
+    expected = {
+        (entry["template_exercise_id"], item["set_index"])
+        for folder in (day.plan_snapshot or {}).get("folders", [])
+        for template in folder.get("templates", [])
+        for entry in template.get("exercises", [])
+        if entry.get("is_active") is not False
+        for item in entry.get("sets", [])
+    }
+    recorded = set(day.set_logs.values_list("template_exercise_id", "set_index"))
+    if expected and expected.issubset(recorded):
         if day.status != WorkoutDay.Status.COMPLETED:
             day.status = WorkoutDay.Status.COMPLETED
             day.save(update_fields=["status"])

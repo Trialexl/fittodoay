@@ -164,3 +164,43 @@ def test_primary_match_ranks_higher_but_exact_secondary_name_is_preserved():
         search_catalog(query=secondary.name_ru, muscles="широчайшие").exercises[0].pk
         == secondary.pk
     )
+
+
+def test_shoulder_fly_query_includes_lateral_raises_without_dropping_constraints():
+    lateral = exercise("Dumbbell_Raise", "Подъемы гантелей в стороны", muscle="Плечи")
+    seated = exercise(
+        "Seated_Side_Lateral_Raise", "Разведения гантелей сидя", muscle="Плечи"
+    )
+    chest = exercise("Chest_Fly", "Разведения гантелей лежа", muscle="Грудь")
+    ExerciseMuscle.objects.create(
+        exercise=chest, name_ru="Плечи", name_en="shoulders", is_primary=False
+    )
+    exercise("Front_Raise", "Подъемы гантелей перед собой", muscle="Плечи")
+    exercise("Shoulder_Press", "Жим гантелей сидя", muscle="Плечи")
+    exercise("Dumbbell_Side_Curl", "Боковой подъем гантели на бицепс", muscle="Плечи")
+    exercise(
+        "Cable_Lateral_Raise",
+        "Подъемы рук в стороны",
+        muscle="Плечи",
+        equipment="cable",
+    )
+    exercise("Calf_Raise", "Подъемы на носки в стороны", muscle="Икроножные")
+    user = get_user_model().objects.create_user(email="shoulder-fly@example.test")
+    result = ProgramReadTools(user).execute(
+        "search_exercises",
+        {"query": "разведения", "muscles": "плечи", "equipment": "гантели"},
+    )
+    ids = [item["id"] for item in result["results"]]
+    assert set(ids) == {lateral.pk, seated.pk, chest.pk}
+    assert ids.index(lateral.pk) < ids.index(chest.pk)
+    assert ids.index(seated.pk) < ids.index(chest.pk)
+    assert [
+        item.pk
+        for item in search_catalog(query=chest.name_ru, muscles="плечи").exercises
+    ] == [chest.pk]
+    assert [
+        item.pk
+        for item in search_catalog(
+            query="разведения сидя", muscles="плечи", equipment="гантели"
+        ).exercises
+    ] == [seated.pk]

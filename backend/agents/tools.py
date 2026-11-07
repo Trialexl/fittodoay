@@ -1,11 +1,21 @@
 """Read-only tools. No tool in this registry can mutate a program."""
 
 from __future__ import annotations
+import re
 from rest_framework import serializers
 from exercises.search import catalog_card, search_catalog
 from exercises.models import CustomExercise
 from workouts.models import Exercise_DB
 from accounts.models import UserProfile
+
+
+def primary_only_requested(text):
+    return bool(
+        re.search(
+            r"(?<!не )(?<!not )\b(?:только|исключительно|only)\s+(?:на\s+)?(?:основн\w*|primary)\s+(?:мышц\w*|muscles)\b",
+            text.casefold(),
+        )
+    )
 
 
 class StrictArguments(serializers.Serializer):
@@ -105,10 +115,11 @@ TOOL_DEFINITIONS = [
 
 
 class ProgramReadTools:
-    def __init__(self, user, program_reader=None):
+    def __init__(self, user, program_reader=None, *, allow_primary_only=True):
         self.user = user
         self.program_reader = program_reader
         self.seen_ids = set()
+        self.allow_primary_only = allow_primary_only
 
     @property
     def definitions(self):
@@ -135,6 +146,8 @@ class ProgramReadTools:
             return {"error": "invalid_arguments", "details": validator.errors}
         values = validator.validated_data
         if name == "search_exercises":
+            if not self.allow_primary_only:
+                values["primary_only"] = False
             result = search_catalog(**values)
             self.seen_ids.update(item.pk for item in result.exercises)
             return {

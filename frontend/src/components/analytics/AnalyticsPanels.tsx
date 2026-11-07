@@ -3,7 +3,7 @@
 import { apiFetch } from "@/lib/api";
 import { useAuth } from "@/state/AuthContext";
 import { useTheme } from "@/state/ThemeContext";
-import useSWR from "swr";
+import useSWR, { useSWRConfig } from "swr";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -83,12 +83,14 @@ const AiSparkIcon = ({ className }: { className?: string }) => (
 export const AnalyticsPanels = () => {
   const router = useRouter();
   const { token } = useAuth();
+  const { mutate: refreshCache } = useSWRConfig();
   const { designVersion } = useTheme();
   const [chatOpen, setChatOpen] = useState(false);
   const [chatThreadId, setChatThreadId] = useState<number | null>(null);
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
+  const [chatNotice, setChatNotice] = useState<string | null>(null);
   const [chatApplying, setChatApplying] = useState(false);
   const [chatCancelling, setChatCancelling] = useState(false);
   const [infoExercise, setInfoExercise] = useState<ExerciseInfoState | null>(null);
@@ -209,6 +211,7 @@ export const AnalyticsPanels = () => {
     }
     setChatOpen(true);
     setChatError(null);
+    setChatNotice(null);
     setChatLoading(true);
     scrollChatToBottom();
     try {
@@ -221,20 +224,12 @@ export const AnalyticsPanels = () => {
         }),
       });
       setChatThreadId(thread.id);
-      const dailySample = (daily?.items ?? []).slice(-14);
-      const topExercises = (exercises?.items ?? []).slice(0, 8);
-      const weightSample = bodyWeightSeries.slice(-14);
       await apiFetch(`/api/llm-agent/threads/${thread.id}/messages/`, {
         method: "POST",
         token,
         body: JSON.stringify({
           mode: "post_workout_review",
-          message: `Сделай экспертный анализ статистики по программе коротко и конкретно.
-Нужны 3-5 неочевидных выводов и 1-3 точечных правки (вес/повторы/упражнения), которые реально улучшат прогресс.
-Учитывай тренды разных дней, а не только один день.
-Данные по дням: ${JSON.stringify(dailySample)}
-Топ упражнений: ${JSON.stringify(topExercises)}
-Вес тела: ${JSON.stringify(weightSample)}`,
+          message: "Коротко разбери статистику выбранной программы и объясни решения анализа. Учитывай разные тренировочные дни, полноту данных и возможный перерыв. Различай план, фактические результаты и предложения. Не придумывай правки, которых нет в решениях backend.",
         }),
       });
       await refreshChat();
@@ -251,13 +246,14 @@ export const AnalyticsPanels = () => {
     if (!token || !chatThreadId || !chatInput.trim()) return;
     setChatLoading(true);
     setChatError(null);
+    setChatNotice(null);
     scrollChatToBottom();
     try {
       await apiFetch(`/api/llm-agent/threads/${chatThreadId}/messages/`, {
         method: "POST",
         token,
         body: JSON.stringify({
-          mode: "post_workout_review",
+          mode: "post_workout_chat",
           message: chatInput.trim(),
         }),
       });
@@ -276,16 +272,23 @@ export const AnalyticsPanels = () => {
     if (!token || !chatThreadId || !latestPendingProposal) return;
     setChatApplying(true);
     setChatError(null);
+    setChatNotice(null);
     try {
-      await apiFetch(`/api/llm-agent/threads/${chatThreadId}/apply/`, {
+      const result = await apiFetch<{ applied: { status?: string; reason?: string }[] }>(`/api/llm-agent/threads/${chatThreadId}/apply/`, {
         method: "POST",
         token,
         body: JSON.stringify({ message_id: latestPendingProposal.id }),
       });
-      await refreshChat();
+      const skipped = result.applied.filter((item) => item.status === "skipped");
+      setChatNotice(`Применено: ${result.applied.length - skipped.length}. Пропущено: ${skipped.length}.`);
+      if (skipped.length) setChatError("Часть изменений не применена. Проверьте актуальность программы и попросите новое предложение.");
+      await Promise.allSettled([
+        refreshChat(),
+        refreshCache([`/api/programs/templates/?folder=${activeFolder?.id}`, token]),
+      ]);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Не удалось применить изменения";
-      setChatError(message);
+      setChatError(message.includes("proposal_stale") ? "Программа изменилась после предложения. Попросите помощника подготовить новое." : message);
     } finally {
       setChatApplying(false);
     }
@@ -462,6 +465,11 @@ export const AnalyticsPanels = () => {
                       ))}
                     </ul>
                   )}
+                  {msg.proposal_status && msg.proposal_status !== "none" && (
+                    <p className="mt-2 text-xs font-medium text-slate-500">
+                      {msg.proposal_status === "pending" ? "Ожидает подтверждения" : msg.proposal_status === "applied" ? "Применено" : "Отменено"}
+                    </p>
+                  )}
                 </div>
               ))
             ) : (
@@ -471,7 +479,8 @@ export const AnalyticsPanels = () => {
             )}
           </div>
           <div className="sticky bottom-0 mt-3 border-t border-slate-200/80 bg-white/95 pt-2 backdrop-blur dark:border-slate-700 dark:bg-slate-900/95">
-            {chatError && <p className="mb-2 text-sm text-red-500">{chatError}</p>}
+            {chatNotice && <p role="status" className="mb-2 text-sm text-slate-600">{chatNotice}</p>}
+            {chatError && <p role="alert" className="mb-2 text-sm text-red-500">{chatError}</p>}
             {latestPendingProposal && (
               <div className="mb-2 flex items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 dark:border-amber-500/40 dark:bg-amber-500/10">
                 <p className="text-xs text-amber-700 dark:text-amber-300">Есть неподтвержденные изменения.</p>

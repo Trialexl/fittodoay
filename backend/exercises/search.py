@@ -42,6 +42,8 @@ ROOTS = {
     "одн": ("одн", "one", "single"),
     "лежа": ("лежа", "lying"),
     "подъем": ("подъем", "raise", "curl"),
+    "развед": ("развед", "развод", "flye", "fly"),
+    "сторон": ("сторон", "lateral", "side"),
 }
 MUSCLES = {
     "спина": ("спин", "широч", "поясниц", "back", "lat"),
@@ -189,6 +191,16 @@ def search_catalog(
         names = [exercise.name_ru, exercise.name_en, exercise.id]
         normalized_names = [normalize(name) for name in names]
         name_tokens = set().union(*(tokens(name) for name in names))
+        # Lateral raises are also called "разведения". Keep the directional
+        # qualifier: front raises and presses must not become synonyms of flyes.
+        if any(
+            re.search(
+                r"\blateral raises?\b|\bside laterals?\b|\b(?:подъем\w*|мах\w*)\b.*\bв стороны\b",
+                name,
+            )
+            for name in normalized_names
+        ):
+            name_tokens.add("развед")
         exact = bool(query_norm and query_norm in normalized_names)
         # Every keyword is required. Semantic broadening may rank candidates, never drop explicit constraints.
         if (
@@ -226,7 +238,7 @@ def search_catalog(
                 for name in (record.name_ru, record.name_en)
             ],
         ):
-            score += 20
+            score += 200
         matches.append((score, exercise))
     matches.sort(
         key=lambda item: (

@@ -64,9 +64,11 @@ class LLMProgramMessageCreateSerializer(serializers.Serializer):
     class Mode:
         PROGRAM_EDIT = "program_edit"
         POST_WORKOUT_REVIEW = "post_workout_review"
+        POST_WORKOUT_CHAT = "post_workout_chat"
         CHOICES = (
             (PROGRAM_EDIT, PROGRAM_EDIT),
             (POST_WORKOUT_REVIEW, POST_WORKOUT_REVIEW),
+            (POST_WORKOUT_CHAT, POST_WORKOUT_CHAT),
         )
 
     message = serializers.CharField(max_length=8000)

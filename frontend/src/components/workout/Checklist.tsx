@@ -4,6 +4,7 @@ import { usePlaylistReveal } from "@/hooks/usePlaylistReveal";
 import { useTheme } from "@/state/ThemeContext";
 import { summarizeMuscles } from "@/lib/muscleSummary";
 import { WorkoutOverview, ModernExerciseHeading, ModernSetRow } from "./ModernWorkout";
+import { getProposedParams, formatRecommendationDelta, type ExerciseParamsMeta } from "./chatActionParams";
 import Link from "next/link";
 import clsx from "clsx";
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
@@ -839,71 +840,6 @@ const ExerciseTrendChart = memo(function ExerciseTrendChart({
     </>
   );
 });
-
-type ExerciseParamsMeta = {
-  sets: number | null;
-  reps: number | null;
-  weight: number | null;
-  time: number | null;
-  rest: number | null;
-};
-
-const normalizeNullableNumber = (value: unknown): number | null | undefined => {
-  if (value === null) return null;
-  if (value === undefined) return undefined;
-  const asNumber = Number(value);
-  if (Number.isNaN(asNumber)) return undefined;
-  return asNumber;
-};
-
-const getProposedParams = (action: Record<string, any>): ExerciseParamsMeta => ({
-  sets: (() => {
-    const source = action.parameters ?? action.params ?? action.changes ?? action;
-    return normalizeNullableNumber(source.sets ?? source.default_sets ?? source.set_override ?? source.set) ?? null;
-  })(),
-  reps: (() => {
-    const source = action.parameters ?? action.params ?? action.changes ?? action;
-    return normalizeNullableNumber(source.reps ?? source.default_reps ?? source.rep_override ?? source.rep) ?? null;
-  })(),
-  weight: (() => {
-    const source = action.parameters ?? action.params ?? action.changes ?? action;
-    return normalizeNullableNumber(source.weight ?? source.default_weight ?? source.weight_override) ?? null;
-  })(),
-  time: (() => {
-    const source = action.parameters ?? action.params ?? action.changes ?? action;
-    return normalizeNullableNumber(source.time ?? source.default_time ?? source.time_override) ?? null;
-  })(),
-  rest: (() => {
-    const source = action.parameters ?? action.params ?? action.changes ?? action;
-    return normalizeNullableNumber(source.rest ?? source.default_rest ?? source.rest_override) ?? null;
-  })(),
-});
-
-const formatChangeLine = (
-  label: string,
-  current: number | null | undefined,
-  proposed: number | null | undefined,
-  suffix = "",
-) => {
-  if (proposed === undefined || proposed === null) return null;
-  if (current === undefined || current === null) return `${label} → ${proposed}${suffix}`;
-  if (current === proposed) return null;
-  return `${label} ${current}${suffix} → ${proposed}${suffix}`;
-};
-
-const formatRecommendationDelta = (
-  current: ExerciseParamsMeta | undefined,
-  proposed: ExerciseParamsMeta,
-) => {
-  const lines = [
-    formatChangeLine("подходы", current?.sets, proposed.sets),
-    formatChangeLine("повторы", current?.reps, proposed.reps),
-    formatChangeLine("вес", current?.weight, proposed.weight),
-    formatChangeLine("время", current?.time, proposed.time, " сек"),
-    formatChangeLine("отдых", current?.rest, proposed.rest, " сек"),
-  ].filter(Boolean) as string[];
-  return lines.length ? lines.join(", ") : null;
-};
 
 const describeAction = (
   action: Record<string, any>,
@@ -3271,8 +3207,8 @@ export const Checklist = ({
       setChatState({ open: true, folderId, folderName, threadId: thread.id });
       setChatInput("");
       const autoPrompt = isFolderComplete
-        ? "Сделай короткий экспертный разбор завершенной тренировки. Дай 1-3 неочевидных вывода по прогрессу на основе текущего дня и последних тренировок по программе, выдели рискованные места и предложи точечные правки по весам/повторам/упражнениям."
-        : "Сделай короткий экспертный разбор текущего прогресса (тренировка еще не завершена). Оцени выполненную часть, укажи 1-3 неочевидных риска/возможности и предложи точечные правки по весам, повторам или упражнениям на оставшуюся часть тренировки.";
+        ? "Сделай короткий экспертный разбор завершенной тренировки. Объясни решения анализа на основе текущего дня и предыдущих сопоставимых тренировок. Различай план и фактические результаты, укажи ограничения данных. Не придумывай изменения, которых нет в решениях backend."
+        : "Сделай короткий экспертный разбор текущего прогресса (тренировка еще не завершена). Оцени только выполненную часть, объясни решения анализа и ограничения неполных данных. Различай план и фактические результаты. Не придумывай изменения, которых нет в решениях backend.";
       await apiFetch(`/api/llm-agent/threads/${thread.id}/messages/`, {
         method: "POST",
         token: auth.token,
@@ -3305,7 +3241,7 @@ export const Checklist = ({
         token: auth.token,
         body: JSON.stringify({
           message: chatInput.trim(),
-          mode: "post_workout_review",
+          mode: "post_workout_chat",
           workout_date: plan?.date,
         }),
       });
@@ -3336,19 +3272,23 @@ export const Checklist = ({
       );
       const applied = result?.applied ?? [];
       const hasAppliedChanges = applied.some((item) => item?.status !== "skipped");
+      // The write is confirmed. Update the visible status before refetching;
+      // a slow read must not keep an already applied proposal actionable.
+      await refreshChat((messages) => messages?.map((message) => message.id === latestPendingProposal.id
+        ? { ...message, proposal_status: hasAppliedChanges ? "applied" : "cancelled" }
+        : message), { revalidate: false });
       if (!hasAppliedChanges) {
         const firstSkippedReason =
           applied.find((item) => item?.status === "skipped")?.reason ??
           "Ассистент не смог применить изменения к текущей программе.";
         setChatError(humanizeChatError(firstSkippedReason));
-        refreshChat();
+        await refreshChat();
         return;
       }
-      refreshChat();
-      refresh();
       const skipped = applied.filter((item) => item?.status === "skipped");
       setChatNotice(`Применено: ${applied.length - skipped.length}. Пропущено: ${skipped.length}.`);
       if (skipped.length) setChatError(skipped.map((item) => humanizeChatError(String(item.reason ?? "Не удалось применить действие"))).join(" "));
+      await Promise.allSettled([refreshChat(), Promise.resolve(refresh())]);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Не удалось применить изменения";
       setChatError(humanizeChatError(message));
