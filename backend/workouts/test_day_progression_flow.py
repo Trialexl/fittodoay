@@ -43,14 +43,14 @@ def prepare_day(program):
     return client, day, weight, reps, hold
 
 
-def log(client, day, te, index, reps):
+def log(client, day, te, index, reps, weight=34):
     response = client.post(
         "/api/workouts/logs/",
         {
             "workout_day": day.pk,
             "template_exercise": te.pk,
             "set_index": index,
-            "actual_weight": 34,
+            "actual_weight": weight,
             "actual_reps": reps,
         },
         format="json",
@@ -227,3 +227,60 @@ def test_past_workout_is_not_rebuilt_from_edited_or_disabled_program(program):
     )
     day.refresh_from_db()
     assert day.plan_snapshot == original
+
+
+def test_partial_day_like_screenshot_offers_reps_in_normal_runtime(
+    program, monkeypatch
+):
+    from django.conf import settings
+
+    assert settings.WORKOUT_PROGRESSION_MODE == "active"
+    user, folder, template = program
+    template.schedule_config = {"days_of_week": [TODAY.weekday()]}
+    template.save()
+    bench = exercise(program, name="Жим гантелей лежа", reps=10, weight=52)
+    others = [
+        exercise(program, name=f"Ещё не начато {index}", reps=10) for index in range(6)
+    ]
+    session(
+        program, TODAY - timedelta(days=7), [bench, *others], {bench.pk: [(52, 10)] * 3}
+    )
+    client = APIClient()
+    client.force_authenticate(user=user)
+    assert (
+        client.get("/api/workouts/plan/", {"date": TODAY.isoformat()}).status_code
+        == 200
+    )
+    day = WorkoutDay.objects.get(user=user, date=TODAY)
+    for index in (1, 2, 3):
+        log(client, day, bench, index, 11, weight=52)
+    monkeypatch.setattr(
+        LLMProgramChatService,
+        "_call_llm",
+        lambda *_: '{"assistant_reply":"Решение update_exercise: повторы 10 → 11. Остальные hold.","actions":[]}',
+    )
+    thread_id, proposal = review(client, folder)
+    assert day.plan_snapshot["total_sets"] == 21
+    day.refresh_from_db()
+    assert day.status == "pending" and day.set_logs.count() == 3
+    assert proposal["proposal_status"] == "pending"
+    assert len(proposal["actions"]) == 1
+    assert proposal["actions"][0]["template_exercise_id"] == bench.pk
+    assert proposal["actions"][0]["reps"] == 11
+    assert (
+        "update_exercise" not in proposal["content"]
+        and "hold" not in proposal["content"]
+    )
+    bench.refresh_from_db()
+    assert bench.rep_override == 10 and bench.weight_override == 52
+    applied = client.post(
+        f"/api/llm-agent/threads/{thread_id}/apply/",
+        {"message_id": proposal["id"]},
+        format="json",
+    )
+    assert applied.status_code == 200
+    assert len(applied.data["applied"]) == 1
+    assert applied.data["applied"][0].get("status") != "skipped"
+    bench.refresh_from_db()
+    assert bench.rep_override == 11 and bench.weight_override == 52
+    assert all(te.rep_override == 10 for te in others)

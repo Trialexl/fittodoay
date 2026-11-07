@@ -1695,7 +1695,7 @@ def test_post_workout_prompt_enforces_concise_reply_and_irr_scope():
 
     assert "максимум 4-6 коротких предложений" in system_prompt
     assert "историю других тренировочных дней и недельную динамику" in system_prompt
-    assert "готовые решения policy (включая hold)" in system_prompt
+    assert "готовые решения по упражнениям (включая сохранение плана)" in system_prompt
     assert "RIR/RPE/pain неизвестны, если null" in system_prompt
     assert "Верни assistant_reply и пустой actions" in system_prompt
     assert "template_exercise_id" in system_prompt

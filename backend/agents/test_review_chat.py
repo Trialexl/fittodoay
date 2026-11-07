@@ -211,7 +211,7 @@ def test_followup_prompt_has_statistics_and_actual_action_state(review):
     assert context["proposal_state"]["pending"] is None
     assert "последнее сообщение пользователя" in messages[0]["content"]
     assert "меньший фактический вес не означает" in messages[0]["content"]
-    assert "hold сохраняет в плане 140 кг" in messages[0]["content"]
+    assert "такое решение сохраняет в плане 140 кг" in messages[0]["content"]
     assert "отсутствие повторов для них нормально" in messages[0]["content"]
 
 

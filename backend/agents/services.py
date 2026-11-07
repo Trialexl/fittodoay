@@ -38,6 +38,7 @@ from exercises.search import (
 )
 from agents.tools import ProgramReadTools, primary_only_requested
 from agents.schemas import CHAT_FORMAT, PLAN_FORMAT
+from agents.progress_presentation import progress_for_model, humanize_progress_reply
 from workouts.services import resolve_defaults
 
 logger = logging.getLogger(__name__)
@@ -806,6 +807,10 @@ class LLMProgramChatService:
         if chat_mode == "post_workout_chat" and actions:
             parsed["assistant_reply"] = self._manual_proposal_reply(
                 actions, json.loads(payload[1]["content"])["program"]
+            )
+        if chat_mode in ("post_workout_review", "post_workout_chat"):
+            parsed["assistant_reply"] = humanize_progress_reply(
+                parsed["assistant_reply"]
             )
         for action in actions:
             if not action.get("policy_version"):
@@ -1707,11 +1712,11 @@ class LLMProgramChatService:
                 "Обязательно учитывай не только текущий день, но и историю других тренировочных дней и недельную динамику по программе. "
                 "Пиши коротко и предметно: максимум 4-6 коротких предложений, без мотивационных абзацев и повторов. "
                 "Каждый вывод должен опираться на числа из контекста (дата, процент выполнения, средний вес/повторы, тоннаж). "
-                "Формат ответа: краткая оценка, готовые решения policy (включая hold), что проверить на следующей тренировке. "
+                "Формат ответа: краткая оценка, готовые решения по упражнениям (включая сохранение плана), что проверить на следующей тренировке. "
                 "Если предлагаешь числовые правки, всегда указывай упражнение, текущие значения и предлагаемые значения (было → станет). "
                 "Избегай общих фраз вроде 'продолжайте в том же духе' без фактов. "
                 "RIR/RPE/pain неизвестны, если null; не вычисляй их из повторов и не объясняй результат болью. "
-                "Не принимай решений об изменении программы: объясняй только policy_decisions и validated_actions. "
+                "Не принимай решений об изменении программы: объясняй только exercise_decisions и algorithm_recommendations. "
             )
         else:
             system_prompt = (
@@ -1787,15 +1792,17 @@ class LLMProgramChatService:
                 "current_session — текущий результат, previous_sessions — история; "
                 "exercise_trend содержит исторические средние, а не текущий рабочий вес. "
                 "При return_after_break главным контекстом является перерыв. "
-                "В shadow mode изменения только сравниваются в журнале: не предлагай применить их. "
+                "Предлагай к подтверждению только изменения из algorithm_recommendations. "
                 "Отсутствие подходов означает отсутствие данных, а не отказ."
             )
         if chat_mode in ("post_workout_review", "post_workout_chat"):
             system_prompt += (
                 " Различай план программы, фактический вес подходов и предложение: меньший фактический вес не означает, что план был изменён. "
-                "Решение hold с changes={} означает оставить параметры текущего плана программы, а не перенести в план фактический вес подходов. "
-                "Например, при плане 140 кг и факте 120 кг hold сохраняет в плане 140 кг; снижение до 120 кг не предлагалось и не сохранено. "
+                "Решение оставить план без изменений означает сохранить параметры текущей программы, а не перенести в план фактический вес подходов. "
+                "Например, при плане 140 кг и факте 120 кг такое решение сохраняет в плане 140 кг; снижение до 120 кг не предлагалось и не сохранено. "
                 "Не обещай сохранение или применение без подтверждённого результата. "
+                "Говори простым языком: 'оставить план без изменений', 'предлагаю повысить повторы'. Не выводи служебные названия режимов, коды действий, имена полей или ID. "
+                "Для объяснения доступности предложений используй proposals_note и текущее proposal_state; старые ответы в истории могут быть неактуальны. "
                 "Timed/static упражнения оценивай по времени: отсутствие повторов для них нормально. Нулевой или отсутствующий вес не означает пропуск упражнения. "
                 "Отсутствие данных не называй ошибкой выполнения. Сравнивая недели, учитывай число тренировок и полноту данных; текущая неделя может быть незавершённой. "
             )
@@ -1803,7 +1810,7 @@ class LLMProgramChatService:
             system_prompt += (
                 " Это продолжение диалога по статистике, а не повторный автоматический отчёт. Отвечай прежде всего на последнее сообщение пользователя с учётом истории. "
                 "Для вопросов 'как сохранить', 'сделаешь', 'сломался' объясни текущее состояние proposal_state, не повторяй предыдущую рекомендацию. "
-                "Автоматические policy_decisions остаются решениями backend; shadow ограничивает автоматические рекомендации, а не явные ручные изменения пользователя. "
+                "Решения анализа остаются готовыми фактами; они не запрещают явные ручные изменения пользователя. "
                 "Если пользователь явно просит изменить программу (например, 'давай план сделаем 120'), подготовь обычный action по точному template_exercise_id и значению пользователя. "
                 "Не подставляй автоматические policy-actions и не создавай ручные правки без запроса пользователя. "
                 "Если proposal_state.pending есть, для сохранения доступна кнопка «Применить изменения»; переписка сама ничего не применяет. "
@@ -1816,15 +1823,20 @@ class LLMProgramChatService:
             "profile": ProgramReadTools(self.thread.user).execute("get_profile", {}),
         }
         if chat_mode in ("post_workout_review", "post_workout_chat"):
-            context["progress_context"] = self._build_post_workout_context(
-                workout_date=workout_date
-            )
+            progress = self._build_post_workout_context(workout_date=workout_date)
+            context["progress_context"] = progress_for_model(progress)
             context["proposal_state"] = self._proposal_state()
             if chat_mode == "post_workout_review":
-                self._review_actions = context["progress_context"]["validated_actions"]
+                self._review_actions = progress["validated_actions"]
         history = []
         for msg in self.thread.messages.order_by("-id")[:12][::-1]:
-            history.append({"role": msg.role, "content": msg.content})
+            content = msg.content
+            if (
+                chat_mode in ("post_workout_review", "post_workout_chat")
+                and msg.role == "assistant"
+            ):
+                content = humanize_progress_reply(content)
+            history.append({"role": msg.role, "content": content})
         if not history or history[-1] != {"role": "user", "content": user_message}:
             history.append({"role": "user", "content": user_message})
         return [

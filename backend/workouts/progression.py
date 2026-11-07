@@ -450,7 +450,7 @@ def record_analysis(day, program_id, *, legacy=None):
     from workouts.models import WorkoutAnalysisRun
 
     report = analyze_workout(day, program_id)
-    mode = getattr(settings, "WORKOUT_PROGRESSION_MODE", "shadow")
+    mode = getattr(settings, "WORKOUT_PROGRESSION_MODE", "active")
     WorkoutAnalysisRun.objects.update_or_create(
         workout_day=day,
         program_id=program_id,

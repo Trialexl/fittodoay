@@ -215,7 +215,7 @@ CSRF_COOKIE_SECURE = bool(APP_DOMAIN) and not DEBUG
 SESSION_COOKIE_SAMESITE = "Lax"
 CSRF_COOKIE_SAMESITE = "Lax"
 
-# Keep policy proposals in the audit log until retrospective/UI validation is complete.
-WORKOUT_PROGRESSION_MODE = os.environ.get("WORKOUT_PROGRESSION_MODE", "shadow")
+# Show validated proposals; applying them still requires explicit confirmation.
+WORKOUT_PROGRESSION_MODE = os.environ.get("WORKOUT_PROGRESSION_MODE", "active")
 if WORKOUT_PROGRESSION_MODE not in {"shadow", "active"}:
     raise ValueError("WORKOUT_PROGRESSION_MODE must be shadow or active")
