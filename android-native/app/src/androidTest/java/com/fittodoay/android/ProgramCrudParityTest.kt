@@ -25,13 +25,14 @@ class ProgramCrudParityTest {
             folderId = qa.model.folders.first { it.text("name") == name }.getInt("id")
             qa.selectProgram(requireNotNull(folderId))
             val tag = hasTestTag("program-$folderId")
-            qa.visible(hasText("Добавить день", substring = false) and hasAnyAncestor(tag), "add scheduled day").performClick()
+            qa.visible(hasContentDescription("Добавить день") and hasAnyAncestor(tag), "add scheduled day").performClick()
             dialog("Название").performTextInput("QA расписание")
             dialog("Сохранить").performClick(); qa.waitRequest()
             var day = qa.model.templates.first { it.optInt("folder") == folderId }
             assertEquals("weekly", day.text("schedule_type"))
             for ((choice, type) in listOf("Раз в N недель" to "biweekly", "Через X дней" to "interval", "Даты" to "custom", "По неделям" to "weekly")) {
-                qa.visible(hasText("Изменить день", substring = false) and hasAnyAncestor(tag), "edit schedule").performClick()
+                qa.visible(hasContentDescription("Настроить шаблон") and hasAnyAncestor(tag), "day menu").performClick()
+                compose.onNodeWithText("Изменить день", substring = false).performClick()
                 dialog(choice).performScrollTo().performClick()
                 if (type in listOf("biweekly", "interval")) {
                     dialog("Интервал").performScrollTo().performTextReplacement("0")
@@ -48,7 +49,8 @@ class ProgramCrudParityTest {
             }
             qa.capture("program-schedules")
             // Delete through the native confirmation dialog, then verify the server.
-            qa.visible(hasText("Удалить", substring = false) and hasAnyAncestor(tag), "delete QA folder").performClick()
+            qa.visible(hasContentDescription("Изменить") and hasAnyAncestor(tag), "edit QA folder").performClick()
+            dialog("Удалить программу").performClick()
             dialog("Удалить").performClick(); qa.waitRequest()
             assertTrue(qa.api.call("/api/programs/folders/").rows().none { it.optInt("id") == folderId })
             folderId = null

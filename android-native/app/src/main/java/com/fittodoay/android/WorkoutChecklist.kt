@@ -31,6 +31,10 @@ private fun completedSets(exercise: JSONObject, logs: List<JSONObject>) = exerci
 }
 
 @Composable fun WorkoutChecklist(model: AppModel, info: (JSONObject) -> Unit, chat: (JSONObject) -> Unit, delete: (JSONObject) -> Unit) {
+    // Keep nested disclosure choices outside the conditionally composed children.
+    // Closing a program/day must not reset the exercises when it is reopened.
+    var expansion by rememberSaveable(model.date) { mutableStateOf<Map<String, Boolean>>(emptyMap()) }
+    fun rememberExpansion(key: String, value: Boolean) { expansion = expansion + (key to value) }
     val logs = model.plan.array("logs")
     val pendingExercise = model.restPending?.optJSONObject("exercise")?.optInt("template_exercise_id")
     val pendingIndex = model.restPending?.optJSONObject("set")?.optInt("set_index")
@@ -47,24 +51,26 @@ private fun completedSets(exercise: JSONObject, logs: List<JSONObject>) = exerci
                         val exercises = template.array("exercises").filter { it.optBoolean("is_active", true) }
                         val count = exercises.sumOf { it.array("sets").size }
                         val done = exercises.sumOf { completedSets(it, logs) }
-                        var expanded by rememberSaveable { mutableStateOf(done < count) }
+                        val dayKey = "day:${template.optInt("id")}"
+                        val expanded = expansion[dayKey] ?: (done < count)
                         val pendingHere = exercises.any { e -> e.optInt("template_exercise_id") == pendingExercise && e.array("sets").any { it.optInt("set_index") == pendingIndex } }
                         val willComplete = count > 0 && done + (if (pendingHere) 1 else 0) >= count
-                        LaunchedEffect(willComplete) { if (willComplete) expanded = false }
-                        Disclosure(template.text("name"), "$done / $count подходов", expanded, "workout-day-toggle-${template.optInt("id")}") { expanded = !expanded }
+                        LaunchedEffect(willComplete) { if (willComplete) rememberExpansion(dayKey, false) }
+                        Disclosure(template.text("name"), "$done / $count подходов", expanded, "workout-day-toggle-${template.optInt("id")}") { rememberExpansion(dayKey, !expanded) }
                         if (expanded) exercises.forEach { exercise ->
                             key(exercise.optInt("template_exercise_id")) {
                                 val source = exercise.optJSONObject("source") ?: JSONObject()
                                 val defaults = exercise.optJSONObject("defaults") ?: JSONObject()
                                 val sets = exercise.array("sets")
                                 val completed = completedSets(exercise, logs)
-                                var exerciseOpen by rememberSaveable { mutableStateOf(completed < sets.size) }
+                                val exerciseKey = "exercise:${exercise.optInt("template_exercise_id")}"
+                                val exerciseOpen = expansion[exerciseKey] ?: (completed < sets.size)
                                 val willCompleteExercise = sets.isNotEmpty() && completed + (if (pendingExercise == exercise.optInt("template_exercise_id")) 1 else 0) >= sets.size
-                                LaunchedEffect(willCompleteExercise) { if (willCompleteExercise) exerciseOpen = false }
+                                LaunchedEffect(willCompleteExercise) { if (willCompleteExercise) rememberExpansion(exerciseKey, false) }
                                 FitCard(padding = 12.dp) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Box(Modifier.weight(1f)) { Disclosure(source.text("name"), "$completed из ${sets.size} подходов", exerciseOpen,
-                                            "workout-exercise-toggle-${exercise.optInt("template_exercise_id")}") { exerciseOpen = !exerciseOpen } }
+                                            "workout-exercise-toggle-${exercise.optInt("template_exercise_id")}") { rememberExpansion(exerciseKey, !exerciseOpen) } }
                                         IconButton(onClick = { info(source) }) { Icon(Icons.Outlined.Info, "Техника и описание") }
                                     }
                                     if (exercise.text("note").isNotBlank()) Text(exercise.text("note"), style = MaterialTheme.typography.bodySmall)

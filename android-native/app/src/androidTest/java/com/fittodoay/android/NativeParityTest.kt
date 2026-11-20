@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.getOrNull
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
@@ -73,10 +74,10 @@ class NativeParityTest {
         try {
             for (design in listOf("v2")) {
                 navigate(Screen.Settings)
-                visible("Современный").performClick(); waitRequest()
+                // V2 is enrolled by guardAccount; its settings expose muscle views directly.
                 assertEquals(design, (api.call("/api/profile/preferences/") as JSONObject).text("design_version"))
                 capture("appearance-$design")
-                for ((mode, label) in listOf("chips" to "Плашки", "bars" to "Виджет", "row" to "Строка")) {
+                for ((mode, label) in listOf("chips" to "Плашки в сводке", "bars" to "Отдельный виджет", "row" to "Раскрываемая строка")) {
                     visible(label).performClick(); waitRequest()
                     assertEquals(mode, model.preferences.text("muscle_summary_view"))
                     navigate(Screen.Workout)
@@ -88,7 +89,13 @@ class NativeParityTest {
             }
             visible("Скопировать адрес").performClick()
             compose.onNodeWithText("Скопировано").assertExists(); capture("mcp")
-            navigate(Screen.Workout); QaHarness(compose).visible(hasContentDescription("Техника и описание"), "exercise details").performClick()
+            navigate(Screen.Workout)
+            // Completed days are collapsed in V2; open the real checklist before looking for details.
+            for (folder in model.plan.array("folders")) for (day in folder.array("templates")) {
+                val node = compose.onNodeWithTag("workout-day-toggle-${day.getInt("id")}")
+                if (node.fetchSemanticsNode().config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.StateDescription) == "Свёрнуто") node.performScrollTo().performClick()
+            }
+            QaHarness(compose).visible(hasContentDescription("Техника и описание"), "exercise details").performClick()
             compose.onNodeWithText("Статистика", substring = false).performClick()
             compose.waitUntil(30_000) { compose.onAllNodesWithTag("chart-load").fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithTag("chart-load").performTouchInput { click(center) }

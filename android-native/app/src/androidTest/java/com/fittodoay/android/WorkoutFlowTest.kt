@@ -69,6 +69,28 @@ class WorkoutFlowTest {
         compose.runOnIdle { qa.model.cancelWorkoutTimer(); qa.model.pauseLocalSync(); SessionStore(context).write(enrolled) }
         recreate()
     }
+    @Test fun nestedChecklistChoicesSurviveParentCollapseAndRecreation() {
+        val folder = qa.model.plan.array("folders").first()
+        val day = folder.array("templates").first()
+        fun toggle(tag: String) { compose.onNodeWithTag(tag).performScrollTo().performClick() }
+        val folderTag = "workout-folder-toggle-${folder.getInt("id") }"
+        val dayTag = "workout-day-toggle-${day.getInt("id") }"
+        toggle("workout-exercise-toggle-91001")
+        row(91001, 1).assertDoesNotExist()
+        toggle(dayTag); toggle(dayTag)
+        row(91001, 1).assertDoesNotExist()
+        row(91002, 1).assertExists()
+        toggle(dayTag); toggle(folderTag); toggle(folderTag)
+        compose.onNodeWithTag("workout-exercise-toggle-91002").assertDoesNotExist()
+        toggle(dayTag)
+        row(91001, 1).assertDoesNotExist()
+        row(91002, 1).assertExists()
+        recreate()
+        row(91001, 1).assertDoesNotExist()
+        row(91002, 1).assertExists()
+        assertTrue(offline.queue().isEmpty())
+        qa.capture("nested-checklist-restored")
+    }
     @Test fun completedSetUsesModalWithCancelSaveAndUndo() {
         clickSet(91001, 1)
         compose.onNodeWithText("Пропустить отдых", substring = false).performScrollTo().performClick(); qa.waitRequest()

@@ -23,7 +23,7 @@ class CustomExerciseParityTest {
         try {
             qa.api.call("/api/programs/templates/", "POST", obj("folder" to folder.getInt("id"), "name" to "QA день", "schedule_type" to "weekly", "schedule_config" to obj("days_of_week" to org.json.JSONArray().put(0))))
             qa.navigate(Screen.Programs); qa.selectProgram(folder.getInt("id"))
-            qa.visible(hasText("+ Добавить упражнение", substring = false) and hasAnyAncestor(hasTestTag("program-${folder.getInt("id")}")), "custom exercise dialog").performClick(); qa.waitRequest()
+            qa.visible(hasContentDescription("Добавить упражнение") and hasAnyAncestor(hasTestTag("program-${folder.getInt("id")}")), "custom exercise dialog").performClick(); qa.waitRequest()
             compose.onNodeWithText("Мои", substring = false).performScrollTo().performClick(); qa.waitRequest()
             compose.onNodeWithText("Создать своё упражнение", substring = false).performScrollTo().performClick()
             compose.onNodeWithText("Название", substring = false).performTextInput(name)

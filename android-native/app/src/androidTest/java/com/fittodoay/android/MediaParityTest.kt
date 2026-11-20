@@ -72,6 +72,11 @@ class MediaParityTest {
         device.wait(Until.findObject(By.res("com.google.android.documentsui", "action_menu_select")), 1500)?.click()
         try {
             check(device.wait(Until.gone(By.pkg("com.google.android.documentsui")), 10_000)) { "Document picker did not return the selected file" }
+            if (button == "Выбрать видео") {
+                // V2 separates file selection from submitting the analysis, as the web does.
+                compose.waitUntil(20_000) { compose.onAllNodes(hasText("Загрузить и разобрать", substring = false) and isEnabled()).fetchSemanticsNodes().isNotEmpty() }
+                qa.visible("Загрузить и разобрать").performClick()
+            }
             compose.waitUntil(20_000) { qa.model.busy || qa.model.notice != null || qa.model.error != null }
             compose.waitUntil(240_000) { qa.model.notice?.startsWith("Файл загружен") == true || qa.model.error != null }
         } catch (error: Throwable) {
