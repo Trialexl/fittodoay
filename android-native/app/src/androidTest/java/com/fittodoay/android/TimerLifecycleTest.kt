@@ -14,7 +14,7 @@ class TimerLifecycleTest {
         assumeTrue(InstrumentationRegistry.getArguments().getString("timerPhase") == "prepare")
         val qa = QaHarness(compose); qa.guard(requireNetwork = false)
         compose.runOnIdle { qa.model.restDuration = 30; qa.model.restUntil = System.currentTimeMillis() + 30_000 }
-        compose.onNode(hasText("Время восстановиться", substring = false) and hasAnyAncestor(isDialog())).assertIsDisplayed()
+        compose.onNode(hasText("Восстановление", substring = false) and hasAnyAncestor(isDialog())).assertIsDisplayed()
         val state = requireNotNull(TimerStore(qa.context, SessionStore(qa.context).read()).read("rest"))
         qa.report("timer-process-before", state)
     }
@@ -28,8 +28,8 @@ class TimerLifecycleTest {
         assertTrue(state.optLong("end_at") <= System.currentTimeMillis())
         val manager = context.getSystemService(android.app.NotificationManager::class.java)
         assertTrue(manager.activeNotifications.any { it.id == 601 })
-        compose.onNode(hasText("Время восстановиться", substring = false) and hasAnyAncestor(isDialog())).assertIsDisplayed()
-        compose.onNodeWithText("Готово").assertIsDisplayed()
+        compose.onNode(hasText("Восстановление", substring = false) and hasAnyAncestor(isDialog())).assertIsDisplayed()
+        compose.onNodeWithText("Отдых завершён").assertIsDisplayed()
         compose.onNodeWithText("Продолжить тренировку").assertIsEnabled().performClick()
         compose.waitForIdle()
         assertNull(store.read("rest"))

@@ -8,7 +8,7 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
-import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.ui.semantics.semantics
@@ -35,7 +35,7 @@ import kotlin.math.roundToInt
     var deletePath by remember { mutableStateOf<String?>(null) }
     val logs = model.plan.array("logs")
     val total = model.plan.array("folders").sumOf { f -> f.array("templates").sumOf { t -> t.array("exercises").filter { it.optBoolean("is_active", true) }.sumOf { e -> e.array("sets").size } } }
-    val modern = model.preferences.text("design_version", "v1") == "v2"
+    val modern = true
     val exercises = model.plan.array("folders").flatMap { it.array("templates") }.flatMap { it.array("exercises") }.filter { it.optBoolean("is_active", true) }
     Page {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -43,62 +43,34 @@ import kotlin.math.roundToInt
                 Text(if (modern) "ТВОЙ ПЛАН НА ДЕНЬ" else "ДНЕВНОЙ ЧЕКЛИСТ", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (modern) Text("Тренировка", style = MaterialTheme.typography.headlineLarge)
             }
-            OutlinedButton(onClick = { calendar = true }, modifier = Modifier.semantics { contentDescription = "Открыть календарь тренировок" }, shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp), contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)) {
-                Text(model.date, style = MaterialTheme.typography.labelMedium)
+            OutlinedButton(onClick = { calendar = true }, modifier = Modifier.semantics { contentDescription = "Открыть календарь тренировок" }, shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp), colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface), contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)) {
+                Icon(androidx.compose.material.icons.Icons.Outlined.CalendarMonth, null, Modifier.size(15.dp)); Spacer(Modifier.width(6.dp))
+                Text(LocalDate.parse(model.date).format(java.time.format.DateTimeFormatter.ofPattern("d MMM", java.util.Locale.forLanguageTag("ru"))), style = MaterialTheme.typography.bodySmall)
             }
         }
         if (modern) WorkoutOverview(model, exercises, logs, total)
+        if (exercises.isNotEmpty() && (!modern || model.preferences.text("muscle_summary_view", "chips") != "chips")) FitCard {
+            MuscleSummary(exercises, logs, model.preferences.text("muscle_summary_view", "chips"))
+        }
         FitCard(Modifier.testTag("body-weight-panel"), padding = 10.dp) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(androidx.compose.material.icons.Icons.Outlined.BarChart, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
                 Text("Вес перед тренировкой", style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(1f))
-                Box(Modifier.width(88.dp)) { Field("Вес, кг", weight, { weight = it }) }
+                Box(Modifier.width(80.dp)) { CompactInput("Вес, кг", weight, { weight = it }, "Вес, кг") }
                 OutlinedIconButton(onClick = { model.weighIn(weight) }, enabled = !model.busy, shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)) {
                     Icon(androidx.compose.material.icons.Icons.Outlined.Check, "Сохранить вес", Modifier.size(18.dp))
                 }
             }
         }
-        if (!modern && exercises.isNotEmpty()) FitCard {
-            MuscleSummary(exercises, logs, model.preferences.text("muscle_summary_view", "chips"))
-        }
+
 
         if (model.plan.array("folders").isEmpty() && !model.busy) Panel("День без тренировок") {
             Text("На эту дату нет активных тренировок. Выберите другую дату или настройте расписание программы.")
             Action("К программам") { model.navigate(Screen.Programs) }
         }
-        model.plan.array("folders").forEach { folder ->
-            FitCard(Modifier.testTag("workout-program-${folder.getInt("id")}")) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(folder.text("name"), Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
-                    OutlinedButton(onClick = { chat = true; model.openChat(folder.getInt("id"), "post_workout_review", "Разбери тренировку за ${model.date}: оцени фактические результаты и предложи обоснованные изменения, если они доступны.") }, enabled = !model.busy,
-                        shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp), contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)) { Text("✧ AI") }
-                }
-                val expected = folder.array("templates").flatMap { it.array("exercises") }.filter { it.optBoolean("is_active", true) }
-                    .flatMap { exercise -> exercise.array("sets").map { exercise.optInt("template_exercise_id") to it.optInt("set_index") } }
-                val completed = expected.isNotEmpty() && expected.all { pair -> logs.any { it.optInt("template_exercise") == pair.first && it.optInt("set_index") == pair.second } }
-                if (completed) Text("Все ${expected.size} подходов записаны", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                folder.array("templates").forEach { template ->
-                    Text(template.text("name"), style = MaterialTheme.typography.titleMedium)
-                    template.array("exercises").forEach { exercise ->
-                        val source = exercise.optJSONObject("source") ?: JSONObject()
-                        val defaults = exercise.optJSONObject("defaults") ?: JSONObject()
-                        Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surface) {
-                            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(source.text("name"), Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
-                                    IconButton(onClick = { info = source }) { Icon(androidx.compose.material.icons.Icons.Outlined.Info, "Техника и описание", Modifier.size(18.dp)) }
-                                }
-                                if (exercise.text("note").isNotEmpty()) Text(exercise.text("note"))
-                                if (!exercise.optBoolean("is_active", true)) Text("Упражнение выключено")
-                                else exercise.array("sets").forEach { set ->
-                                    val logged = logs.find { it.optInt("template_exercise") == exercise.optInt("template_exercise_id") && it.optInt("set_index") == set.optInt("set_index") }
-                                    SetRow(model, exercise, set, defaults, logged) { if (it.optBoolean("queued")) model.cancelQueued(it) else deletePath = "/api/workouts/logs/${it.getInt("id")}/" }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        WorkoutChecklist(model, info = { info = it }, chat = { folder ->
+            chat = true; model.openChat(folder.getInt("id"), "post_workout_review", "Разбери тренировку за ${model.date}: оцени фактические результаты и предложи обоснованные изменения, если они доступны.")
+        }, delete = { log -> if (log.optBoolean("queued")) model.cancelQueued(log) else deletePath = "/api/workouts/logs/${log.getInt("id")}/" })
         if (model.recommendations.isNotEmpty()) {
             OutlinedButton(onClick = model::recommendations, Modifier.fillMaxWidth(), enabled = !model.busy) { Text("Рекомендации по прогрессии") }
             model.recommendations.forEach { folder ->
@@ -127,46 +99,41 @@ import kotlin.math.roundToInt
 }
 
 @Composable fun SetRow(model: AppModel, exercise: JSONObject, set: JSONObject, defaults: JSONObject, logged: JSONObject?, delete: (JSONObject) -> Unit) {
-    val key = "${model.plan.optInt("id")}:${exercise.optInt("template_exercise_id")}:${set.optInt("set_index")}:${logged?.toString()}"
-    var reps by remember(key) { mutableStateOf(logged?.text("actual_reps") ?: set.text("default_reps", "10")) }
-    var weight by remember(key) { mutableStateOf(logged?.text("actual_weight") ?: set.text("default_weight", "0")) }
-    var time by remember(key) { mutableStateOf(logged?.text("actual_time") ?: set.text("default_time", "30")) }
+    val key = "${model.plan.optInt("id")}:${exercise.optInt("template_exercise_id")}:${set.optInt("set_index")}:$set:$defaults:${logged?.toString()}"
+    var reps by remember(key) { mutableStateOf(logged?.text("actual_reps") ?: set.text("default_reps", defaults.text("reps", "10"))) }
+    var weight by remember(key) { mutableStateOf(logged?.text("actual_weight") ?: set.text("default_weight", defaults.text("weight", "0"))) }
+    var time by remember(key) { mutableStateOf(logged?.text("actual_time") ?: set.text("default_time", defaults.text("time", "30"))) }
     val source = exercise.optJSONObject("source") ?: JSONObject()
     val hasWeight = defaults.optBoolean("has_weight", source.optBoolean("has_weight"))
     val hasTime = defaults.optBoolean("has_time", source.optBoolean("has_time"))
     var editing by remember(key) { mutableStateOf(false) }
-    val planned = if (hasTime) "${set.text("default_time", "30")} сек" else "${set.text("default_reps", "10")} повт." + if (hasWeight) " · ${set.text("default_weight", "0")} кг" else ""
+    val planned = if (hasTime) "${set.text("default_time", defaults.text("time", "30"))} сек" else "${set.text("default_reps", defaults.text("reps", "10"))} повт." + if (hasWeight) " · ${set.text("default_weight", defaults.text("weight", "0"))} кг" else ""
     val actual = if (hasTime) "$time сек" else "$reps повт." + if (hasWeight) " · $weight кг" else ""
-    Surface(Modifier.fillMaxWidth(), shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
-        color = if (logged != null) MaterialTheme.colorScheme.primary.copy(alpha = .055f) else MaterialTheme.colorScheme.surfaceVariant,
-        border = BorderStroke(1.dp, if (logged != null) MaterialTheme.colorScheme.primary.copy(alpha = .18f) else MaterialTheme.colorScheme.outlineVariant)) {
-        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(if (logged != null) "✓" else set.optInt("set_index").toString().padStart(2, '0'), style = MaterialTheme.typography.titleMedium,
-                    color = if (logged != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(end = 12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(if (logged != null) "Результат" else "План", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(if (logged != null) actual else planned, style = MaterialTheme.typography.titleSmall)
-                }
-                IconButton(onClick = { editing = !editing }) {
-                    Icon(androidx.compose.material.icons.Icons.Outlined.Edit, "Изменить подход ${set.optInt("set_index")}", Modifier.size(18.dp))
+    Column(Modifier.fillMaxWidth().testTag("set-row-${exercise.optInt("template_exercise_id")}-${set.optInt("set_index")}")) {
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        Row(Modifier.fillMaxWidth().padding(vertical = 13.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Surface(shape = androidx.compose.foundation.shape.CircleShape, color = if (logged != null) androidx.compose.ui.graphics.Color(0xffdcfce7) else MaterialTheme.colorScheme.surfaceVariant) {
+                Box(Modifier.size(28.dp), contentAlignment = Alignment.Center) {
+                    Text(if (logged != null) "✓" else set.optInt("set_index").toString().padStart(2, '0'), style = MaterialTheme.typography.bodySmall,
+                        color = if (logged != null) androidx.compose.ui.graphics.Color(0xff15803d) else MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            if (logged != null) Text("План: $planned", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            if (editing) {
-                if (!hasTime) NumberControl("Повторы", reps, { reps = it }, 1.0)
-                if (hasWeight && !hasTime) NumberControl("Вес, кг", weight, { weight = it }, 2.0)
-                if (hasTime) NumberControl("Время, сек", time, { time = it }, 1.0)
+            Column(Modifier.weight(1f)) {
+                Text(if (logged != null) "Результат" else "План", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(if (logged != null) actual else planned, style = MaterialTheme.typography.titleSmall)
+                if (logged?.optBoolean("queued") == true) Text("В очереди · сохранено на устройстве", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                if (logged != null) Text("План: $planned", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Row(Modifier.horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
-                if (hasTime && logged == null) TextButton(onClick = {
-                    val duration = time.toIntOrNull() ?: 0
-                    if (duration > 0) model.startExecution(exercise, set, reps, weight, time)
-                }, enabled = !model.busy) { Text("Таймер") }
-                if (logged == null || editing) Button(onClick = { model.logSet(exercise, set, reps, weight, time, logged) }, shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp), enabled = !model.busy && (reps.toIntOrNull() ?: 0) >= 0) { Text(if (logged == null) "Выполнено" else "Сохранить") }
-                if (logged != null && editing) TextButton(onClick = { delete(logged) }, enabled = !model.busy) { Text("Отменить") }
+            if (logged != null) IconButton(onClick = { model.error = null; editing = true }, modifier = Modifier.size(48.dp)) { Icon(androidx.compose.material.icons.Icons.Outlined.Edit, "Изменить подход ${set.optInt("set_index")}", Modifier.size(16.dp)) }
+            if (logged == null) OutlinedButton(onClick = {
+                if (hasTime) { if ((time.toIntOrNull() ?: 0) > 0) model.startExecution(exercise, set, reps, weight, time) }
+                else model.openRest(exercise, set, reps, weight, time)
+            }, shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp), contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp), enabled = !model.busy && !model.workoutTimerActive) {
+                Text(if (hasTime) "▷ Начать" else "+ Отметить", style = MaterialTheme.typography.labelLarge)
             }
         }
+        if (editing && logged != null) CompletedSetDialog(model, exercise, set, defaults, logged) { editing = false }
+
     }
 }
 
@@ -185,32 +152,4 @@ import kotlin.math.roundToInt
     val pressed by interactions.collectIsPressedAsState(); val latest by rememberUpdatedState(action)
     LaunchedEffect(pressed) { if (pressed) { delay(400); while (true) { latest(); delay(90) } } }
     TextButton(onClick = action, interactionSource = interactions) { Text(label) }
-}
-
-@Composable fun TimerDialogs(model: AppModel) {
-    val execution = model.executionUntil > 0
-    val end = if (execution) model.executionUntil else model.restUntil
-    if (end <= 0) return
-    var remaining by remember(end) { mutableIntStateOf(ceil((end - System.currentTimeMillis()) / 1000.0).toInt().coerceAtLeast(0)) }
-    val context = LocalContext.current
-    LaunchedEffect(end) {
-        while (remaining > 0) { delay(250); remaining = ceil((end - System.currentTimeMillis()) / 1000.0).toInt().coerceAtLeast(0) }
-        model.signalTimer(execution)
-    }
-    Dialog(onDismissRequest = { if (execution) { model.executionUntil = 0; model.executionDone = null } else model.restUntil = 0 }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Surface(Modifier.fillMaxSize()) {
-            Column(Modifier.fillMaxSize().padding(32.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(if (execution) "Выполнение" else "Время восстановиться", style = MaterialTheme.typography.headlineMedium)
-                Spacer(Modifier.height(40.dp))
-                Text("${remaining / 60}:${(remaining % 60).toString().padStart(2, '0')}", style = MaterialTheme.typography.displayLarge)
-                Text(if (remaining == 0) "Готово" else if (execution) "Сохраняйте технику" else "Следующий подход уже близко")
-                Spacer(Modifier.height(40.dp))
-                Action(if (execution) "Завершить подход" else "Продолжить тренировку", !execution || !model.busy) {
-                    if (execution) model.finishExecution() else model.restUntil = 0
-                }
-                if (!execution) TextButton(onClick = { model.restUntil = System.currentTimeMillis() + model.restDuration * 1000L }) { Text("Начать отдых заново") }
-                else TextButton(onClick = { model.executionUntil = 0; model.executionDone = null }) { Text("Отменить таймер") }
-            }
-        }
-    }
 }

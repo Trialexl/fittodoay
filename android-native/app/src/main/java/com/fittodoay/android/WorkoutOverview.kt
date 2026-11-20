@@ -4,7 +4,10 @@ import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ExpandMore
+import androidx.compose.material.icons.outlined.ExpandLess
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -22,9 +25,9 @@ import kotlin.math.roundToInt
     val accent = MaterialTheme.colorScheme.primary
     MaterialTheme(colorScheme = fitColors(true, accent, true)) {
         Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), color = Color(0xff202633), contentColor = Color.White) {
-            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
+            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                         Text("СЕГОДНЯ В ФОКУСЕ", style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.sp), color = Color(0xffb6bfce))
                         Text(focus, style = MaterialTheme.typography.titleMedium)
                     }
@@ -41,10 +44,14 @@ import kotlin.math.roundToInt
                     OverviewMetric(total.toString(), "подходов в плане")
                     OverviewMetric(workoutLoad(model.plan).roundToInt().toString(), "нагрузка за день")
                 }
-                if (exercises.isNotEmpty()) {
+                if (exercises.isNotEmpty() && model.preferences.text("muscle_summary_view", "chips") == "chips") {
                     HorizontalDivider(color = Color(0xff343c4b))
-                    Text("Группы мышц", style = MaterialTheme.typography.labelMedium)
-                    MuscleSummary(exercises, logs, model.preferences.text("muscle_summary_view", "chips"))
+                    var musclesExpanded by remember { mutableStateOf(true) }
+                    Row(Modifier.fillMaxWidth().clickable { musclesExpanded = !musclesExpanded }.heightIn(min = 32.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Группы мышц", Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
+                        Icon(if (musclesExpanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore, "Группы мышц", Modifier.size(18.dp), tint = accent)
+                    }
+                    if (musclesExpanded) MuscleSummary(exercises, logs, "chips")
                 }
             }
         }

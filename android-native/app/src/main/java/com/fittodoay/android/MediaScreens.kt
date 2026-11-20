@@ -89,14 +89,12 @@ private suspend fun prepareUpload(context: Context, uri: Uri, maxMb: Int): Pair<
         while (model.reviews.any { it.text("status") == "processing" }) { delay(5000); if (!model.busy) model.refresh() }
     }
     Page {
-        FitCard {
-            ScreenHeading("AI Technique Check", "Проверка техники", "Загрузите короткое видео подхода. Система попробует определить упражнение и разобрать технику по кадрам.")
+        ScreenHeading("AI Technique Check", "Проверка техники", "Загрузите короткое видео подхода. Система попробует определить упражнение и разобрать технику по кадрам.")
+        Surface(shape = androidx.compose.foundation.shape.RoundedCornerShape(18.dp), color = androidx.compose.ui.graphics.Color(0xfffffbea), border = BorderStroke(1.dp, androidx.compose.ui.graphics.Color(0xfff3e7ae))) {
+            Text("Фича не заменяет тренера или врача. При боли, травмах и сомнениях лучше остановить подход и обратиться к специалисту.", Modifier.padding(16.dp), style = MaterialTheme.typography.bodyMedium, color = androidx.compose.ui.graphics.Color(0xff856345))
         }
-        Panel("Новое видео") {
-            Text("Выберите видео до 30 секунд и 80 МБ. Результат анализа появится в истории.")
-            UploadButton(model, "Выбрать видео", "video/*", "/api/technique-reviews/", "video_file", 80)
-        }
-        if (model.reviews.isEmpty() && !model.busy) Text("Здесь появятся ваши проверки техники.")
+        TechniqueUpload(model)
+        if (model.reviews.isEmpty() && !model.busy) Panel("Последние проверки") { Text("Пока нет загруженных видео.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
         model.reviews.forEach { review ->
             Panel(review.optJSONObject("exercise")?.text("name") ?: review.text("detected_exercise_name").ifBlank { review.text("video_filename") }, Modifier.testTag("technique-review-${review.getInt("id")}")) {
                 Text(when (review.text("status")) { "processing" -> "Анализируется…"; "completed" -> "Анализ завершён"; "needs_confirmation" -> "Уточните упражнение"; else -> "Не удалось завершить анализ" })
@@ -148,6 +146,48 @@ private suspend fun prepareUpload(context: Context, uri: Uri, maxMb: Int): Pair<
     }, confirmButton = { TextButton(onClick = { selected = null }) { Text("Закрыть") } }) }
 }
 
+@Composable private fun TechniqueUpload(model: AppModel) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var selected by remember { mutableStateOf<UploadFile?>(null) }
+    var preparing by remember { mutableStateOf(false) }
+    val current by rememberUpdatedState(selected)
+    DisposableEffect(Unit) { onDispose { current?.file?.delete() } }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) scope.launch {
+            preparing = true
+            try {
+                val (name, file) = prepareUpload(context, uri, 80)
+                selected?.file?.delete()
+                selected = UploadFile(name, context.contentResolver.getType(uri) ?: "video/mp4", file)
+            } catch (error: Exception) {
+                if (error is kotlinx.coroutines.CancellationException) throw error
+                model.error = error.message ?: "Не удалось открыть видео"
+            } finally { preparing = false }
+        }
+    }
+    Panel("Новое видео") {
+        Surface(shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceVariant,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
+            Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Выберите видео подхода", style = MaterialTheme.typography.titleSmall)
+                Text("MP4, MOV, WEBM или M4V. Лучше 5–15 секунд, всё тело в кадре. До 80 МБ.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    TextButton(onClick = { picker.launch(arrayOf("video/*")) }, enabled = !model.busy && !preparing,
+                        colors = ButtonDefaults.textButtonColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) { Text(if (preparing) "Подготовка…" else "Выбрать видео") }
+                    Text(selected?.name ?: "Файл не выбран", style = MaterialTheme.typography.bodySmall, maxLines = 2, modifier = Modifier.weight(1f))
+                }
+            }
+        }
+        Action("Загрузить и разобрать", selected != null && !model.busy && !preparing) {
+            selected?.let { upload ->
+                selected = null
+                model.uploaded("/api/technique-reviews/", "video_file", upload.name, upload.mime, upload.file)
+            }
+        }
+    }
+}
+
 @Composable private fun TechniqueResult(value: JSONObject) {
     value.array("issues").takeIf { it.isNotEmpty() }?.let { issues ->
         Text("Что исправить", style = MaterialTheme.typography.titleMedium)
@@ -180,14 +220,7 @@ private suspend fun prepareUpload(context: Context, uri: Uri, maxMb: Int): Pair<
     var feedback by remember { mutableStateOf("") }
     var customAccent by remember(model.preferences.text("accent_color")) { mutableStateOf(model.preferences.text("accent_color", "#a855f7")) }
     Page {
-        Panel("Оформление") {
-            DesignPicker(model.preferences.text("design_version", "v1")) { model.preferences(obj("design_version" to it)) }
-            Choices("Группы мышц", model.preferences.text("muscle_summary_view", "chips"), listOf("chips" to "Плашки", "bars" to "Виджет", "row" to "Строка")) { model.preferences(obj("muscle_summary_view" to it)) }
-            Choices("Тема", model.preferences.text("theme", "light"), listOf("light" to "Светлая", "dark" to "Тёмная")) { model.preferences(obj("theme" to it)) }
-            AccentPicker(model.preferences.text("accent_color", "#a855f7")) { model.preferences(obj("accent_color" to it)) }
-            Field("Свой цвет #RRGGBB", customAccent, { customAccent = it })
-            TextButton(onClick = { model.preferences(obj("accent_color" to customAccent)) }, enabled = !model.busy && customAccent.matches(Regex("#[0-9a-fA-F]{6}"))) { Text("Применить цвет") }
-        }
+        Panel("Оформление") { AppearanceControls(model) }
         Panel("Ваш профиль") {
             Choices("Цель", goal, goals) { goal = it }; Choices("Пол", gender, genders) { gender = it }; Choices("Опыт", level, levels) { level = it }
             Field("Возраст", age, { age = it }); Field("Вес, кг", weight, { weight = it }); Field("Рост, см", height, { height = it })

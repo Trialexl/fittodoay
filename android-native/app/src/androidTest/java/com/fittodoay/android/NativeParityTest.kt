@@ -31,6 +31,7 @@ class NativeParityTest {
     private fun waitRequest() { compose.waitForIdle(); compose.waitUntil(200_000) { !model.busy }; compose.waitForIdle(); assertNull(model.error, model.error) }
     private fun navigate(screen: Screen) {
         check(model.preferences.text("design_version") == "v2")
+        if (screen == Screen.Settings) compose.onNodeWithText("Ещё⌄").performClick()
         compose.onNodeWithContentDescription(screen.title).performClick(); waitRequest()
     }
     private fun visible(text: String): SemanticsNodeInteraction {
@@ -101,12 +102,12 @@ class NativeParityTest {
     @Test fun timerSnapshotRestoresAfterActivityAndViewModelRecreation() {
         val end = System.currentTimeMillis() + 60_000
         compose.runOnIdle { model.restDuration = 60; model.restUntil = end }
-        compose.onNodeWithText("Время восстановиться").assertIsDisplayed()
+        compose.onNodeWithText("Восстановление").assertIsDisplayed()
         capture("timer-before-recreation")
         compose.runOnIdle { compose.activity.viewModelStore.clear() }
         compose.activityRule.scenario.recreate()
         compose.runOnIdle { model = compose.activity.model }; waitRequest()
-        assertEquals(end, model.restUntil); compose.onNodeWithText("Время восстановиться").assertIsDisplayed()
+        assertEquals(end, model.restUntil); compose.onNodeWithText("Восстановление").assertIsDisplayed()
         capture("timer-restored"); compose.onNodeWithText("Продолжить тренировку").performClick()
         assertNull(TimerStore(context, model.token).read("rest"))
     }

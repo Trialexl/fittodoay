@@ -30,10 +30,7 @@ import org.json.JSONObject
     val steps = listOf("Основная информация", "Цель", "Режим", "Дополнительные пожелания")
     var chat by remember { mutableStateOf(false) }
     Page {
-        FitCard {
-            Text("Создать программу с помощником", style = MaterialTheme.typography.headlineSmall)
-            Text("Ответьте на несколько вопросов — и помощник подберёт программу на основе каталога упражнений.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
+        ScreenHeading("", "Создать программу с помощником", "Ответьте на несколько вопросов — и помощник подберёт программу на основе каталога упражнений.")
         model.preview?.let { preview ->
             Panel("Проверьте программу") {
                 preview.optJSONObject("plan")?.array("programs")?.forEach { program ->
@@ -54,17 +51,24 @@ import org.json.JSONObject
                 Action("Создать эти программы", !model.busy, model::applyPreview)
                 TextButton(onClick = model::discardPreview) { Text("Изменить ответы") }
             }
-        } ?: Panel("Шаг ${step + 1} / ${steps.size} · ${steps[step]}") {
+        } ?: FitCard(padding = 24.dp) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 steps.forEachIndexed { index, title ->
                     Column(Modifier.weight(1f)) {
-                        Text(if (index < step) "✓" else "%02d".format(index + 1),
-                            color = if (index == step) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.titleSmall)
-                        Text(title, style = MaterialTheme.typography.labelSmall)
+                        Surface(shape = androidx.compose.foundation.shape.CircleShape, color = if (index == step) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant) {
+                            Box(Modifier.size(28.dp), contentAlignment = androidx.compose.ui.Alignment.Center) {
+                                Text(if (index < step) "✓" else "%02d".format(index + 1), style = MaterialTheme.typography.labelSmall,
+                                    color = if (index == step) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        Text(if (index == 3) "Пожелания" else title, style = MaterialTheme.typography.labelSmall, color = if (index == step) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
+            HorizontalDivider(Modifier.padding(vertical = 14.dp), color = MaterialTheme.colorScheme.outlineVariant)
+            Text("ШАГ ${step + 1} / ${steps.size}", style = MaterialTheme.typography.labelSmall.copy(letterSpacing = androidx.compose.ui.unit.TextUnit(2f, androidx.compose.ui.unit.TextUnitType.Sp)))
+            Text(steps[step], style = MaterialTheme.typography.headlineSmall)
             when (step) {
                 0 -> { Choices("Пол", gender, genders) { gender = it }; Field("Возраст", age, { age = it }); Field("Вес, кг", weight, { weight = it }); Field("Рост, см", height, { height = it }) }
                 1 -> Choices("Что в приоритете", goal, goals) { goal = it }

@@ -21,7 +21,7 @@ import java.time.LocalDate
     var deletePath by remember { mutableStateOf<String?>(null) }
     var info by remember { mutableStateOf<JSONObject?>(null) }
     var chat by remember { mutableStateOf(false) }
-    val modern = model.preferences.text("design_version", "v1") == "v2"
+    val modern = true
     var selectedFolder by rememberSaveable { mutableIntStateOf(0) }
     val folderIds = model.folders.map { it.optInt("id") }.toSet()
     var knownFolders by remember { mutableStateOf(folderIds) }
@@ -32,7 +32,7 @@ import java.time.LocalDate
     }
     val selectedId = selectedFolder.takeIf { id -> model.folders.any { it.optInt("id") == id } } ?: model.folders.firstOrNull()?.optInt("id")
     Page {
-        ScreenHeading("Программы и шаблоны", if (model.preferences.text("design_version") == "v2") "Мои программы" else "Управление папками и днями", "Выбирайте программу, настраивайте дни и упражнения.")
+        ScreenHeading("Программы и шаблоны", "Мои программы", "Выбирайте программу, настраивайте дни и упражнения.")
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = { model.navigate(Screen.Assistant) }, modifier = Modifier.weight(1f), enabled = !model.busy,
                 shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp), contentPadding = PaddingValues(horizontal = 8.dp, vertical = 12.dp),
@@ -41,23 +41,15 @@ import java.time.LocalDate
                 shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp), contentPadding = PaddingValues(horizontal = 8.dp, vertical = 12.dp)) { Text("Новая программа", maxLines = 1, style = MaterialTheme.typography.labelMedium) }
         }
         if (model.folders.isEmpty() && !model.busy) Text("Добавьте программу и запланируйте первый день тренировок.")
-        if (modern && model.folders.isNotEmpty()) FitCard {
-            Text("Мои программы · ${model.folders.size}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                model.folders.forEach { folder ->
-                    val selected = folder.optInt("id") == selectedId
-                    Surface(onClick = { selectedFolder = folder.getInt("id") }, modifier = Modifier.width(160.dp).testTag("select-program-${folder.getInt("id")}"),
-                        shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp), color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
-                        border = BorderStroke(1.dp, if (selected) MaterialTheme.colorScheme.primary.copy(alpha = .25f) else MaterialTheme.colorScheme.outlineVariant)) {
-                        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(folder.text("name"), style = MaterialTheme.typography.titleSmall)
-                            Text(if (folder.optBoolean("is_active")) "● Активна" else "Выключена", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                }
-            }
+        if (modern && model.folders.isNotEmpty()) ModernProgramLibrary(model, selectedId, { selectedFolder = it }, { editFolder = JSONObject() })
+        if (modern) model.folders.firstOrNull { it.optInt("id") == selectedId }?.let { folder ->
+            ModernProgramFolder(model, folder, { editFolder = folder }, { editDay = obj("folder" to folder.getInt("id")) },
+                { chat = true; model.openChat(folder.getInt("id")) }, { editDay = it },
+                { day, exercise -> exerciseTemplate = day.getInt("id"); editExercise = exercise },
+                { day -> exerciseTemplate = day.getInt("id"); editExercise = JSONObject(); model.loadCatalog() },
+                { info = it }, { deletePath = it })
         }
-        model.folders.filter { !modern || it.optInt("id") == selectedId }.forEach { folder ->
+        if (!modern) model.folders.filter { !modern || it.optInt("id") == selectedId }.forEach { folder ->
             var expanded by remember(folder.getInt("id"), modern) { mutableStateOf(modern) }
             Panel(folder.text("name"), Modifier.testTag("program-${folder.getInt("id")}")) {
                 Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
@@ -115,13 +107,20 @@ import java.time.LocalDate
 }
 
 @Composable fun FolderDialog(folder: JSONObject, model: AppModel, dismiss: () -> Unit) {
+    var active by remember { mutableStateOf(folder.optBoolean("is_active", true)) }
+    var deleting by remember { mutableStateOf(false) }
     var name by remember { mutableStateOf(folder.text("name")) }
     var comment by remember { mutableStateOf(folder.text("comment")) }
     AlertDialog(onDismissRequest = dismiss, title = { Text("Программа") }, text = {
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) { model.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }; Field("Название", name, { name = it }); Field("Комментарий", comment, { comment = it }) }
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) { model.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }; Field("Название", name, { name = it }); Field("Комментарий", comment, { comment = it })
+            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) { Switch(active, { active = it }, enabled = !model.busy); Text(if (active) "Активна" else "Выключена") }
+            if (folder.has("id")) TextButton(onClick = { deleting = true }, enabled = !model.busy) { Text("Удалить программу", color = MaterialTheme.colorScheme.error) }
+        }
     }, confirmButton = { TextButton(onClick = {
-        model.save("/api/programs/folders/", obj("name" to name.trim(), "comment" to comment), folder.opt("id"), dismiss)
+        model.save("/api/programs/folders/", obj("name" to name.trim(), "comment" to comment, "is_active" to active), folder.opt("id"), dismiss)
     }, enabled = !model.busy && name.isNotBlank()) { Text("Сохранить") } }, dismissButton = { TextButton(onClick = dismiss) { Text("Отмена") } })
+    if (deleting) ConfirmDelete("программу", { deleting = false }) { model.delete("/api/programs/folders/${folder.getInt("id")}/"); dismiss() }
+
 }
 
 fun scheduleLabel(day: JSONObject): String {

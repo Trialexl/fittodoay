@@ -64,8 +64,8 @@ class CrossClientParityTest {
                 if (referenceDate != null) compose.runOnIdle { qa.model.date = java.time.LocalDate.parse(referenceDate).toString() }
                 qa.navigate(Screen.Workout)
                 if (qa.model.plan.array("logs").isEmpty()) {
-                    qa.visible("Выполнено").performClick(); qa.waitRequest()
-                    compose.onNodeWithText("Продолжить тренировку").performClick(); compose.waitForIdle()
+                    qa.visible("+ Отметить").performClick(); qa.waitRequest()
+                    compose.onNodeWithText("Пропустить отдых").performScrollTo().performClick(); qa.waitRequest()
                 }
                 compose.onNode(hasText("Вес, кг", substring = false) and hasAnyAncestor(hasTestTag("body-weight-panel"))).performScrollTo().performTextReplacement("81,25")
                 qa.visible(hasContentDescription("Сохранить вес"), "save weight").performClick(); qa.waitRequest()

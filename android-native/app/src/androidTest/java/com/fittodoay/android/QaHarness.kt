@@ -48,6 +48,7 @@ class QaHarness(val compose: AndroidComposeTestRule<ActivityScenarioRule<MainAct
         check(model.preferences.text("design_version") == "v2") { "V1 navigation is outside the active QA scope" }
         repeat(3) {
             waitRequest()
+            if (screen == Screen.Settings) compose.onNodeWithText("Ещё⌄").performClick()
             compose.onNodeWithContentDescription(screen.title).assertIsEnabled().performClick()
             waitRequest()
             if (model.screen == screen) return

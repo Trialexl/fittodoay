@@ -20,8 +20,15 @@ class TimerStore(private val context: Context, token: String) {
         val payload = JSONObject(state.toString()).put("end_at", endAt).put("id", UUID.randomUUID().toString()).put("notified", false)
         check(prefs.edit().putString(kind, payload.toString()).commit())
         val action = pending(kind)
+        if (endAt <= 0) { alarms.cancel(action); return }
         if (Build.VERSION.SDK_INT < 31 || alarms.canScheduleExactAlarms()) alarms.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, endAt, action)
         else alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, endAt, action)
+    }
+    // Update form/window state without changing the deadline, alarm or signal identity.
+    fun update(kind: String, changes: JSONObject) {
+        val state = read(kind) ?: return
+        changes.keys().forEach { key -> state.put(key, changes.get(key)) }
+        check(prefs.edit().putString(kind, state.toString()).commit())
     }
     fun clear(kind: String) {
         prefs.edit().remove(kind).commit(); alarms.cancel(pending(kind))

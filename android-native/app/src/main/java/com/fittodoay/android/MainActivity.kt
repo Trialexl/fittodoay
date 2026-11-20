@@ -1,6 +1,7 @@
 package com.fittodoay.android
 
 import android.os.Bundle
+import androidx.activity.compose.BackHandler
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.*
@@ -11,6 +12,7 @@ import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
@@ -36,8 +38,11 @@ class MainActivity : ComponentActivity() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable fun FitApp(model: AppModel = viewModel()) {
     val dark = model.preferences.text("theme") == "dark"
-    val modern = model.preferences.text("design_version", "v1") == "v2"
+    val modern = true
     var menu by remember { mutableStateOf(false) }
+    var appearance by remember { mutableStateOf(false) }
+    val screenState = key(model.token) { rememberSaveableStateHolder() }
+    BackHandler(enabled = model.token.isNotEmpty() && model.screen != Screen.Workout && !appearance && !menu) { model.navigate(Screen.Workout) }
     val view = LocalView.current
     SideEffect {
         val activity = view.context as? android.app.Activity
@@ -50,18 +55,27 @@ class MainActivity : ComponentActivity() {
         .getOrDefault(Color(0xffa855f7))
     val scheme = fitColors(dark, accent, modern)
     MaterialTheme(colorScheme = scheme, typography = FitTypography, shapes = Shapes(small = RoundedCornerShape(12.dp), medium = RoundedCornerShape(18.dp), large = RoundedCornerShape(24.dp), extraLarge = RoundedCornerShape(24.dp))) {
+        BoxWithConstraints {
+        val wide = maxWidth >= 840.dp
         Scaffold(
             topBar = {
-                TopAppBar(colors = TopAppBarDefaults.topAppBarColors(containerColor = scheme.surface), title = {
+                TopAppBar(expandedHeight = 56.dp, colors = TopAppBarDefaults.topAppBarColors(containerColor = scheme.background), title = {
                     Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                        Text("fitTOD", fontWeight = FontWeight.Bold, fontSize = 20.sp, letterSpacing = (-.8).sp)
-                        Icon(Icons.Outlined.CheckCircle, null, tint = accent, modifier = Modifier.size(19.dp))
-                        Text("ay", fontSize = 20.sp, letterSpacing = (-.8).sp)
+                        Text("fitTOD", fontWeight = FontWeight.Bold, fontSize = 19.sp, letterSpacing = (-.8).sp)
+                        Icon(Icons.Outlined.CheckCircle, null, tint = accent, modifier = Modifier.size(18.dp))
+                        Text("ay", fontSize = 19.sp, letterSpacing = (-.8).sp)
                     }
                 },
                     actions = { if (model.token.isNotEmpty()) {
-                        IconButton(onClick = model::refresh, enabled = !model.busy) { Icon(Icons.Outlined.Refresh, "Обновить", Modifier.size(20.dp)) }
-                        if (modern) IconButton(onClick = { model.navigate(Screen.Settings) }, enabled = !model.busy) { Icon(Icons.Outlined.Tune, "Профиль", Modifier.size(20.dp)) }
+                        Box {
+                            OutlinedButton(onClick = { menu = true }, enabled = !model.busy, shape = RoundedCornerShape(10.dp), contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp), modifier = Modifier.heightIn(min = 48.dp)) { Text("Ещё⌄", style = MaterialTheme.typography.bodySmall) }
+                            DropdownMenu(menu, { menu = false }) {
+                                DropdownMenuItem(text = { Text("Профиль") }, onClick = { menu = false; model.navigate(Screen.Settings) }, modifier = Modifier.semantics { contentDescription = "Профиль" })
+                                DropdownMenuItem(text = { Text("Обновить") }, onClick = { menu = false; model.refresh() })
+                            }
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        OutlinedIconButton(onClick = { appearance = true }, enabled = !model.busy, shape = RoundedCornerShape(12.dp), modifier = Modifier.padding(end = 12.dp).size(48.dp)) { Icon(Icons.Outlined.Tune, "Настройки оформления", Modifier.size(18.dp)) }
                         if (!modern) {
                             IconButton(onClick = { menu = true }, enabled = !model.busy) { Icon(Icons.Outlined.Menu, "Меню") }
                             DropdownMenu(menu, { menu = false }) {
@@ -72,21 +86,32 @@ class MainActivity : ComponentActivity() {
             },
             bottomBar = {
                 if (model.token.isNotEmpty()) {
-                    val icons = listOf(Icons.Outlined.CheckCircle, Icons.Outlined.Folder, Icons.Outlined.BarChart, Icons.Outlined.Videocam, Icons.Outlined.AutoAwesome, Icons.Outlined.Person)
+                    val icons = listOf(Icons.Outlined.Checklist, Icons.Outlined.FolderOpen, Icons.Outlined.Insights, Icons.Outlined.SmartDisplay, Icons.Outlined.AutoAwesome, Icons.Outlined.Person)
                     Column(Modifier.navigationBarsPadding()) {
+                    MinimizedWorkoutTimer(model)
                     MiniPlayer(model)
-                    if (modern) NavigationBar(containerColor = scheme.surface, tonalElevation = 0.dp, modifier = Modifier.height(64.dp).testTag("bottom-navigation"), windowInsets = WindowInsets(0, 0, 0, 0)) { Screen.entries.filter { it != Screen.Settings }.forEachIndexed { i, screen ->
+                    if (!wide) NavigationBar(containerColor = scheme.surface, tonalElevation = 0.dp, modifier = Modifier.heightIn(min = 72.dp).testTag("bottom-navigation"), windowInsets = WindowInsets(0, 0, 0, 0)) { Screen.entries.filter { it != Screen.Settings }.forEachIndexed { i, screen ->
                         NavigationBarItem(selected = screen == model.screen, enabled = !model.busy,
                             modifier = Modifier.semantics { contentDescription = screen.title },
-                            onClick = { model.navigate(screen) }, icon = { Icon(icons[i], null, Modifier.size(21.dp)) },
+                            onClick = { model.navigate(screen) }, icon = { Icon(icons[i], null, Modifier.size(24.dp)) },
                             colors = NavigationBarItemDefaults.colors(indicatorColor = accent.copy(alpha = .09f), selectedIconColor = accent, selectedTextColor = scheme.onSurface, unselectedIconColor = scheme.onSurfaceVariant),
-                            label = { Text(when(screen) { Screen.Workout -> "Сегодня"; Screen.Programs -> "Планы"; Screen.Analytics -> "Прогресс"; else -> screen.title }, maxLines = 1, fontSize = 9.sp) }, alwaysShowLabel = true)
+                            label = { Text(when(screen) { Screen.Workout -> "Сегодня"; Screen.Programs -> "Планы"; Screen.Analytics -> "Прогресс"; else -> screen.title }, maxLines = 1, fontSize = 11.sp) }, alwaysShowLabel = true)
                     } }
                     }
                 }
             }
         ) { padding ->
-            Column(Modifier.fillMaxSize().padding(padding).imePadding()) {
+            Row(Modifier.fillMaxSize().padding(padding)) {
+                if (wide && model.token.isNotEmpty()) NavigationRail(
+                    modifier = Modifier.fillMaxHeight().testTag("side-navigation"), containerColor = scheme.surface) {
+                    val icons = listOf(Icons.Outlined.Checklist, Icons.Outlined.FolderOpen, Icons.Outlined.Insights, Icons.Outlined.SmartDisplay, Icons.Outlined.AutoAwesome, Icons.Outlined.Person)
+                    Screen.entries.forEachIndexed { index, screen ->
+                        NavigationRailItem(selected = model.screen == screen, onClick = { model.navigate(screen) },
+                            enabled = !model.busy, modifier = Modifier.semantics { contentDescription = screen.title },
+                            icon = { Icon(icons[index], null) }, label = { Text(screen.title, style = MaterialTheme.typography.labelMedium) })
+                    }
+                }
+            Column(Modifier.weight(1f).fillMaxHeight().imePadding()) {
                 if (model.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
                 if (model.pendingCount > 0) Text("Ожидают синхронизации: ${model.pendingCount}", Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
                 model.error?.let { message ->
@@ -97,16 +122,19 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 model.notice?.let { Text(it, Modifier.padding(horizontal = 20.dp, vertical = 8.dp), color = MaterialTheme.colorScheme.primary) }
-                if (model.token.isEmpty()) AuthScreen(model) else when (model.screen) {
+                if (model.token.isEmpty()) AuthScreen(model) else screenState.SaveableStateProvider(model.screen.name) { when (model.screen) {
                     Screen.Workout -> WorkoutScreen(model)
                     Screen.Programs -> ProgramsScreen(model)
                     Screen.Analytics -> AnalyticsScreen(model)
                     Screen.Technique -> TechniqueScreen(model)
                     Screen.Assistant -> AssistantScreen(model)
                     Screen.Settings -> SettingsScreen(model)
-                }
+                } }
             }
         }
+        }
+        }
+        if (appearance) AppearanceDialog(model) { appearance = false }
         TimerDialogs(model)
     }
 }
@@ -123,8 +151,8 @@ class MainActivity : ComponentActivity() {
     }
 }
 @Composable fun Field(label: String, value: String, onChange: (String) -> Unit, password: Boolean = false) {
-    OutlinedTextField(value, onChange, Modifier.fillMaxWidth(), label = { Text(label) }, singleLine = true, shape = RoundedCornerShape(14.dp),
-        colors = OutlinedTextFieldDefaults.colors(unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant, unfocusedBorderColor = MaterialTheme.colorScheme.outline),
+    OutlinedTextField(value = value, onValueChange = onChange, modifier = Modifier.fillMaxWidth(),
+        label = { Text(label) }, singleLine = true, shape = RoundedCornerShape(12.dp),
         keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = when {
             password -> androidx.compose.ui.text.input.KeyboardType.Password
             label == "Email" -> androidx.compose.ui.text.input.KeyboardType.Email
@@ -133,7 +161,7 @@ class MainActivity : ComponentActivity() {
         visualTransformation = if (password) PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None)
 }
 @Composable fun Choices(label: String, value: String, options: List<Pair<String, String>>, onChange: (String) -> Unit) {
-    Column {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(label, style = MaterialTheme.typography.labelLarge)
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             options.forEach { (id, text) -> FilterChip(selected = value == id, onClick = { onChange(id) }, label = { Text(text) }) }
@@ -141,7 +169,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 @Composable fun Action(label: String, enabled: Boolean = true, onClick: () -> Unit) {
-    Button(onClick, Modifier.fillMaxWidth().heightIn(min = 44.dp), enabled = enabled, shape = RoundedCornerShape(12.dp)) { Text(label) }
+    Button(onClick, Modifier.fillMaxWidth().heightIn(min = 48.dp), enabled = enabled, shape = RoundedCornerShape(12.dp)) { Text(label) }
 }
 @Composable fun ConfirmDelete(title: String, onDismiss: () -> Unit, onConfirm: () -> Unit) {
     AlertDialog(onDismissRequest = onDismiss, title = { Text("Удалить $title?") }, text = { Text("Это действие изменит данные на сервере.") },

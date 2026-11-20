@@ -18,6 +18,7 @@ class VisualSnapshotTest {
         val suffix = if (layout == "reference") "" else "-$layout"
         val qa = QaHarness(compose); qa.guard(requireNetwork = false); qa.waitRequest(allowError = true)
         val fixture = JSONObject(File(qa.context.filesDir, "visual-reference.json").readText())
+        if (fixture.optJSONObject("templates")?.has("id") == true) fixture.put("templates", org.json.JSONArray().put(fixture.getJSONObject("templates")))
         check(fixture.text("source") == "recorded-server-responses" && fixture.text("account_kind") == "synthetic")
         check(qa.model.pendingCount == 0) { "Synchronize the enrolled QA account before visual capture" }
         val originalPreferences = qa.model.preferences
@@ -47,7 +48,7 @@ class VisualSnapshotTest {
                         Screen.Assistant -> "Создать программу с помощником"
                         Screen.Settings -> "Оформление"
                     }
-                    compose.onNodeWithText(heading, substring = false).assertIsDisplayed()
+                    compose.onAllNodesWithText(heading, substring = false).onFirst().assertIsDisplayed()
                     compose.onNodeWithTag("page-scroll").assertIsDisplayed()
                     val page = compose.onNodeWithTag("page-scroll").fetchSemanticsNode().boundsInRoot
                     val root = compose.onRoot().fetchSemanticsNode().boundsInRoot
@@ -56,30 +57,59 @@ class VisualSnapshotTest {
                         ?.getInsets(androidx.core.view.WindowInsetsCompat.Type.navigationBars())?.bottom ?: 0
                     val safeBottom = root.bottom - insets
                     assertTrue("The player overlaps Android navigation", compose.onNodeWithTag("mini-player").fetchSemanticsNode().boundsInRoot.bottom <= safeBottom + 1f)
-                    if (design == "v2") assertTrue("Bottom navigation overlaps Android gestures", compose.onNodeWithTag("bottom-navigation").fetchSemanticsNode().boundsInRoot.bottom <= safeBottom + 1f)
+                    if (layout != "tablet-1067") assertTrue("Bottom navigation overlaps Android gestures", compose.onNodeWithTag("bottom-navigation").fetchSemanticsNode().boundsInRoot.bottom <= safeBottom + 1f)
+                    if (layout == "tablet-1067") compose.onNodeWithTag("side-navigation").assertIsDisplayed()
                     qa.capture("reference$suffix-$design-${screen.name.lowercase()}")
                 }
             }
+            compose.runOnIdle { qa.model.screen = Screen.Programs }
+            val template = qa.model.templates.first { it.array("template_exercises").isNotEmpty() }
+            val folderId = template.getInt("folder")
+            compose.onNodeWithTag("select-program-$folderId").performScrollTo().performClick()
+            val exercise = template.array("template_exercises").first()
+            compose.onNodeWithText(programExerciseSummary(exercise), substring = false).performScrollTo().assertIsDisplayed()
+            qa.capture("program-targets$suffix")
             compose.runOnIdle { qa.model.screen = Screen.Assistant }
             for (step in 2..4) {
                 qa.visible("Далее").performClick()
-                compose.onNodeWithText("Шаг $step / 4", substring = true).assertExists()
+                compose.onNodeWithText("ШАГ $step / 4", substring = true).assertExists()
                 qa.capture("reference$suffix-v2-assistant-step-$step")
             }
             compose.onNodeWithText("Подготовить программу", substring = false).assertExists()
             qa.visible("Назад").performClick()
             compose.onNodeWithText("Тренировок в неделю", substring = false).assertExists()
             compose.runOnIdle { qa.model.screen = Screen.Workout }
+            compose.runOnIdle { qa.model.screen = Screen.Assistant }
+            compose.onNodeWithText("ШАГ 3 / 4", substring = false).assertExists()
+            compose.runOnIdle { qa.model.screen = Screen.Workout }
             val before = qa.model.plan.toString()
-            compose.onNodeWithContentDescription("Изменить подход 2").performScrollTo().performClick()
+            compose.onNodeWithContentDescription("Изменить подход 1").performScrollTo().performClick()
             compose.onNodeWithText("Повторы", substring = false).assertExists()
-            compose.onNode(hasText("Вес, кг", substring = false) and !hasAnyAncestor(hasTestTag("body-weight-panel"))).performScrollTo().performTextReplacement("7,5")
+            compose.onNode(hasContentDescription("Вес (кг)") and hasAnyAncestor(hasTestTag("completed-set-dialog"))).performScrollTo().performTextReplacement("7,5")
             assertEquals(before, qa.model.plan.toString())
             qa.capture("compact-set-editor")
+            compose.onNodeWithText("Отмена", substring = false).performClick()
             compose.onNodeWithContentDescription("Открыть календарь тренировок").performScrollTo().performClick()
             compose.onNodeWithTag("workout-calendar").assertIsDisplayed()
             qa.capture("calendar-dialog")
             compose.onNodeWithText("Закрыть", substring = false).performClick()
+            compose.runOnIdle {
+                androidx.core.view.WindowCompat.getInsetsController(compose.activity.window, compose.activity.window.decorView).hide(androidx.core.view.WindowInsetsCompat.Type.ime())
+            }
+            compose.waitUntil(5000) {
+                androidx.core.view.ViewCompat.getRootWindowInsets(compose.activity.window.decorView)
+                    ?.isVisible(androidx.core.view.WindowInsetsCompat.Type.ime()) != true
+            }
+            compose.runOnIdle { qa.model.preferences = JSONObject(qa.model.preferences.toString()).put("theme", "dark") }
+            for (screen in Screen.entries) {
+                compose.runOnIdle { qa.model.screen = screen }
+                compose.waitForIdle()
+                qa.capture("dark$suffix-${screen.name.lowercase()}")
+            }
+            compose.onNodeWithContentDescription("Настройки оформления").performClick()
+            compose.onNodeWithText("Готово", substring = false).assertIsDisplayed()
+            qa.capture("appearance-dialog$suffix")
+            compose.onNodeWithText("Готово", substring = false).performClick()
             qa.report("visual-snapshot$suffix", obj("result" to "passed", "source" to "recorded-server-responses", "network_enabled" to false,
                 "layout" to layout, "routes" to Screen.entries.size, "designs" to 1, "design" to "v2", "system_navigation_insets_respected" to true, "editing_does_not_apply_without_confirmation" to true))
         } finally { compose.runOnIdle { qa.model.preferences = originalPreferences; qa.model.screen = Screen.Workout } }

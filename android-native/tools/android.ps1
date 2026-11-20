@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('doctor','build','test','live-test','parity-test','full-test','lifecycle-test','layout-test','visual-test','visual-snapshot','local-data-test','install','emulator')][string]$Action = 'doctor',
+    [ValidateSet('doctor','build','test','live-test','parity-test','full-test','lifecycle-test','layout-test','visual-test','visual-snapshot','local-data-test','workout-test','install','emulator')][string]$Action = 'doctor',
     [string]$QaCredentialsFile = (Join-Path $env:LOCALAPPDATA 'fitTODOay/cross-client-qa.json'),
     [ValidateSet('reference','phone','tablet')][string]$VisualLayout = 'reference'
 )
@@ -60,17 +60,47 @@ switch ($Action) {
         & $adb devices
     }
     'build' { & $gradle @gradleArgs assembleDebug; if ($LASTEXITCODE) { exit $LASTEXITCODE } }
-    { $_ -in 'test','live-test','parity-test','full-test','lifecycle-test','layout-test','visual-test','visual-snapshot','local-data-test' } {
+    { $_ -in 'test','live-test','parity-test','full-test','lifecycle-test','layout-test','visual-test','visual-snapshot','local-data-test','workout-test' } {
         & $gradle @gradleArgs assembleDebug assembleDebugAndroidTest testDebugUnitTest lintDebug
         if ($LASTEXITCODE) { exit $LASTEXITCODE }
         & $adb install -r (Join-Path $project 'app/build/outputs/apk/debug/app-debug.apk')
         if ($LASTEXITCODE) { exit $LASTEXITCODE }
         & $adb install -r (Join-Path $project 'app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk')
         if ($LASTEXITCODE) { exit $LASTEXITCODE }
-        if ($Action -notin 'visual-snapshot','lifecycle-test','test') { Restore-TestNetwork }
+        if ($Action -notin 'visual-snapshot','lifecycle-test','test','workout-test') { Restore-TestNetwork }
         # --no-daemon releases this build's heap before instrumentation and
         # does not stop Gradle processes belonging to other projects.
         $instrumentArgs = @('shell','am','instrument','-w')
+        if ($Action -eq 'workout-test') {
+            if ((& $adb shell getprop ro.boot.qemu.avd_name).Trim() -ne 'fitTODOay_API_35') { throw 'Workout verification requires the dedicated QA emulator' }
+            $snapshot = Join-Path $env:LOCALAPPDATA 'fitTODOay/visual-snapshot/reference.json'
+            if (-not (Test-Path -LiteralPath $snapshot)) { throw 'Synthetic reference responses are required' }
+            & $adb push $snapshot /data/local/tmp/fittodoay-workout-reference.json
+            & $adb shell run-as com.fittodoay.android cp /data/local/tmp/fittodoay-workout-reference.json files/visual-reference.json
+            & $adb shell rm /data/local/tmp/fittodoay-workout-reference.json
+            $wifiWasOn = (& $adb shell settings get global wifi_on).Trim() -eq '1'
+            $dataWasOn = (& $adb shell settings get global mobile_data).Trim() -eq '1'
+            try {
+                & $adb shell svc wifi disable
+                & $adb shell svc data disable
+                $flowViewport = switch ($VisualLayout) { 'tablet' { @{Size='1600x2560';Density='240'} }; 'phone' { @{Size='720x1280';Density='320'} }; default { @{Size='786x1704';Density='320'} } }
+                & $adb shell wm size $flowViewport.Size
+                & $adb shell wm density $flowViewport.Density
+                Restore-TestWindow
+                $output = & $adb shell am instrument -w -e class com.fittodoay.android.WorkoutFlowTest -e workoutFlow true com.fittodoay.android.test/androidx.test.runner.AndroidJUnitRunner
+                $output | Write-Output
+                $output | Set-Content -LiteralPath (Join-Path $artifactDir ('workout-flow-' + $VisualLayout + '.txt'))
+                if ($LASTEXITCODE -or ($output -match 'FAILURES!!!|INSTRUMENTATION_FAILED|shortMsg=|Process crashed') -or -not ($output -match 'OK \(')) { throw 'Workout flow verification failed' }
+            } finally {
+                & $adb shell am force-stop com.fittodoay.android
+                & $adb shell wm size reset
+                & $adb shell wm density reset
+                if ($wifiWasOn) { & $adb shell svc wifi enable; Restore-TestNetwork }
+                if ($dataWasOn) { & $adb shell svc data enable }
+            }
+            & $adb shell am start -n com.fittodoay.android/.MainActivity
+            break
+        }
         if ($Action -eq 'local-data-test') {
             if ((& $adb shell getprop ro.boot.qemu.avd_name).Trim() -ne 'fitTODOay_API_35') { throw 'Local data verification requires the dedicated QA emulator' }
             $snapshot = Join-Path $env:LOCALAPPDATA 'fitTODOay/visual-snapshot/reference.json'

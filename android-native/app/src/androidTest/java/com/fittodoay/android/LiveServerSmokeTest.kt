@@ -121,17 +121,17 @@ class LiveServerSmokeTest {
         report.put("exercise", exerciseName)
         compose.runOnIdle { model.refresh() }; waitForRequest()
         capture("workout-before")
-        if (compose.onAllNodesWithText("Выполнено").fetchSemanticsNodes().isNotEmpty()) {
-            visibleText("Выполнено").assertIsEnabled().performClick()
+        if (compose.onAllNodesWithText("+ Отметить").fetchSemanticsNodes().isNotEmpty()) {
+            visibleText("+ Отметить").assertIsEnabled().performClick()
             waitForRequest()
             report.put("after_click_rest", model.restUntil)
             report.put("after_click_logs", model.plan.array("logs").size)
             report.put("after_click_error", model.error ?: "")
             capture("after-set-click")
             compose.waitUntil(10_000) { model.restUntil > 0 }
-            compose.onNodeWithText("Время восстановиться").assertIsDisplayed()
+            compose.onNodeWithText("Восстановление").assertIsDisplayed()
             capture("rest-timer")
-            compose.onNodeWithText("Продолжить тренировку").performClick()
+            compose.onNodeWithText("Пропустить отдых").performScrollTo().performClick(); waitForRequest()
         }
         val afterLog = normalizePlan(api.call("/api/workouts/plan/?date=$date") as JSONObject)
         assertTrue(afterLog.array("logs").isNotEmpty())
