@@ -1,0 +1,22 @@
+# Local screenshots, instrumentation output and downloaded QA media previews.
+/artifacts/
+*.p12
+*.jks
+/signing.properties
+
+# Local Kotlin/native build state and installable packages.
+.kotlin/
+.externalNativeBuild/
+*.apk
+*.aab
+*.apks
+
+# Local signing/QA configuration and account databases.
+/key.properties
+/keystore.properties
+/credentials.json
+/qa-*.json
+*.db
+*.db-shm
+*.db-wal
+*.sqlite3-*

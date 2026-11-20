@@ -1,12 +1,18 @@
 from django.contrib import admin
 from django.urls import include, path
 from workouts.views import (
+    TechniqueReviewVideoView,
     TechniqueReviewConfirmExerciseView,
     TechniqueReviewDetailView,
     TechniqueReviewListCreateView,
 )
 
 urlpatterns = [
+    path(
+        "api/technique-reviews/<int:review_id>/video/",
+        TechniqueReviewVideoView.as_view(),
+        name="technique-review-video",
+    ),
     path("admin/", admin.site.urls),
     path("api/", include("accounts.urls")),
     path("api/", include("agents.urls")),

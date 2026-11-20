@@ -9,6 +9,8 @@ from rest_framework import generics, permissions
 from rest_framework.exceptions import NotFound
 
 from accounts.serializers import LLMPreferencesSerializer
+from accounts.pagination import PrivateArchivePagination
+from rest_framework import serializers
 from decimal import Decimal
 
 from agents.serializers import (
@@ -91,9 +93,24 @@ class LLMProgramView(APIView):
         return normalized
 
 
-class LLMProgramThreadView(generics.CreateAPIView):
+class LLMProgramThreadView(generics.ListCreateAPIView):
     permission_classes = [permissions.IsAuthenticated]
     serializer_class = LLMProgramThreadCreateSerializer
+    pagination_class = PrivateArchivePagination
+
+    def get_serializer_class(self):
+        if self.request.method == "GET":
+            return LLMProgramThreadSerializer
+        return self.serializer_class
+
+    def get_queryset(self):
+        threads = LLMProgramThread.objects.filter(user=self.request.user)
+        if "program_id" in self.request.query_params:
+            program_id = serializers.IntegerField(min_value=1).run_validation(
+                self.request.query_params["program_id"]
+            )
+            threads = threads.filter(program_id=program_id)
+        return threads
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)

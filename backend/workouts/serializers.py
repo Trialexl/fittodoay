@@ -191,6 +191,7 @@ class TechniqueExerciseSerializer(serializers.ModelSerializer):
 class TechniqueReviewSerializer(serializers.ModelSerializer):
     exercise = TechniqueExerciseSerializer(read_only=True)
     video_filename = serializers.SerializerMethodField()
+    video_url = serializers.SerializerMethodField()
 
     class Meta:
         model = TechniqueReview
@@ -201,6 +202,7 @@ class TechniqueReviewSerializer(serializers.ModelSerializer):
             "detected_exercise_name",
             "detected_exercise_confidence",
             "video_filename",
+            "video_url",
             "score",
             "result_json",
             "summary",
@@ -212,6 +214,13 @@ class TechniqueReviewSerializer(serializers.ModelSerializer):
 
     def get_video_filename(self, obj):
         return obj.video_file.name.rsplit("/", 1)[-1] if obj.video_file else ""
+
+    def get_video_url(self, obj):
+        from django.urls import reverse
+
+        return (
+            reverse("technique-review-video", args=[obj.pk]) if obj.video_file else None
+        )
 
 
 class TechniqueReviewCreateSerializer(serializers.ModelSerializer):

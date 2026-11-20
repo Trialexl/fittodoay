@@ -11,7 +11,6 @@ app_name = "exercises"
 
 urlpatterns = [
     path("exercises/", ExerciseListView.as_view(), name="exercise-list"),
-    path("exercises/<str:pk>/", ExerciseDetailView.as_view(), name="exercise-detail"),
     path(
         "exercises/custom/", CustomExerciseListCreateView.as_view(), name="custom-list"
     ),
@@ -20,4 +19,6 @@ urlpatterns = [
         CustomExerciseDetailView.as_view(),
         name="custom-detail",
     ),
+    # Keep literal routes before the catalog's string primary-key catch-all.
+    path("exercises/<str:pk>/", ExerciseDetailView.as_view(), name="exercise-detail"),
 ]

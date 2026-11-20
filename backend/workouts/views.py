@@ -45,6 +45,7 @@ from workouts.recommendations import (
 )
 from workouts.services import generate_daily_plan, update_workout_status
 from workouts.technique import TechniqueReviewAnalysisService
+from accounts.pagination import PrivateArchivePagination
 
 logger = logging.getLogger(__name__)
 
@@ -504,8 +505,13 @@ class TechniqueReviewListCreateView(APIView):
     def get(self, request, *args, **kwargs):
         reviews = TechniqueReview.objects.filter(user=request.user).select_related(
             "exercise"
-        )[:20]
-        return Response({"items": TechniqueReviewSerializer(reviews, many=True).data})
+        )
+        paginator = PrivateArchivePagination()
+        paginator.page_size = 20
+        page = paginator.paginate_queryset(reviews, request, view=self)
+        return paginator.get_paginated_response(
+            TechniqueReviewSerializer(page, many=True).data
+        )
 
     def post(self, request, *args, **kwargs):
         daily_limit = max(int(getattr(settings, "TECHNIQUE_REVIEW_DAILY_LIMIT", 10)), 1)
@@ -548,6 +554,53 @@ class TechniqueReviewListCreateView(APIView):
         TechniqueReviewAnalysisService(review).analyze()
         review.refresh_from_db()
         return Response(TechniqueReviewSerializer(review).data, status=201)
+
+
+class TechniqueReviewVideoView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, review_id: int):
+        try:
+            review = TechniqueReview.objects.get(pk=review_id, user=request.user)
+            if not review.video_file:
+                raise Http404("Video not found")
+            size = review.video_file.size
+            source = review.video_file.open("rb")
+        except (TechniqueReview.DoesNotExist, FileNotFoundError, OSError) as exc:
+            raise Http404("Video not found") from exc
+        mime = {
+            ".mp4": "video/mp4",
+            ".m4v": "video/mp4",
+            ".mov": "video/quicktime",
+            ".webm": "video/webm",
+        }.get(Path(review.video_file.name).suffix.lower(), "application/octet-stream")
+        try:
+            interval = _parse_byte_range(request.headers.get("Range", ""), size)
+        except _RangeNotSatisfiable:
+            source.close()
+            response = Response(status=416)
+            response["Content-Range"] = f"bytes */{size}"
+        else:
+            if interval is None:
+                response = FileResponse(
+                    source,
+                    content_type=mime,
+                    filename=Path(review.video_file.name).name,
+                )
+            else:
+                start, end = interval
+                source.seek(start)
+                response = StreamingHttpResponse(
+                    _iter_file_chunk(source, end - start + 1),
+                    status=206,
+                    content_type=mime,
+                )
+                response["Content-Range"] = f"bytes {start}-{end}/{size}"
+                response["Content-Length"] = str(end - start + 1)
+        response["Accept-Ranges"] = "bytes"
+        response["Cache-Control"] = "private, no-store"
+        response["X-Content-Type-Options"] = "nosniff"
+        return response
 
 
 class TechniqueReviewDetailView(APIView):
