@@ -4,7 +4,9 @@ import android.app.Application
 import androidx.compose.runtime.*
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.*
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
@@ -15,19 +17,19 @@ enum class Screen(val title: String) {
     Technique("Техника"), Assistant("Помощник"), Settings("Профиль")
 }
 
-class AppModel(application: Application) : AndroidViewModel(application) {
+class AppModel @JvmOverloads constructor(application: Application, private val baseUrl: String = BuildConfig.SERVER_URL, private val networkOverride: (() -> Boolean)? = null, private val transportOverride: okhttp3.OkHttpClient? = null) : AndroidViewModel(application) {
     private val session = SessionStore(application)
     var token by mutableStateOf(session.read()); private set
     // Kept in memory across rotation, never in saved instance state or preferences.
     var authPasswordDraft by mutableStateOf("")
-    val api = Api(storage = { if (token.isEmpty()) null else localData() }, networkAvailable = ::isOnline,
+    val api = Api(baseUrl = baseUrl, transportOverride = transportOverride, storage = { if (token.isEmpty()) null else localData() }, networkAvailable = ::isOnline,
         onLocalRead = { notice = "Показаны данные с устройства. Изменения сервера обновятся после подключения." }) { token }
     val audio = AudioController(application)
     private val connectivity = application.getSystemService(android.net.ConnectivityManager::class.java)
     private val networkCallback = object : android.net.ConnectivityManager.NetworkCallback() {
         override fun onCapabilitiesChanged(network: android.net.Network, capabilities: android.net.NetworkCapabilities) {
             if (capabilities.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)) viewModelScope.launch {
-                if (token.isNotEmpty() && pendingCount > 0 && !busy) refresh()
+                if (token.isNotEmpty()) requestWorkoutSync(0)
                 if (token.isNotEmpty()) synchronizeLocalData()
             }
         }
@@ -35,6 +37,43 @@ class AppModel(application: Application) : AndroidViewModel(application) {
     var screen by mutableStateOf(Screen.Workout)
     var focusBodyWeight by mutableStateOf(false)
     var busy by mutableStateOf(false); private set
+    var refreshing by mutableStateOf(false); private set
+    var workoutSaving by mutableIntStateOf(0); private set
+    var workoutSync by mutableStateOf(WorkoutSyncState()); private set
+    private var refreshJob: Job? = null
+    private var refreshGeneration = 0L
+    private var repositoryJob: Job? = null
+    private var workoutSyncJob: Job? = null
+    private val savingKeys = mutableSetOf<String>()
+    private fun repository() = WorkoutRepository.get(getApplication(), token, baseUrl, transportOverride)
+    private fun bindRepository() {
+        repositoryJob?.cancel()
+        val account = token
+        if (account.isEmpty()) return
+        val repo = repository()
+        repositoryJob = viewModelScope.launch {
+            launch { repo.state.collect { state -> if (token == account) { workoutSync = state; pendingCount = state.pending } } }
+            launch { repo.observePending().collect { count -> if (token == account) pendingCount = count } }
+            launch { repo.snapshot.collect { snapshot -> if (token == account && snapshot != null) {
+                if (date == snapshot.date && repo.revision(snapshot.date) == snapshot.revision) plan = snapshot.plan
+                snapshot.plan.optJSONObject("weigh_in")?.takeUnless { it.isNull("weight_kg") }?.let { value ->
+                    weights = weights.filterNot { it.text("date") == snapshot.date } + JSONObject(value.toString()).put("date", snapshot.date)
+                }
+            } } }
+            repo.initialize()
+            if (repo.state.value.pending > 0) repo.schedule()
+        }
+    }
+    fun retryWorkoutSync() { repository().schedule(); requestWorkoutSync(0) }
+    private fun requestWorkoutSync(waitMs: Long = 600) {
+        if (token.isEmpty() || workoutSyncJob?.isActive == true || !isOnline()) return
+        val account = token; val repo = repository()
+        workoutSyncJob = viewModelScope.launch {
+            try { delay(waitMs); repo.synchronize { token == account } }
+            catch (_: IOException) { /* WorkManager owns persisted retries; the repository exposes the failure. */ }
+            finally { workoutSyncJob = null }
+        }
+    }
     var error by mutableStateOf<String?>(null)
     var notice by mutableStateOf<String?>(null)
     var folders by mutableStateOf<List<JSONObject>>(emptyList())
@@ -64,6 +103,22 @@ class AppModel(application: Application) : AndroidViewModel(application) {
     var timerCollapsed by mutableStateOf(false); private set
     private var restAutoAttempted = false
     val workoutTimerActive get() = restPending != null || restUntil > 0 || executionUntil > 0
+    private var timerGeneration = 0L
+    private var timerChanging = false
+    private var executionPending by mutableStateOf<JSONObject?>(null)
+    private fun timerWrite(action: (TimerStore) -> Unit, applied: () -> Unit = {}) {
+        if (token.isEmpty()) return
+        val account = token; val generation = timerGeneration
+        workoutSaving++
+        viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            try {
+                withContext(NonCancellable + Dispatchers.IO) { timerLocks.getOrPut(localAccountKey(account)) { Mutex() }.withLock { action(TimerStore(getApplication(), account)) } }
+                if (token == account && generation == timerGeneration) applied()
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) { if (token == account) { timerChanging = false; error = "Не удалось сохранить таймер. Повторите действие." } }
+            finally { workoutSaving-- }
+        }
+    }
     private var restEnd by mutableLongStateOf(0L)
     private fun timers() = TimerStore(getApplication(), token)
     var restUntil: Long
@@ -71,24 +126,21 @@ class AppModel(application: Application) : AndroidViewModel(application) {
         set(value) {
             restEnd = value
             if (value == 0L) { restPending = null; timerCollapsed = false }
-            if (token.isNotEmpty()) { if (value == 0L) timers().clear("rest") else timers().save("rest", value,
-                obj("duration" to restDuration, "plan_id" to plan.optInt("id"), "date" to date)) }
+            val state = obj("duration" to restDuration, "plan_id" to plan.optInt("id"), "date" to date)
+            timerWrite({ if (value == 0L) it.clear("rest") else it.save("rest", value, state) })
         }
     var restDuration by mutableStateOf(60)
     private var executionEnd by mutableLongStateOf(0L)
     var executionUntil: Long
         get() = executionEnd
-        set(value) { executionEnd = value; if (value == 0L && token.isNotEmpty()) timers().clear("execution") }
+        set(value) { executionEnd = value; if (value == 0L) { executionPending = null; timerWrite({ it.clear("execution") }) } }
     var executionDone: (() -> Unit)? = null
     var recommendations by mutableStateOf<List<JSONObject>>(emptyList())
     var pendingCount by mutableIntStateOf(0)
-    private var syncRetry: kotlinx.coroutines.Job? = null
-    private var syncFailures = 0
-    private var syncBlocked = false
     private fun offline() = OfflineStore(getApplication(), token)
     private fun localData() = LocalDataStore(getApplication(), token)
-    private fun isOnline(): Boolean = connectivity.getNetworkCapabilities(connectivity.activeNetwork)
-        ?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+    private fun isOnline(): Boolean = networkOverride?.invoke() ?: (connectivity.getNetworkCapabilities(connectivity.activeNetwork)
+        ?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) == true)
     var localSyncing by mutableStateOf(false); private set
     var localSyncMessage by mutableStateOf(""); private set
     var localSyncResult by mutableStateOf(JSONObject()); private set
@@ -98,25 +150,36 @@ class AppModel(application: Application) : AndroidViewModel(application) {
     init {
         connectivity.registerDefaultNetworkCallback(networkCallback)
         if (token.isNotEmpty()) {
-            for (kind in listOf("rest", "execution")) timers().read(kind)?.let { state ->
-                if (state.optLong("end_at") > 0 && state.optLong("end_at") < System.currentTimeMillis() - 12 * 3600_000L) timers().clear(kind)
-                else { date = state.text("date", date)
-                    if (kind == "rest") { restEnd = state.optLong("end_at"); restDuration = state.optInt("duration", 60); restPending = state.optJSONObject("pending") }
-                    else executionEnd = state.optLong("end_at")
-                    timerCollapsed = state.optBoolean("collapsed")
-                }
+            val account = token
+            workoutSaving++
+            viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
+                try {
+                    val restored = withContext(Dispatchers.IO) { timerLocks.getOrPut(localAccountKey(account)) { Mutex() }.withLock {
+                        val store = TimerStore(getApplication(), account)
+                        listOf("rest", "execution").associateWith { kind -> store.read(kind)?.takeUnless { state ->
+                            (state.optLong("end_at") > 0 && state.optLong("end_at") < System.currentTimeMillis() - 12 * 3600_000L).also { if (it) store.clear(kind) }
+                        } }
+                    } }
+                    if (token == account) restored.forEach { (kind, state) -> if (state != null) {
+                        date = state.text("date", date)
+                        if (kind == "rest") { restEnd = state.optLong("end_at"); restDuration = state.optInt("duration", 60); restPending = state.optJSONObject("pending") }
+                        else { executionEnd = state.optLong("end_at"); executionPending = state }
+                        timerCollapsed = state.optBoolean("collapsed")
+                    } }
+                } finally { workoutSaving-- }
             }
-            restoreLocalData()
+            bindRepository()
             refresh()
         }
         viewModelScope.launch {
             while (true) { kotlinx.coroutines.delay(250); advanceWorkoutTimer() }
         }
     }
-    override fun onCleared() { localSyncJob?.cancel(); connectivity.unregisterNetworkCallback(networkCallback); audio.release(); super.onCleared() }
+    override fun onCleared() { refreshJob?.cancel(); repositoryJob?.cancel(); workoutSyncJob?.cancel(); localSyncJob?.cancel(); connectivity.unregisterNetworkCallback(networkCallback); audio.release(); super.onCleared() }
 
     fun run(block: suspend () -> Unit) {
         if (busy) return
+        refreshGeneration++; refreshJob?.cancel(); refreshing = false
         busy = true; error = null; notice = null
         viewModelScope.launch {
             try { block() }
@@ -130,21 +193,7 @@ class AppModel(application: Application) : AndroidViewModel(application) {
                     is IOException -> "Не удалось подключиться к серверу. Проверьте интернет и повторите."
                     else -> e.message ?: "Не удалось выполнить действие"
                 }
-            } finally { busy = false; scheduleSyncRetry(); if (token.isNotEmpty()) synchronizeLocalData() }
-        }
-    }
-
-    private fun scheduleSyncRetry() {
-        if (pendingCount == 0 || token.isEmpty()) { syncFailures = 0; syncRetry?.cancel(); return }
-        val online = connectivity.getNetworkCapabilities(connectivity.activeNetwork)?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
-        if (!online || syncBlocked || syncRetry?.isActive == true) return
-        val delayMs = (2000L shl syncFailures.coerceAtMost(4)).coerceAtMost(30_000L)
-        syncFailures++
-        syncRetry = viewModelScope.launch {
-            kotlinx.coroutines.delay(delayMs)
-            // Clear the job before refreshing so a failed attempt can schedule its successor.
-            syncRetry = null
-            if (!busy && token.isNotEmpty() && pendingCount > 0) refresh() else scheduleSyncRetry()
+            } finally { busy = false; if (token.isNotEmpty()) synchronizeLocalData() }
         }
     }
 
@@ -155,15 +204,18 @@ class AppModel(application: Application) : AndroidViewModel(application) {
         val newToken = result.getString("token")
         session.write(newToken); token = newToken; audio.accountChanged()
         authPasswordDraft = ""
+        bindRepository()
         restoreLocalData()
         load()
     }
     fun logout() {
+        refreshGeneration++; refreshJob?.cancel(); refreshing = false
+        repositoryJob?.cancel(); workoutSyncJob?.cancel(); workoutSync = WorkoutSyncState()
         focusBodyWeight = false
         authPasswordDraft = ""
         pauseLocalSync(); localSyncResult = JSONObject(); localSyncAttempt = 0
-        syncRetry?.cancel(); syncRetry = null; syncFailures = 0; syncBlocked = false
-        if (token.isNotEmpty()) { timers().clear("rest", dismissSignal = true); timers().clear("execution", dismissSignal = true) }
+        timerGeneration++; timerChanging = false
+        timerWrite({ it.clear("rest", dismissSignal = true); it.clear("execution", dismissSignal = true) })
         audio.stop(); pendingCount = 0
         session.write(""); token = ""; plan = JSONObject(); folders = emptyList(); templates = emptyList()
         catalog = emptyList(); customExercises = emptyList(); recommendations = emptyList()
@@ -172,40 +224,58 @@ class AppModel(application: Application) : AndroidViewModel(application) {
         days = emptyList(); weights = emptyList(); exerciseStats = emptyList(); trends = JSONObject()
         restUntil = 0; executionUntil = 0; executionDone = null; audio.accountChanged()
     }
-    fun navigate(to: Screen) { screen = to; restoreLocalData(); refresh() }
+    fun navigate(to: Screen) { screen = to; refresh() }
     fun refresh() {
-        if (screen == Screen.Workout && plan.text("date") != date) { plan = JSONObject(); restoreLocalData() }
-        run { load() }
-    }
-    private fun restoreLocalData() {
         if (token.isEmpty()) return
-        val store = localData()
-        (store.read("/api/profile/preferences/") as? JSONObject)?.let { preferences = it }
-        (store.read("/api/profile/") as? JSONObject)?.let { profile = it }
-        store.read("/api/programs/folders/")?.let { folders = it.rows() }
-        store.read("/api/programs/templates/")?.let { templates = it.rows() }
-        (store.read("local:preview") as? JSONObject)?.let { preview = it }
-        (store.read("local:sync") as? JSONObject)?.let { localSyncResult = it }
-        pendingCount = offline().queue().size
-        when (screen) {
-            Screen.Workout -> {
-                val stored = store.read("/api/workouts/plan/?date=$date") as? JSONObject
-                val cached = stored?.let(::normalizePlan) ?: offline().plan(date)
-                cached?.let { plan = withQueuedChanges(it, offline().queue(), date) }
-            }
-            Screen.Analytics -> {
-                store.read("/api/analytics/days/")?.let { days = it.rows() }
-                store.read("/api/analytics/body-weight/")?.let { weights = it.rows() }
-                store.read("/api/analytics/exercises/")?.let { exerciseStats = it.rows() }
-                (store.read("/api/analytics/program-trends/?range=$range&granularity=$granularity") as? JSONObject)?.let { trends = it }
-            }
-            Screen.Technique -> store.read("/api/technique-reviews/")?.let { reviews = it.rows() }
-            else -> Unit
+        if (screen == Screen.Workout && plan.text("date") != date) plan = JSONObject()
+        val generation = ++refreshGeneration
+        val target = screen; val requestedDate = date; val account = token
+        refreshJob?.cancel()
+        refreshing = true
+        refreshJob = viewModelScope.launch {
+            try { restoreLocalData(); load(target, requestedDate, generation) }
+            catch (e: CancellationException) { throw e }
+            catch (e: Exception) { if (generation == refreshGeneration && token == account) {
+                if (e is ApiException && e.status == 401) logout()
+                else error = e.message ?: "Не удалось обновить данные. Сохранённые результаты доступны на устройстве."
+            } }
+            finally { if (generation == refreshGeneration) refreshing = false }
         }
+    }
+    private suspend fun restoreLocalData() {
+        val account = token; val target = screen; val requestedDate = date
+        if (account.isEmpty()) return
+        val repo = repository(); val revision = repo.revision(requestedDate)
+        val cache = withContext(Dispatchers.IO) {
+            val store = LocalDataStore(getApplication(), account)
+            mutableMapOf<String, Any?>(
+                "preferences" to store.read("/api/profile/preferences/"), "profile" to store.read("/api/profile/"),
+                "folders" to store.read("/api/programs/folders/"), "templates" to store.read("/api/programs/templates/"),
+                "preview" to store.read("local:preview"), "sync" to store.read("local:sync")
+            ).apply { when (target) {
+                Screen.Workout -> put("plan", repo.read(requestedDate) ?: (store.read("/api/workouts/plan/?date=$requestedDate") as? JSONObject)?.let(::normalizePlan)?.let {
+                    repo.acceptRemote(requestedDate, repo.revision(requestedDate), it)?.plan
+                })
+                Screen.Analytics -> {
+                    put("days", store.read("/api/analytics/days/")); put("weights", store.read("/api/analytics/body-weight/"))
+                    put("stats", store.read("/api/analytics/exercises/")); put("trends", store.read("/api/analytics/program-trends/?range=$range&granularity=$granularity"))
+                }
+                Screen.Technique -> put("reviews", store.read("/api/technique-reviews/"))
+                else -> Unit
+            } }
+        }
+        if (token != account || screen != target || date != requestedDate) return
+        (cache["preferences"] as? JSONObject)?.let { preferences = it }; (cache["profile"] as? JSONObject)?.let { profile = it }
+        cache["folders"]?.let { folders = it.rows() }; cache["templates"]?.let { templates = it.rows() }
+        (cache["preview"] as? JSONObject)?.let { preview = it }; (cache["sync"] as? JSONObject)?.let { localSyncResult = it }
+        if (repo.revision(requestedDate) == revision) (cache["plan"] as? JSONObject)?.let { plan = it }
+        cache["days"]?.let { days = it.rows() }; cache["weights"]?.let { weights = it.rows() }; cache["stats"]?.let { exerciseStats = it.rows() }
+        (cache["trends"] as? JSONObject)?.let { trends = it }; cache["reviews"]?.let { reviews = it.rows() }
+        repo.initialize()
     }
     fun pauseLocalSync() { localSyncGeneration++; localSyncJob?.cancel(); localSyncJob = null; localSyncing = false; localSyncMessage = "Сохранение локальной копии приостановлено" }
     fun synchronizeLocalData(force: Boolean = false) {
-        if (token.isEmpty()) return
+        if (token.isEmpty() || baseUrl != BuildConfig.SERVER_URL) return
         if (!isOnline()) { if (force) localSyncMessage = "Нет подключения. Сохранённые данные доступны без интернета."; return }
         if (localSyncJob?.isActive == true) { if (force) pauseLocalSync() else return }
         if (!force && System.currentTimeMillis() - localSyncAttempt < 15 * 60_000L) return
@@ -257,62 +327,53 @@ class AppModel(application: Application) : AndroidViewModel(application) {
             null
         }
     }
-    private suspend fun load() {
-        syncQueue()
-        when (screen) {
-            Screen.Programs -> { folders = api.call("/api/programs/folders/").rows(); templates = api.call("/api/programs/templates/").rows() }
+    private suspend fun load(target: Screen = screen, requestedDate: String = date, generation: Long = refreshGeneration) {
+        val account = token; val repo = repository()
+        fun applies() = token == account && screen == target && generation == refreshGeneration && (target != Screen.Workout || date == requestedDate)
+        requestWorkoutSync()
+        when (target) {
+            Screen.Programs -> {
+                val result = coroutineScope { val f = async { api.call("/api/programs/folders/").rows() }; val t = async { api.call("/api/programs/templates/").rows() }; f.await() to t.await() }
+                if (applies()) { folders = result.first; templates = result.second }
+            }
             Screen.Workout -> {
-                val requestedDate = date
+                val revision = repo.revision(requestedDate)
                 try {
-                    val received = withQueuedChanges(normalizePlan(api.call("/api/workouts/plan/?date=$requestedDate") as JSONObject), offline().queue(), requestedDate)
-                    offline().cache(requestedDate, received)
-                    if (date == requestedDate) plan = received
+                    val response = api.call("/api/workouts/plan/?date=$requestedDate", useLocalFallback = false) as JSONObject
+                    val received = withContext(Dispatchers.Default) { normalizePlan(response) }
+                    val accepted = repo.acceptRemote(requestedDate, revision, received)
+                    if (applies() && accepted != null && repo.revision(requestedDate) == accepted.revision) plan = accepted.plan
                 } catch (e: IOException) {
                     if (e is ApiException) throw e
-                    val stored = offline().plan(requestedDate) ?: throw e
-                    if (date == requestedDate) plan = stored
-                    notice = "Нет соединения. Показан сохранённый план; изменения будут отправлены при восстановлении сети."
+                    val stored = repo.read(requestedDate) ?: throw e
+                    if (applies()) { plan = stored; notice = "Нет соединения. Сохранённые результаты будут отправлены автоматически." }
                 }
-                recommendations = emptyList()
-                try { tracks = api.call("/api/workouts/music/tracks/").rows() } catch (e: IOException) { if (e is ApiException && e.status == 401) throw e }
+                if (applies()) recommendations = emptyList()
+                try { val received = api.call("/api/workouts/music/tracks/").rows(); if (applies()) tracks = received }
+                catch (e: IOException) { if (e is ApiException && e.status == 401) throw e }
             }
-            Screen.Analytics -> {
-                days = api.call("/api/analytics/days/").rows()
-                weights = api.call("/api/analytics/body-weight/").rows()
-                exerciseStats = api.call("/api/analytics/exercises/").rows()
-                trends = api.call("/api/analytics/program-trends/?range=$range&granularity=$granularity") as JSONObject
-                folders = api.call("/api/programs/folders/").rows()
+            Screen.Analytics -> coroutineScope {
+                val d = async { api.call("/api/analytics/days/").rows() }; val w = async { api.call("/api/analytics/body-weight/").rows() }
+                val e = async { api.call("/api/analytics/exercises/").rows() }; val t = async { api.call("/api/analytics/program-trends/?range=$range&granularity=$granularity") as JSONObject }
+                val f = async { api.call("/api/programs/folders/").rows() }
+                val rd = d.await(); val rw = w.await(); val re = e.await(); val rt = t.await(); val rf = f.await()
+                val queue = withContext(Dispatchers.IO) { offline().queue() }
+                if (applies()) { days = rd; weights = withQueuedWeights(rw, queue); exerciseStats = re; trends = rt; folders = rf }
             }
-            Screen.Technique -> reviews = api.all("/api/technique-reviews/").rows()
-            Screen.Assistant -> { preferences = api.call("/api/profile/preferences/") as JSONObject; folders = api.call("/api/programs/folders/").rows() }
-            Screen.Settings -> { profile = api.call("/api/profile/") as JSONObject; preferences = api.call("/api/profile/preferences/") as JSONObject
-                try { tracks = api.call("/api/workouts/music/tracks/").rows() } catch (e: IOException) { if (e is ApiException && e.status == 401) throw e } }
-        }
-        if (preferences.length() == 0) try { preferences = api.call("/api/profile/preferences/") as JSONObject }
-        catch (e: IOException) { if (e is ApiException || screen != Screen.Workout) throw e }
-    }
-    private suspend fun syncQueue() {
-        val store = offline()
-        syncBlocked = false
-        pendingCount = store.queue().size
-        try {
-            for (entry in store.queue()) {
-                val body = entry.getJSONObject("body")
-                var path = entry.getString("path"); var method = entry.getString("method")
-                if (path == "/api/workouts/logs/" && method == "POST") {
-                    val current = normalizePlan(api.call("/api/workouts/plan/?date=${entry.text("date")}") as JSONObject)
-                    val existing = current.array("logs").find { it.optInt("template_exercise") == body.optInt("template_exercise") && it.optInt("set_index") == body.optInt("set_index") }
-                    if (existing != null) { path += "${existing.getInt("id")}/"; method = "PATCH" }
-                }
-                api.call(path, method, body); store.remove(entry.getString("key"))
-                pendingCount = store.queue().size
+            Screen.Technique -> { val received = api.all("/api/technique-reviews/").rows(); if (applies()) reviews = received }
+            Screen.Assistant -> {
+                val p = api.call("/api/profile/preferences/") as JSONObject; val f = api.call("/api/programs/folders/").rows()
+                if (applies()) { preferences = p; folders = f }
             }
-        } catch (e: IOException) {
-            if (e is ApiException) {
-                syncBlocked = e.status in 400..499 && e.status !in listOf(408, 429)
-                throw e
+            Screen.Settings -> {
+                val p = api.call("/api/profile/") as JSONObject; val pref = api.call("/api/profile/preferences/") as JSONObject
+                if (applies()) { profile = p; preferences = pref }
+                try { val received = api.call("/api/workouts/music/tracks/").rows(); if (applies()) tracks = received }
+                catch (e: IOException) { if (e is ApiException && e.status == 401) throw e }
             }
         }
+        if (preferences.length() == 0) try { val p = api.call("/api/profile/preferences/") as JSONObject; if (applies()) preferences = p }
+        catch (e: IOException) { if (e is ApiException || target != Screen.Workout) throw e }
     }
     fun save(path: String, data: JSONObject, id: Any? = null, onSaved: (() -> Unit)? = null) = run {
         api.call(path + (id?.let { "$it/" } ?: ""), if (id == null) "POST" else "PATCH", data)
@@ -333,133 +394,118 @@ class AppModel(application: Application) : AndroidViewModel(application) {
         catalog = api.call("/api/exercises/?q=${java.net.URLEncoder.encode(query, "UTF-8")}").rows()
     }
     fun loadCustomExercises() = run { customExercises = api.call("/api/exercises/custom/").rows() }
-    fun logSet(exercise: JSONObject, set: JSONObject, reps: String, weight: String, time: String, existing: JSONObject?, workoutDay: Int = plan.optInt("id"), workoutDate: String = date, onSaved: (() -> Unit)? = null) = run {
-        val body = setLogPayload(workoutDay, exercise, set.getInt("set_index"), reps, weight, time)
-        val path = "/api/workouts/logs/" + (existing?.takeUnless { it.optBoolean("queued") }?.let { "${it.getInt("id")}/" } ?: "")
-        val method = if (existing == null || existing.optBoolean("queued")) "POST" else "PATCH"
-        val store = offline()
-        val key = "set:$workoutDay:${exercise.getInt("template_exercise_id")}:${set.getInt("set_index")}"
-        val alreadyQueued = store.queue().any { it.text("key") == key }
-        if (alreadyQueued) store.enqueue(key, path, method, workoutDate, body, existing?.takeUnless { it.optBoolean("queued") })
-        try {
-            if (!isOnline()) throw IOException("Offline workout result")
-            if (alreadyQueued) {
-                syncQueue()
-                if (store.queue().any { it.text("key") == key }) throw IOException("Pending synchronization")
-            } else api.call(path, method, body)
-            val updated = normalizePlan(api.call("/api/workouts/plan/?date=$workoutDate") as JSONObject)
-            store.cache(workoutDate, updated)
-            if (date == workoutDate) plan = updated
-        } catch (e: IOException) {
-            if (e is ApiException) throw e
-            store.enqueue(key, path, method, workoutDate, body, existing?.takeUnless { it.optBoolean("queued") })
-            val local = JSONObject(body.toString()).put("id", -1).put("queued", true).put("queue_key", key)
-            val logs = plan.array("logs").filterNot { it.optInt("template_exercise") == exercise.getInt("template_exercise_id") && it.optInt("set_index") == set.getInt("set_index") }
-            if (date == workoutDate) { plan = JSONObject(plan.toString()).put("logs", JSONArray(logs + local)); store.cache(workoutDate, plan) }
-            pendingCount = store.queue().size
-            notice = "Подход сохранён на устройстве. Нажмите «Обновить» после восстановления сети для синхронизации."
+    private fun localWorkoutWrite(key: String, saved: (() -> Unit)? = null, write: suspend (WorkoutRepository) -> WorkoutSnapshot) {
+        if (token.isEmpty() || !savingKeys.add(key)) return
+        val account = token; val repo = repository()
+        workoutSaving++; error = null
+        viewModelScope.launch {
+            try {
+                // Once accepted, a local write survives a ViewModel teardown. No network is awaited here.
+                val snapshot = withContext(NonCancellable) { write(repo) }
+                if (token == account) {
+                    if (date == snapshot.date && repo.revision(snapshot.date) == snapshot.revision) plan = snapshot.plan
+                    pendingCount = repo.state.value.pending
+                    saved?.invoke(); requestWorkoutSync()
+                }
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) { if (token == account) error = "Не удалось сохранить на устройстве. Повторите действие. ${e.message.orEmpty()}" }
+            finally { savingKeys.remove(key); workoutSaving-- }
         }
-        onSaved?.invoke()
+    }
+    fun logSet(exercise: JSONObject, set: JSONObject, reps: String, weight: String, time: String, existing: JSONObject?, workoutDay: Int = plan.optInt("id"), workoutDate: String = date, onSaved: (() -> Unit)? = null) {
+        val body = try { setLogPayload(workoutDay, exercise, set.getInt("set_index"), reps, weight, time) }
+        catch (e: IllegalArgumentException) { error = e.message; return }
+        val path = "/api/workouts/logs/" + (existing?.takeUnless { it.optBoolean("queued") }?.let { "${it.getInt("id")}/" } ?: "")
+        val key = "set:$workoutDay:${exercise.getInt("template_exercise_id")}:${set.getInt("set_index")}"
+        val base = plan
+        localWorkoutWrite(key, onSaved) { it.stage(key, path, if (existing == null || existing.optBoolean("queued")) "POST" else "PATCH", workoutDate, body, existing?.takeUnless { it.optBoolean("queued") }, base) }
+    }
+    private fun beginRest(pending: JSONObject, duration: Int, clearExecution: Boolean = false) {
+        timerChanging = true
+        val deadline = if (duration > 0) System.currentTimeMillis() + duration * 1000L else 0L
+        val saved = obj("duration" to duration, "date" to pending.text("date"), "plan_id" to pending.optInt("plan_id"), "pending" to pending)
+        timerWrite({ if (clearExecution) it.clear("execution"); it.save("rest", deadline, saved) }) {
+            executionEnd = 0; executionPending = null
+            restDuration = duration; restPending = pending; restEnd = deadline
+            restAutoAttempted = false; timerCollapsed = false; timerChanging = false; error = null
+        }
     }
     fun openRest(exercise: JSONObject, set: JSONObject, reps: String, weight: String, time: String,
         workoutDay: Int = plan.optInt("id"), workoutDate: String = date, restSeconds: Int? = null, finalSet: Boolean? = null) {
-        if (busy || workoutTimerActive) return
+        if (timerChanging || workoutTimerActive) return
         val pending = obj("exercise" to exercise, "set" to set, "reps" to reps, "weight" to weight, "time" to time,
             "date" to workoutDate, "plan_id" to workoutDay, "is_final" to (finalSet ?: isFinalWorkoutSet(plan, exercise, set)))
-        restDuration = restSeconds ?: restSecondsForSet(plan, exercise, set)
-        restPending = pending; restAutoAttempted = false; timerCollapsed = false; error = null
-        restEnd = if (restDuration > 0) System.currentTimeMillis() + restDuration * 1000L else 0L
-        timers().save("rest", restEnd, obj("duration" to restDuration, "date" to workoutDate, "plan_id" to workoutDay, "pending" to pending))
+        beginRest(pending, restSeconds ?: restSecondsForSet(plan, exercise, set))
     }
     fun editRest(field: String, value: String) {
         val pending = restPending ?: return
-        if (field !in listOf("reps", "weight", "time") || busy) return
-        restPending = JSONObject(pending.toString()).put(field, value)
-        timers().update("rest", obj("pending" to restPending))
+        if (field !in listOf("reps", "weight", "time")) return
+        val updated = JSONObject(pending.toString()).put(field, value)
+        restPending = updated
+        timerWrite({ it.update("rest", obj("pending" to updated)) })
     }
     fun collapseWorkoutTimer(collapsed: Boolean) {
         timerCollapsed = collapsed
-        timers().update(if (executionUntil > 0) "execution" else "rest", obj("collapsed" to collapsed))
+        val kind = if (executionUntil > 0) "execution" else "rest"
+        timerWrite({ it.update(kind, obj("collapsed" to collapsed)) })
     }
     fun cancelWorkoutTimer() {
-        if (busy) return
-        executionUntil = 0; restUntil = 0; executionDone = null; error = null
+        timerGeneration++; timerChanging = false
+        executionEnd = 0; executionPending = null; restEnd = 0; restPending = null; timerCollapsed = false; executionDone = null; error = null
+        timerWrite({ it.clear("rest", dismissSignal = true); it.clear("execution", dismissSignal = true) })
     }
     fun finishRest() {
         val pending = restPending
         if (pending == null) { restUntil = 0; return }
-        if (busy) return
-        try { setLogPayload(pending.getInt("plan_id"), pending.getJSONObject("exercise"), pending.getJSONObject("set").getInt("set_index"), pending.text("reps"), pending.text("weight"), pending.text("time")) }
-        catch (e: IllegalArgumentException) { error = e.message; return }
         logSet(pending.getJSONObject("exercise"), pending.getJSONObject("set"), pending.text("reps"), pending.text("weight"), pending.text("time"), null,
             pending.getInt("plan_id"), pending.getString("date"), onSaved = { restUntil = 0 })
     }
     fun startExecution(exercise: JSONObject, set: JSONObject, reps: String, weight: String, time: String) {
         val seconds = time.toIntOrNull() ?: return
-        if (seconds <= 0 || busy || workoutTimerActive) return
-        val now = System.currentTimeMillis()
+        if (seconds <= 0 || timerChanging || workoutTimerActive) return
+        timerChanging = true
+        val now = System.currentTimeMillis(); val deadline = now + seconds * 1000L
         val state = obj("exercise" to exercise, "set" to set, "reps" to reps, "weight" to weight, "time" to time,
-            "date" to date, "plan_id" to plan.getInt("id"), "started_at" to now, "rest_seconds" to restSecondsForSet(plan, exercise, set), "is_final" to isFinalWorkoutSet(plan, exercise, set))
-        timerCollapsed = false; error = null
-        executionEnd = now + seconds * 1000L
-        timers().save("execution", executionEnd, state)
+            "date" to date, "plan_id" to plan.getInt("id"), "started_at" to now, "end_at" to deadline,
+            "rest_seconds" to restSecondsForSet(plan, exercise, set), "is_final" to isFinalWorkoutSet(plan, exercise, set))
+        timerWrite({ it.save("execution", deadline, state) }) {
+            timerCollapsed = false; error = null; executionPending = state; executionEnd = deadline; timerChanging = false
+        }
     }
-    fun executionState(): JSONObject? = timers().read("execution")
+    fun executionState(): JSONObject? = executionPending
     fun finishExecution(now: Long = System.currentTimeMillis()) {
-        if (busy) return
-        val state = timers().read("execution") ?: return
-        val actualTime = executionSeconds(state, now).toString()
-        executionUntil = 0
-        openRest(state.getJSONObject("exercise"), state.getJSONObject("set"), state.text("reps"), state.text("weight"), actualTime,
-            state.getInt("plan_id"), state.getString("date"), state.optInt("rest_seconds", 10), state.optBoolean("is_final"))
+        if (timerChanging) return
+        val state = executionPending ?: return
+        val pending = obj("exercise" to state.getJSONObject("exercise"), "set" to state.getJSONObject("set"), "reps" to state.text("reps"), "weight" to state.text("weight"),
+            "time" to executionSeconds(state, now).toString(), "plan_id" to state.getInt("plan_id"), "date" to state.getString("date"), "is_final" to state.optBoolean("is_final"))
+        beginRest(pending, state.optInt("rest_seconds", 10), clearExecution = true)
     }
     fun advanceWorkoutTimer(now: Long = System.currentTimeMillis()) {
-        if (token.isEmpty() || busy) return
+        if (token.isEmpty() || timerChanging) return
         if (executionUntil > 0 && executionUntil <= now) { signalTimer(true); finishExecution(now) }
         else if (restPending != null && restDuration > 0 && restUntil <= now && !restAutoAttempted) {
             signalTimer(false); restAutoAttempted = true; finishRest()
         }
     }
-    fun signalTimer(execution: Boolean) {
-        val kind = if (execution) "execution" else "rest"
-        val store = timers(); val state = store.read(kind) ?: return
-        if (store.claimSignal(kind, state.text("id"))) TimerReceiver.signal(getApplication(), kind)
-    }
-    fun weighIn(value: String) = run {
+    fun signalTimer(execution: Boolean) { timerWrite({ it.signalIfDue(if (execution) "execution" else "rest") }) }
+    fun weighIn(value: String) {
         val kg = value.replace(',', '.').toDoubleOrNull()
-        require(kg != null && kg in 20.0..400.0) { "Укажите вес от 20 до 400 кг" }
-        val body = obj("date" to date, "weight_kg" to kg)
-        val store = offline(); val key = "weight:$date"
-        if (store.queue().any { it.text("key") == key }) store.enqueue(key, "/api/workouts/weigh-in/", "PUT", date, body)
-        try { api.call("/api/workouts/weigh-in/", "PUT", body); store.remove(key); load(); notice = "Вес сохранён" }
-        catch (e: IOException) {
-            if (e is ApiException) throw e
-            val store = offline(); store.enqueue("weight:$date", "/api/workouts/weigh-in/", "PUT", date, body)
-            plan = JSONObject(plan.toString()).put("weigh_in", body); store.cache(date, plan); pendingCount = store.queue().size
-            notice = "Вес сохранён на устройстве. Нажмите «Обновить» после восстановления сети."
-        }
+        if (kg == null || kg !in 20.0..400.0) { error = "Укажите вес от 20 до 400 кг"; return }
+        val workoutDate = date; val base = plan; val key = "weight:$workoutDate"
+        localWorkoutWrite(key) { it.stage(key, "/api/workouts/weigh-in/", "PUT", workoutDate, obj("date" to workoutDate, "weight_kg" to kg), null, base) }
     }
     fun undoCompletedSet(log: JSONObject, onUndone: () -> Unit) {
-        val store = offline()
-        val original = if (log.optBoolean("queued")) store.queue().firstOrNull { it.text("key") == log.text("queue_key") }?.optJSONObject("original") else log
-        if (original == null) { cancelQueued(log); onUndone(); return }
-        run {
-            require(isOnline()) { "Подключитесь к интернету, чтобы отменить сохранённое на сервере выполнение." }
-            api.call("/api/workouts/logs/${original.getInt("id")}/", "DELETE")
-            if (log.optBoolean("queued")) store.remove(log.getString("queue_key"))
-            plan = JSONObject(plan.toString()).put("logs", JSONArray(plan.array("logs").filterNot {
-                it.optInt("template_exercise") == log.optInt("template_exercise") && it.optInt("set_index") == log.optInt("set_index")
-            }))
-            store.cache(date, plan); pendingCount = store.queue().size
-            onUndone(); load()
-        }
+        val base = plan; val workoutDate = date
+        localWorkoutWrite("undo:${log.optInt("template_exercise")}:${log.optInt("set_index")}", onUndone) { it.undo(log, workoutDate, base) }
     }
-    fun cancelQueued(log: JSONObject) {
-        val store = offline(); val original = store.queue().firstOrNull { it.text("key") == log.text("queue_key") }?.optJSONObject("original")
-        store.remove(log.getString("queue_key"))
-        val kept = plan.array("logs").filterNot { it.text("queue_key") == log.text("queue_key") }
-        plan = JSONObject(plan.toString()).put("logs", JSONArray(kept + listOfNotNull(original)))
-        store.cache(date, plan); pendingCount = store.queue().size
+    fun cancelQueued(log: JSONObject) = undoCompletedSet(log) {}
+    private suspend fun syncBeforeAnalysis() {
+        while (workoutSaving > 0) delay(10)
+        val account = token; val repo = repository()
+        if (repo.state.value.pending == 0) return
+        require(isOnline()) { "Результаты сохранены на устройстве. Для анализа дождитесь подключения и отправки." }
+        repo.synchronize { token == account }
+        check(repo.state.value.pending == 0) { "Не удалось отправить результаты для анализа. Они сохранены на устройстве." }
     }
     fun generate(data: JSONObject) = run {
         localData().write("local:assistant-answers", data)
@@ -503,6 +549,7 @@ class AppModel(application: Application) : AndroidViewModel(application) {
             localData().write("local:threads", JSONArray(listOf(result) + archive.filterNot { it.optInt("id") == result.optInt("id") }))
         }
         chatMode = mode
+        if (initialMessage != null && mode.startsWith("post_workout")) syncBeforeAnalysis()
         if (initialMessage != null) api.call("/api/llm-agent/threads/$threadId/messages/", "POST", obj("message" to initialMessage, "mode" to mode, "workout_date" to date))
         messages = api.call("/api/llm-agent/threads/$threadId/messages/").rows()
         if (mode == "post_workout_review" && initialMessage != null) chatMode = "post_workout_chat"
@@ -523,6 +570,7 @@ class AppModel(application: Application) : AndroidViewModel(application) {
     fun send(message: String, onSent: (() -> Unit)? = null) = run {
         require(message.isNotBlank()) { "Напишите сообщение" }
         val id = requireNotNull(threadId)
+        if (chatMode.startsWith("post_workout")) syncBeforeAnalysis()
         api.call("/api/llm-agent/threads/$id/messages/", "POST", obj("message" to message, "mode" to chatMode, "workout_date" to date))
         saveChatDraft("")
         onSent?.invoke()
@@ -537,7 +585,7 @@ class AppModel(application: Application) : AndroidViewModel(application) {
         notice = if (!apply) "Предложение отклонено" else "Применено: ${applied.size - skipped.size}; пропущено: ${skipped.size}" +
             skipped.joinToString(separator = "\n", prefix = if (skipped.isEmpty()) "" else "\n") { it.text("reason", "Действие не удалось применить") }
     }
-    fun recommendations() = run { recommendations = (api.call("/api/workouts/recommendations/?date=$date") as JSONObject).array("folders") }
+    fun recommendations() = run { syncBeforeAnalysis(); recommendations = (api.call("/api/workouts/recommendations/?date=$date") as JSONObject).array("folders") }
     fun applyRecommendations(items: List<JSONObject>) = run {
         api.call("/api/workouts/recommendations/apply/", "POST", obj("date" to date, "items" to JSONArray(items)))
         load(); notice = "Рекомендации применены"
@@ -549,6 +597,8 @@ class AppModel(application: Application) : AndroidViewModel(application) {
         api.call("/api/programs/template-exercises/reorder/", "POST", obj("template" to template.getInt("id"), "order" to JSONArray(order)))
         load()
     }
+    private companion object { val timerLocks = java.util.concurrent.ConcurrentHashMap<String, Mutex>() }
+
     fun uploaded(path: String, field: String, name: String, mime: String, file: java.io.File) = run {
         try {
             val videoKey = "upload:${java.util.UUID.randomUUID()}"

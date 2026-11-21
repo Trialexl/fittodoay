@@ -244,6 +244,6 @@ private suspend fun prepareUpload(context: Context, uri: Uri, maxMb: Int): Pair<
         UploadButton(model, "Загрузить MP3", "audio/*", "/api/workouts/music/tracks/upload/", "file", 130)
         MusicBatchUploadButton(model)
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-        PlaylistContent(model)
+        PlaylistContent(model, scroll = true, modifier = Modifier.height(520.dp))
     }
 }

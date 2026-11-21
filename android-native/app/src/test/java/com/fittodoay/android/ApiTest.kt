@@ -1,6 +1,10 @@
 package com.fittodoay.android
 
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.json.JSONObject
@@ -10,6 +14,26 @@ import org.junit.Before
 import org.junit.Test
 
 class ApiTest {
+    @Test fun cancelledNavigationDoesNotWaitForDelayedHttpHeaders() = runBlocking {
+        server.enqueue(MockResponse().setHeadersDelay(5, java.util.concurrent.TimeUnit.SECONDS).setBody("[]"))
+        val request = launch { api.call("/api/programs/folders/") }
+        assertNotNull(withContext(Dispatchers.IO) { server.takeRequest(3, java.util.concurrent.TimeUnit.SECONDS) })
+        val start = System.nanoTime()
+        request.cancelAndJoin()
+        assertTrue("Cancelling a screen must cancel its socket promptly", (System.nanoTime() - start) / 1_000_000 < 1000)
+    }
+    @Test fun anOutboxPreflightMustNotUseAnOfflineCachedResponse() = runBlocking {
+        val memory = object : ResponseStorage {
+            override fun read(path: String): Any = obj("logs" to org.json.JSONArray())
+            override fun write(path: String, value: Any) = Unit
+            override fun remove(path: String) = Unit
+            override fun recordMutation(path: String, method: String, body: org.json.JSONObject?, result: Any) = Unit
+        }
+        val offline = Api(server.url("/").toString(), storage = { memory }, networkAvailable = { false }) { "test-token" }
+        try { offline.call("/api/workouts/plan/", useLocalFallback = false); fail("A cached plan is not proof that a server log is absent") }
+        catch (_: LocalDataUnavailableException) { }
+        assertEquals(0, server.requestCount)
+    }
     @Test fun archiveFollowsRelativePagesAndKeepsAllItems() = runBlocking {
         server.enqueue(MockResponse().setBody("""{"items":[{"id":4}],"next":"/api/llm-agent/threads/?cursor=older"}"""))
         server.enqueue(MockResponse().setBody("""{"items":[{"id":3},{"id":2}],"next":null}"""))

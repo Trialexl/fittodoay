@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.ExpandLess
@@ -20,7 +22,7 @@ import kotlin.math.roundToInt
 @Composable fun WorkoutOverview(model: AppModel, exercises: List<JSONObject>, logs: List<JSONObject>, total: Int) {
     val expected = exercises.flatMap { e -> e.array("sets").map { e.optInt("template_exercise_id") to it.optInt("set_index") } }
     val completed = expected.count { pair -> logs.any { it.optInt("template_exercise") == pair.first && it.optInt("set_index") == pair.second } }
-    val progress = if (total == 0) 0f else completed.toFloat() / total
+    val progress by animateFloatAsState(if (total == 0) 0f else completed.toFloat() / total, tween(320), label = "workout-progress")
     val focus = summarizeMuscles(exercises, logs).take(2).joinToString(" + ") { it.name.replaceFirstChar(Char::titlecase) }.ifEmpty { "Время восстановиться" }
     val accent = MaterialTheme.colorScheme.primary
     MaterialTheme(colorScheme = fitColors(true, accent, true)) {
@@ -51,7 +53,7 @@ import kotlin.math.roundToInt
                         Text("Группы мышц", Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
                         Icon(if (musclesExpanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore, "Группы мышц", Modifier.size(18.dp), tint = accent)
                     }
-                    if (musclesExpanded) MuscleSummary(exercises, logs, "chips")
+                    MotionDisclosure(musclesExpanded) { MuscleSummary(exercises, logs, "chips") }
                 }
             }
         }

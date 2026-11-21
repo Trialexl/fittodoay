@@ -105,7 +105,7 @@ import androidx.compose.ui.window.DialogProperties
                     OutlinedTextField(value, changed, Modifier.width(if (narrow) 140.dp else 112.dp).semantics { contentDescription = "Вес, кг" },
                         singleLine = true, label = { Text("Вес", style = MaterialTheme.typography.labelSmall) }, suffix = { Text("кг", style = MaterialTheme.typography.labelSmall) },
                         textStyle = MaterialTheme.typography.labelLarge, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), shape = RoundedCornerShape(12.dp))
-                    FilledTonalIconButton(onClick = { model.weighIn(value) }, enabled = value.replace(',', '.').toDoubleOrNull()?.let { it > 0 && it.isFinite() } == true && !model.busy,
+                    FilledTonalIconButton(onClick = { model.weighIn(value) }, enabled = value.replace(',', '.').toDoubleOrNull()?.let { it > 0 && it.isFinite() } == true && model.workoutSaving == 0,
                         modifier = Modifier.size(44.dp), shape = RoundedCornerShape(12.dp)) { Icon(Icons.Outlined.Check, "Сохранить вес", Modifier.size(18.dp)) }
                 }
             }

@@ -2,6 +2,9 @@ package com.fittodoay.android
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.CancellationException
+import kotlin.coroutines.resumeWithException
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -18,6 +21,7 @@ class Api(private val baseUrl: String = BuildConfig.SERVER_URL,
     private val storage: (() -> ResponseStorage?)? = null,
     private val networkAvailable: () -> Boolean = { true },
     private val onLocalRead: (() -> Unit)? = null,
+    private val transportOverride: OkHttpClient? = null,
     private val token: () -> String) {
     companion object {
         // Authentication is attached per request, never to the shared connection pool.
@@ -28,18 +32,23 @@ class Api(private val baseUrl: String = BuildConfig.SERVER_URL,
             .readTimeout(180, TimeUnit.SECONDS).writeTimeout(180, TimeUnit.SECONDS).build()
     }
 
-    suspend fun call(path: String, method: String = "GET", body: JSONObject? = null): Any {
+    suspend fun call(path: String, method: String = "GET", body: JSONObject? = null, useLocalFallback: Boolean = true): Any {
         val accountToken = token()
         val local = if (accountToken.isNotEmpty() && isLocalDataPath(path)) storage?.invoke() else null
         if (method == "GET" && !networkAvailable()) {
-            withContext(Dispatchers.IO) { local?.read(path) }?.let { onLocalRead?.invoke(); return it }
+            if (!useLocalFallback) throw LocalDataUnavailableException()
+            withContext(Dispatchers.IO) { local?.read(path) }?.let {
+                if (token() != accountToken) throw CancellationException("Account changed")
+                onLocalRead?.invoke(); return it
+            }
             throw LocalDataUnavailableException()
         }
         val attempts = 4
         repeat(attempts) { attempt ->
             try {
                 val result = execute(path, method, if (method == "GET" || method == "DELETE") null else
-                    (body ?: JSONObject()).toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
+                    (body ?: JSONObject()).toString().toRequestBody("application/json; charset=utf-8".toMediaType()), accountToken)
+                if (token() != accountToken) throw CancellationException("Account changed")
                 if (token() == accountToken) {
                     withContext(Dispatchers.IO) {
                         if (method == "GET") local?.write(path, result)
@@ -53,8 +62,11 @@ class Api(private val baseUrl: String = BuildConfig.SERVER_URL,
                 val assignmentPatch = method == "PATCH" && (path.startsWith("/api/workouts/logs/") || path.startsWith("/api/programs/") || path == "/api/profile/")
                 val safe = method in listOf("GET", "PUT", "DELETE") || assignmentPatch || error is javax.net.ssl.SSLHandshakeException
                 if (error is ApiException || error is java.io.InterruptedIOException || !safe || attempt == attempts - 1) {
-                    if (method == "GET" && token() == accountToken && (error !is ApiException || error.status >= 500)) {
-                        withContext(Dispatchers.IO) { local?.read(path) }?.let { onLocalRead?.invoke(); return it }
+                    if (useLocalFallback && method == "GET" && token() == accountToken && (error !is ApiException || error.status >= 500)) {
+                        withContext(Dispatchers.IO) { local?.read(path) }?.let {
+                            if (token() != accountToken) throw CancellationException("Account changed")
+                            onLocalRead?.invoke(); return it
+                        }
                     }
                     throw error
                 }
@@ -70,9 +82,12 @@ class Api(private val baseUrl: String = BuildConfig.SERVER_URL,
         val accountToken = token()
         val local = storage?.invoke()
         suspend fun saved(): Any? = withContext(Dispatchers.IO) { local?.read("local:archive:$path") ?: local?.read(path) }
-        if (!networkAvailable()) return saved()?.also { onLocalRead?.invoke() } ?: throw LocalDataUnavailableException()
+        if (!networkAvailable()) return saved()?.also {
+            if (token() != accountToken) throw CancellationException("Account changed")
+            onLocalRead?.invoke()
+        } ?: throw LocalDataUnavailableException()
         try {
-            val remote = Api(baseUrl = baseUrl) { accountToken }
+            val remote = Api(baseUrl = baseUrl, transportOverride = transportOverride) { accountToken }
             val first = remote.call(path)
             val items = first.rows().toMutableList()
             val visited = mutableSetOf(path)
@@ -112,7 +127,8 @@ class Api(private val baseUrl: String = BuildConfig.SERVER_URL,
                 val body = MultipartBody.Builder().setType(MultipartBody.FORM).apply {
                     files.forEach { addFormDataPart(field, it.name, it.file.asRequestBody(it.mime.toMediaType())) }
                 }.build()
-                val result = execute(path, "POST", body)
+                val result = execute(path, "POST", body, accountToken)
+                if (token() != accountToken) throw CancellationException("Account changed")
                 if (accountToken.isNotEmpty() && token() == accountToken && isLocalDataPath(path)) {
                     withContext(Dispatchers.IO) { storage?.invoke()?.recordMutation(path, "POST", null, result) }
                 }
@@ -125,14 +141,22 @@ class Api(private val baseUrl: String = BuildConfig.SERVER_URL,
         error("Unreachable")
     }
 
-    private suspend fun execute(path: String, method: String, body: RequestBody?): Any = withContext(Dispatchers.IO) {
+    private suspend fun execute(path: String, method: String, body: RequestBody?, accountToken: String): Any = withContext(Dispatchers.IO) {
         require(path.startsWith("/api/") && !path.startsWith("//"))
         val request = Request.Builder().url(baseUrl.trimEnd('/') + path).method(method, body)
             .header("Accept", "application/json").apply {
-                token().takeIf { it.isNotEmpty() }?.let { header("Authorization", "Token $it") }
+                accountToken.takeIf { it.isNotEmpty() }?.let { header("Authorization", "Token $it") }
             }.build()
-        val transport = if (body is MultipartBody || (method == "POST" && path.startsWith("/api/llm-agent/"))) longClient else client
-        transport.newCall(request).execute().use { response ->
+        val transport = transportOverride ?: if (body is MultipartBody || (method == "POST" && path.startsWith("/api/llm-agent/"))) longClient else client
+        val response = suspendCancellableCoroutine<Response> { continuation ->
+            val call = transport.newCall(request)
+            continuation.invokeOnCancellation { call.cancel() }
+            call.enqueue(object : Callback {
+                override fun onFailure(call: Call, e: IOException) { continuation.resumeWithException(e) }
+                override fun onResponse(call: Call, response: Response) { continuation.resume(response) { _, resource, _ -> resource.close() } }
+            })
+        }
+        response.use {
             val text = response.body?.string().orEmpty()
             val parsed: Any = if (text.isBlank() && response.code == 204) JSONObject() else runCatching {
                 if (text.trimStart().startsWith("[")) JSONArray(text) else JSONObject(text)

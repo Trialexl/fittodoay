@@ -32,16 +32,17 @@ private val TimerMuted = Color(0xff8f9aae)
 private val ExecutionAccent = Color(0xffa9e7c7)
 private fun clock(seconds: Int) = "${seconds.coerceAtLeast(0) / 60}:${(seconds.coerceAtLeast(0) % 60).toString().padStart(2, '0')}"
 @Composable private fun remaining(end: Long): Int {
-    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(end) { while (true) { now = System.currentTimeMillis(); delay(200) } }
-    return ceil((end - now) / 1000.0).toInt().coerceAtLeast(0)
+    val seconds by produceState(initialValue = ceil((end - System.currentTimeMillis()) / 1000.0).toInt().coerceAtLeast(0), end) {
+        while (true) { value = ceil((end - System.currentTimeMillis()) / 1000.0).toInt().coerceAtLeast(0); delay(200) }
+    }
+    return seconds
 }
 private fun timerExercise(state: JSONObject?) = state?.optJSONObject("exercise")?.optJSONObject("source")?.text("name").orEmpty()
 
 /** Material owns the progress ring; the web V2 tick marks remain decorative. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable private fun TimerDial(seconds: Int, duration: Int, accent: Color, modifier: Modifier, mini: Boolean = false, digits: Int = 62) {
-    val fraction = if (duration > 0) (seconds.toFloat() / duration).coerceIn(0f, 1f) else 0f
+    val fraction by animateFloatAsState(if (duration > 0) (seconds.toFloat() / duration).coerceIn(0f, 1f) else 0f, tween(900, easing = LinearEasing), label = "timer-progress")
     Box(modifier, contentAlignment = Alignment.Center) {
         Canvas(Modifier.fillMaxSize()) {
             val unit = size.minDimension / 320f
@@ -106,7 +107,7 @@ private fun timerExercise(state: JSONObject?) = state?.optJSONObject("exercise")
     val duration = if (execution) state?.text("time")?.toIntOrNull() ?: 1 else model.restDuration
     val name = timerExercise(state).ifBlank { "Тренировка" }
     val showClock = execution || duration > 0
-    val accent = if (execution) ExecutionAccent else MaterialTheme.colorScheme.primary
+    val accent by androidx.compose.animation.animateColorAsState(if (execution) ExecutionAccent else MaterialTheme.colorScheme.primary, tween(240), label = "timer-phase")
     var callout by remember(execution, state?.optJSONObject("set")?.optInt("set_index"), name) { mutableStateOf<String?>(null) }
     LaunchedEffect(execution, seconds, duration, state?.optBoolean("is_final")) {
         when {
@@ -155,10 +156,10 @@ private fun timerExercise(state: JSONObject?) = state?.optJSONObject("exercise")
                                 val exercise = state.optJSONObject("exercise") ?: JSONObject(); val defaults = exercise.optJSONObject("defaults") ?: JSONObject(); val source = exercise.optJSONObject("source") ?: JSONObject()
                                 val timed = defaults.optBoolean("has_time", source.optBoolean("has_time"))
                                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                    if (timed) WorkoutNumberControl("Время (сек)", state.text("time"), { model.editRest("time", it) }, 1.0, Modifier.weight(1f), enabled = !model.busy, compact = phoneWidth <= 360)
+                                    if (timed) WorkoutNumberControl("Время (сек)", state.text("time"), { model.editRest("time", it) }, 1.0, Modifier.weight(1f), enabled = true, compact = phoneWidth <= 360)
                                     else {
-                                        WorkoutNumberControl("Повторы", state.text("reps"), { model.editRest("reps", it) }, 1.0, Modifier.weight(1f), enabled = !model.busy, compact = phoneWidth <= 360)
-                                        if (defaults.optBoolean("has_weight", source.optBoolean("has_weight"))) WorkoutNumberControl("Вес (кг)", state.text("weight"), { model.editRest("weight", it) }, 2.0, Modifier.weight(1f), enabled = !model.busy, compact = phoneWidth <= 360)
+                                        WorkoutNumberControl("Повторы", state.text("reps"), { model.editRest("reps", it) }, 1.0, Modifier.weight(1f), enabled = true, compact = phoneWidth <= 360)
+                                        if (defaults.optBoolean("has_weight", source.optBoolean("has_weight"))) WorkoutNumberControl("Вес (кг)", state.text("weight"), { model.editRest("weight", it) }, 2.0, Modifier.weight(1f), enabled = true, compact = phoneWidth <= 360)
                                     }
                                 }
                             }
@@ -167,7 +168,7 @@ private fun timerExercise(state: JSONObject?) = state?.optJSONObject("exercise")
                     val actions: @Composable () -> Unit = {
                         model.error?.let { Text(it, color = Color(0xfffca5a5), lineHeight = 20.sp, fontSize = 12.sp) }
                         Row(Modifier.widthIn(max = 450.dp).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Button(onClick = { if (execution) model.finishExecution() else model.finishRest() }, enabled = !model.busy, modifier = Modifier.weight(1f).heightIn(min = 48.dp), shape = RoundedCornerShape(12.dp),
+                            Button(onClick = { if (execution) model.finishExecution() else model.finishRest() }, enabled = model.workoutSaving == 0, modifier = Modifier.weight(1f).heightIn(min = 48.dp), shape = RoundedCornerShape(12.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = Color(0xff101d17))) {
                                 Text(if (execution) "Завершить раньше" else if (state == null) "Продолжить тренировку" else if (seconds > 0) "Пропустить отдых" else "Сохранить подход", lineHeight = 20.sp, fontSize = 12.sp)
                                 Spacer(Modifier.width(14.dp)); Icon(if (execution) Icons.Outlined.Check else Icons.Outlined.ArrowForward, null, Modifier.size(18.dp))

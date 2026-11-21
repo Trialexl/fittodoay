@@ -1,6 +1,9 @@
 package com.fittodoay.android
 
 import androidx.compose.foundation.*
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.ui.draw.rotate
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
@@ -22,10 +25,11 @@ private fun completedSets(exercise: JSONObject, logs: List<JSONObject>) = exerci
 }
 
 @Composable private fun Disclosure(title: String, subtitle: String, expanded: Boolean, tag: String, program: Boolean = false, count: String? = null, toggle: () -> Unit) {
+    val rotation by animateFloatAsState(if (expanded) 0f else -90f, label = "disclosure-arrow")
     Row(Modifier.fillMaxWidth().heightIn(min = 44.dp).testTag(tag).clickable(onClickLabel = if (expanded) "Свернуть" else "Развернуть", onClick = toggle)
         .semantics(mergeDescendants = true) { stateDescription = if (expanded) "Развёрнуто" else "Свёрнуто" },
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        Icon(if (expanded) Icons.Outlined.ExpandMore else Icons.Outlined.ChevronRight, null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        Icon(Icons.Outlined.ExpandMore, null, Modifier.size(14.dp).rotate(rotation), tint = MaterialTheme.colorScheme.onSurfaceVariant)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(title, Modifier.weight(1f, fill = false), style = MaterialTheme.typography.titleSmall.copy(fontSize = if (program) 13.sp else 15.sp, lineHeight = 20.sp))
@@ -44,6 +48,9 @@ private fun completedSets(exercise: JSONObject, logs: List<JSONObject>) = exerci
     val logs = model.plan.array("logs")
     val pendingExercise = model.restPending?.optJSONObject("exercise")?.optInt("template_exercise_id")
     val pendingIndex = model.restPending?.optJSONObject("set")?.optInt("set_index")
+    val pendingUnlogged = pendingExercise != null && logs.none {
+        it.optInt("template_exercise") == pendingExercise && it.optInt("set_index") == pendingIndex
+    }
     model.plan.array("folders").forEach { folder ->
         key(model.date, folder.optInt("id")) {
             var open by rememberSaveable { mutableStateOf(true) }
@@ -60,14 +67,14 @@ private fun completedSets(exercise: JSONObject, logs: List<JSONObject>) = exerci
                     IconButton(onClick = { edit("folders", folder.getInt("id"), 0) }, Modifier.size(40.dp), enabled = !model.busy) { Icon(Icons.Outlined.Edit, "Редактировать программу", Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary) }
                 }
                 if (open) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                if (open) folder.array("templates").forEach { template ->
+                MotionDisclosure(open) { folder.array("templates").forEach { template ->
                     key(template.optInt("id")) {
                         val exercises = template.array("exercises").filter { it.optBoolean("is_active", true) }
                         val count = exercises.sumOf { it.array("sets").size }
                         val done = exercises.sumOf { completedSets(it, logs) }
                         val dayKey = "day:${template.optInt("id")}"
                         val expanded = expansion[dayKey] ?: (done < count)
-                        val pendingHere = exercises.any { e -> e.optInt("template_exercise_id") == pendingExercise && e.array("sets").any { it.optInt("set_index") == pendingIndex } }
+                        val pendingHere = pendingUnlogged && exercises.any { e -> e.optInt("template_exercise_id") == pendingExercise && e.array("sets").any { it.optInt("set_index") == pendingIndex } }
                         val willComplete = count > 0 && done + (if (pendingHere) 1 else 0) >= count
                         LaunchedEffect(willComplete) { if (willComplete) rememberExpansion(dayKey, false) }
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -75,7 +82,7 @@ private fun completedSets(exercise: JSONObject, logs: List<JSONObject>) = exerci
                             Box(Modifier.weight(1f)) { Disclosure(template.text("name"), muscles, expanded, "workout-day-toggle-${template.optInt("id")}", count = "$done/$count") { rememberExpansion(dayKey, !expanded) } }
                             IconButton(onClick = { edit("templates", template.getInt("id"), 0) }, Modifier.size(40.dp), enabled = !model.busy) { Icon(Icons.Outlined.Edit, "Редактировать шаблон дня", Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary) }
                         }
-                        if (expanded) exercises.forEachIndexed { exerciseIndex, exercise ->
+                        MotionDisclosure(expanded) { exercises.forEachIndexed { exerciseIndex, exercise ->
                             key(exercise.optInt("template_exercise_id")) {
                                 val source = exercise.optJSONObject("source") ?: JSONObject()
                                 val defaults = exercise.optJSONObject("defaults") ?: JSONObject()
@@ -83,7 +90,7 @@ private fun completedSets(exercise: JSONObject, logs: List<JSONObject>) = exerci
                                 val completed = completedSets(exercise, logs)
                                 val exerciseKey = "exercise:${exercise.optInt("template_exercise_id")}"
                                 val exerciseOpen = expansion[exerciseKey] ?: (completed < sets.size)
-                                val willCompleteExercise = sets.isNotEmpty() && completed + (if (pendingExercise == exercise.optInt("template_exercise_id")) 1 else 0) >= sets.size
+                                val willCompleteExercise = sets.isNotEmpty() && completed + (if (pendingUnlogged && pendingExercise == exercise.optInt("template_exercise_id")) 1 else 0) >= sets.size
                                 LaunchedEffect(willCompleteExercise) { if (willCompleteExercise) rememberExpansion(exerciseKey, false) }
                                 val exerciseComplete = sets.isNotEmpty() && completed == sets.size
                                 Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), color = if (exerciseComplete) completedColor.copy(alpha = .06f) else MaterialTheme.colorScheme.surface,
@@ -107,16 +114,16 @@ private fun completedSets(exercise: JSONObject, logs: List<JSONObject>) = exerci
                                         }
                                     }
                                     if (exercise.text("note").isNotBlank()) Text(exercise.text("note"), style = MaterialTheme.typography.bodySmall)
-                                    if (exerciseOpen) sets.forEach { set ->
+                                    MotionDisclosure(exerciseOpen) { sets.forEach { set ->
                                         val logged = logs.find { it.optInt("template_exercise") == exercise.optInt("template_exercise_id") && it.optInt("set_index") == set.optInt("set_index") }
                                         SetRow(model, exercise, set, defaults, logged, delete)
-                                    }
+                                    } }
                                 }
                                 }
                             }
-                        }
+                        } }
                     }
-                }
+                } }
             }
             }
         }

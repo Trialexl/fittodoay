@@ -41,8 +41,15 @@ class QaHarness(val compose: AndroidComposeTestRule<ActivityScenarioRule<MainAct
         check(model.preferences.text("design_version") == "v2") { "Only V2 is in the active QA scope" }
     }
     fun waitRequest(allowError: Boolean = false) {
-        compose.waitForIdle(); compose.waitUntil(240_000) { !model.busy }; compose.waitForIdle()
+        compose.waitForIdle(); compose.waitUntil(240_000) { !model.busy && !model.refreshing && model.workoutSaving == 0 }; compose.waitForIdle()
         if (!allowError) check(model.error == null) { model.error ?: "Request failed" }
+    }
+    fun dismissNotice() {
+        // Material's transient Snackbar can cover the next scroll target.
+        // Close it through its real accessible button, as a user would.
+        val dismiss = compose.onAllNodesWithContentDescription("Dismiss")
+        if (dismiss.fetchSemanticsNodes().isNotEmpty()) dismiss.onFirst().performClick()
+        compose.waitForIdle()
     }
     fun navigate(screen: Screen) {
         check(model.preferences.text("design_version") == "v2") { "V1 navigation is outside the active QA scope" }
@@ -71,6 +78,11 @@ class QaHarness(val compose: AndroidComposeTestRule<ActivityScenarioRule<MainAct
             return null
         }
         candidate()?.let { return it }
+        // Settings now embeds the same virtualized playlist as the full panel.
+        if (compose.onAllNodesWithTag("playlist-list").fetchSemanticsNodes().isNotEmpty()) {
+            runCatching { compose.onNodeWithTag("playlist-list").performScrollToNode(matcher) }
+            candidate()?.let { return it }
+        }
         compose.onNodeWithTag("page-scroll").performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, -100_000f) }
         repeat(100) { candidate()?.let { return it }
             val page = compose.onNodeWithTag("page-scroll"); val distance = page.fetchSemanticsNode().boundsInRoot.height * 0.6f

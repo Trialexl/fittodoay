@@ -81,7 +81,18 @@ class VisualSnapshotTest {
             val firstProgram = qa.model.plan.array("folders").first()
             compose.onNodeWithTag("workout-program-${firstProgram.getInt("id")}").performScrollTo()
             qa.capture("density-main-checklist$suffix")
-            qa.visible(hasContentDescription("Техника и описание"), "exercise information").performClick()
+            compose.waitForIdle()
+            qa.dismissNotice()
+            // A partially clipped icon passes isDisplayed; scroll its whole touch target
+            // into the viewport before clicking on the small phone.
+            qa.visible(hasContentDescription("Техника и описание"), "exercise information").performScrollTo().performClick()
+            try {
+                compose.waitUntil(5_000) { compose.onAllNodesWithTag("exercise-info-sheet").fetchSemanticsNodes().isNotEmpty() && compose.onNodeWithTag("exercise-info-sheet").isDisplayed() }
+            } catch (failure: Throwable) {
+                qa.capture("fluid-info-failure$suffix")
+                File(qa.directory, "fluid-info-failure$suffix.txt").writeText(compose.onRoot().printToString())
+                throw failure
+            }
             compose.onNodeWithTag("exercise-info-sheet").assertIsDisplayed()
             qa.capture("design-exercise-description$suffix")
             compose.onNodeWithTag("exercise-image-pager").performScrollTo().performTouchInput { swipeLeft() }
@@ -286,6 +297,24 @@ class VisualSnapshotTest {
             compose.onNodeWithText("Готово", substring = false).assertIsDisplayed()
             qa.capture("appearance-dialog$suffix")
             compose.onNodeWithText("Готово", substring = false).performClick()
+            // Keep deterministic clock control at the end: the remaining UI flow
+            // uses actual touch events and the normal advancing animation clock.
+            compose.runOnIdle { qa.model.screen = Screen.Workout; qa.model.preferences = JSONObject(qa.model.preferences.toString()).put("theme", "light") }
+            compose.onNodeWithTag("workout-program-${firstProgram.getInt("id")}").performScrollTo()
+            compose.mainClock.autoAdvance = false
+            try {
+                val panel = compose.onNodeWithTag("workout-program-${firstProgram.getInt("id")}")
+                val before = panel.fetchSemanticsNode().boundsInRoot.height
+                compose.onNodeWithTag("workout-folder-toggle-${firstProgram.getInt("id")}")
+                    .performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.OnClick) { it() }
+                compose.mainClock.advanceTimeBy(96); compose.waitForIdle()
+                val during = panel.fetchSemanticsNode().boundsInRoot.height
+                qa.capture("fluid-collapse-middle$suffix")
+                compose.mainClock.advanceTimeBy(400); compose.waitForIdle()
+                val after = panel.fetchSemanticsNode().boundsInRoot.height
+                assertTrue("Disclosure must render a real intermediate height: $before / $during / $after", before > during && during > after)
+                qa.report("fluid-disclosure$suffix", obj("before_px" to before, "middle_px" to during, "after_px" to after))
+            } finally { compose.mainClock.autoAdvance = true }
             qa.report("visual-snapshot$suffix", obj("result" to "passed", "source" to "recorded-server-responses", "network_enabled" to false,
                 "layout" to layout, "routes" to Screen.entries.size, "designs" to 1, "design" to "v2", "system_navigation_insets_respected" to true, "editing_does_not_apply_without_confirmation" to true, "chart_styles_per_theme" to 7, "chart_stress_source" to "synthetic", "playlist_search_and_upload_form" to true, "exercise_description_and_statistics" to true))
         } finally { compose.runOnIdle { qa.model.preferences = originalPreferences; qa.model.screen = Screen.Workout } }

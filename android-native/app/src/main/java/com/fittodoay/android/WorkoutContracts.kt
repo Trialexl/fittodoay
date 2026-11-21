@@ -8,6 +8,7 @@ fun normalizePlan(response: JSONObject): JSONObject = JSONObject(response.toStri
     put("folders", snapshot.optJSONArray("folders") ?: response.optJSONArray("folders") ?: JSONArray())
     put("logs", response.optJSONArray("set_logs") ?: response.optJSONArray("logs") ?: JSONArray())
     if (text("date").isEmpty()) put("date", snapshot.text("date"))
+    remove("plan_snapshot"); remove("set_logs")
 }
 
 fun withQueuedChanges(serverPlan: JSONObject, queue: List<JSONObject>, date: String): JSONObject = JSONObject(serverPlan.toString()).apply {
@@ -16,9 +17,23 @@ fun withQueuedChanges(serverPlan: JSONObject, queue: List<JSONObject>, date: Str
         if (entry.text("path").startsWith("/api/workouts/logs/")) {
             val local = JSONObject(body.toString()).put("id", -1).put("queued", true).put("queue_key", entry.text("key"))
             val kept = array("logs").filterNot { it.optInt("template_exercise") == body.optInt("template_exercise") && it.optInt("set_index") == body.optInt("set_index") }
-            put("logs", JSONArray(kept + local))
+            put("logs", JSONArray(if (entry.text("method") == "DELETE") kept else kept + local))
         } else if (entry.text("path") == "/api/workouts/weigh-in/") put("weigh_in", JSONObject(body.toString()))
     }
+}
+
+/** Apply one acknowledged mutation, then project any newer local intentions over it. */
+fun withSyncedChange(plan: JSONObject, entry: JSONObject, result: JSONObject): JSONObject = JSONObject(plan.toString()).apply {
+    val body = entry.getJSONObject("body")
+    if (entry.text("path").startsWith("/api/workouts/logs/")) {
+        val kept = array("logs").filterNot { it.optInt("template_exercise") == body.optInt("template_exercise") && it.optInt("set_index") == body.optInt("set_index") }
+        put("logs", JSONArray(if (entry.text("method") == "DELETE") kept else kept + result))
+    } else if (entry.text("path") == "/api/workouts/weigh-in/") put("weigh_in", result)
+}
+
+fun withQueuedWeights(server: List<JSONObject>, queue: List<JSONObject>): List<JSONObject> {
+    val local = queue.filter { it.text("path") == "/api/workouts/weigh-in/" }.associate { it.text("date") to it.getJSONObject("body") }
+    return server.filterNot { it.text("date") in local } + local.values
 }
 
 fun workoutLoad(plan: JSONObject): Double {

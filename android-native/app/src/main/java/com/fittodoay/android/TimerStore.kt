@@ -8,6 +8,7 @@ import android.os.*
 import org.json.JSONObject
 import java.security.MessageDigest
 import java.util.UUID
+import kotlinx.coroutines.launch
 
 class TimerStore(private val context: Context, token: String) {
     private val suffix = MessageDigest.getInstance("SHA-256").digest(token.toByteArray()).joinToString("") { "%02x".format(it) }
@@ -16,40 +17,46 @@ class TimerStore(private val context: Context, token: String) {
     fun read(kind: String): JSONObject? = prefs.getString(kind, null)?.let { runCatching { JSONObject(it) }.getOrNull() }
     private fun pending(kind: String) = PendingIntent.getBroadcast(context, if (kind == "rest") 601 else 602,
         Intent(context, TimerReceiver::class.java).putExtra("kind", kind), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-    fun save(kind: String, endAt: Long, state: JSONObject) {
+    fun save(kind: String, endAt: Long, state: JSONObject) { synchronized(lock) {
         val payload = JSONObject(state.toString()).put("end_at", endAt).put("id", UUID.randomUUID().toString()).put("notified", false)
         check(prefs.edit().putString(kind, payload.toString()).commit())
         val action = pending(kind)
         if (endAt <= 0) { alarms.cancel(action); return }
         if (Build.VERSION.SDK_INT < 31 || alarms.canScheduleExactAlarms()) alarms.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, endAt, action)
         else alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, endAt, action)
-    }
+    } }
     // Update form/window state without changing the deadline, alarm or signal identity.
-    fun update(kind: String, changes: JSONObject) {
+    fun update(kind: String, changes: JSONObject) { synchronized(lock) {
         val state = read(kind) ?: return
         changes.keys().forEach { key -> state.put(key, changes.get(key)) }
         check(prefs.edit().putString(kind, state.toString()).commit())
-    }
-    fun clear(kind: String, dismissSignal: Boolean = false) {
+    } }
+    fun clear(kind: String, dismissSignal: Boolean = false) { synchronized(lock) {
         val completed = read(kind)?.optBoolean("notified") == true
         prefs.edit().remove(kind).commit(); alarms.cancel(pending(kind))
         // Finishing a timer clears its state immediately; cancelling its notification would cut off the sound.
         if (dismissSignal || !completed) context.getSystemService(NotificationManager::class.java).cancel(if (kind == "rest") 601 else 602)
-    }
+    } }
     fun claimSignal(kind: String, id: String): Boolean = synchronized(lock) {
         val value = read(kind) ?: return@synchronized false
         if (value.text("id") != id || value.optBoolean("notified") || value.optLong("end_at") > System.currentTimeMillis()) return@synchronized false
         check(prefs.edit().putString(kind, value.put("notified", true).toString()).commit()); true
+    }
+    fun signalIfDue(kind: String) = synchronized(lock) {
+        val state = read(kind) ?: return@synchronized
+        if (claimSignal(kind, state.text("id"))) TimerReceiver.signal(context, kind)
     }
     companion object { private val lock = Any() }
 }
 
 class TimerReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        val token = SessionStore(context).read(); if (token.isEmpty()) return
         val kind = intent.getStringExtra("kind") ?: return
-        val store = TimerStore(context, token); val state = store.read(kind) ?: return
-        if (store.claimSignal(kind, state.text("id"))) signal(context, kind)
+        val pending = goAsync()
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            try { val token = SessionStore(context).read(); if (token.isNotEmpty()) TimerStore(context, token).signalIfDue(kind) }
+            finally { pending.finish() }
+        }
     }
     companion object {
         fun signal(context: Context, kind: String) {

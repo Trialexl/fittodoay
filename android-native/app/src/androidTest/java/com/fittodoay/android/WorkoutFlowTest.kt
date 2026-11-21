@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
+
 package com.fittodoay.android
 
 import androidx.compose.ui.test.*
@@ -14,7 +16,7 @@ import java.util.UUID
 
 /** Deterministic UI + durable queue assertions. Synthetic session, radios off; never writes real workout logs. */
 class WorkoutFlowTest {
-    @get:Rule val compose = createAndroidComposeRule<MainActivity>()
+    @get:Rule val compose = createAndroidComposeRule<MainActivity>(effectContext = NoMotion)
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
     private lateinit var qa: QaHarness
     private lateinit var enrolled: String
@@ -28,7 +30,7 @@ class WorkoutFlowTest {
         compose.onNodeWithTag("workout-timer-screen").assertIsDisplayed()
     }
     private fun row(id: Int, index: Int) = compose.onNodeWithTag("set-row-$id-$index")
-    private fun clickSet(id: Int, index: Int) { compose.onNode(hasText(if (id == 91012) "▷ Начать" else "+ Отметить", substring = false) and hasAnyAncestor(hasTestTag("set-row-$id-$index"))).performScrollTo().performClick() }
+    private fun clickSet(id: Int, index: Int) { compose.onNode(hasText(if (id == 91012) "▷ Начать" else "+ Отметить", substring = false) and hasAnyAncestor(hasTestTag("set-row-$id-$index"))).performScrollTo().performClick(); qa.waitRequest(allowError = true) }
     private fun recreate() {
         compose.runOnIdle { compose.activity.viewModelStore.clear() }
         compose.activityRule.scenario.recreate()
@@ -177,6 +179,7 @@ class WorkoutFlowTest {
         val dial = compose.onNodeWithTag("workout-timer-clock").fetchSemanticsNode().boundsInRoot
         if (compose.activity.resources.configuration.screenWidthDp <= 820) assertTrue("V2 mobile puts the exercise above the dial", heading.top < dial.top)
         compose.onNodeWithText("Завершить раньше", substring = false).performScrollTo().performClick()
+        qa.waitRequest(allowError = true)
         assertTrue(qa.model.restPending!!.text("time").toInt() in 1..59)
         assertTrue(offline.queue().isEmpty())
         field("Время (сек)").performScrollTo().performTextReplacement("23")
@@ -202,10 +205,18 @@ class WorkoutFlowTest {
         compose.onNodeWithText("Пропустить отдых", substring = false).performScrollTo()
         qa.capture("flow-rest-result-editor")
         compose.onNodeWithText("Свернуть", substring = false).performClick()
+        qa.waitRequest(allowError = true)
         val deadline = qa.model.restUntil
         compose.onNodeWithTag("workout-day-toggle-9192").performScrollTo().performClick()
         compose.onNodeWithTag("workout-exercise-toggle-91001").assertDoesNotExist()
-        compose.onNodeWithTag("workout-day-toggle-9192").performClick()
+        qa.dismissNotice()
+        compose.onNodeWithTag("workout-day-toggle-9192").performScrollTo().performClick()
+        qa.waitRequest(allowError = true)
+        if (compose.onAllNodesWithTag("set-row-91001-1").fetchSemanticsNodes().isEmpty()) {
+            qa.capture("fluid-flow-disclosure-failure")
+            File(qa.directory, "fluid-flow-disclosure-failure.txt").writeText(compose.onRoot().printToString())
+        }
+        row(91001, 1).assertExists()
         compose.onNodeWithContentDescription("Развернуть таймер").performClick()
         assertEquals(deadline, qa.model.restUntil)
         field("Вес (кг)").assertTextContains("7,5")

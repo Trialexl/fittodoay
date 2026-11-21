@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
+
 package com.fittodoay.android
 
 import androidx.compose.ui.test.*
@@ -13,7 +15,7 @@ import java.time.LocalDate
 import java.util.UUID
 
 class TimedWorkoutParityTest {
-    @get:Rule val compose = createAndroidComposeRule<MainActivity>()
+    @get:Rule val compose = createAndroidComposeRule<MainActivity>(effectContext = NoMotion)
     @Test fun weightedSetIsOnlySavedAfterReviewAndSkip() = runBlocking<Unit> {
         assumeTrue(InstrumentationRegistry.getArguments().getString("timedParity") == "true")
         val qa = QaHarness(compose); qa.guard()

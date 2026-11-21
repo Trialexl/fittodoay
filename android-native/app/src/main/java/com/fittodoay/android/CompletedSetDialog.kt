@@ -27,7 +27,7 @@ import org.json.JSONObject
     var weight by remember { mutableStateOf(logged.text("actual_weight")) }
     var time by remember { mutableStateOf(logged.text("actual_time")) }
     var validation by remember { mutableStateOf<String?>(null) }
-    Dialog(onDismissRequest = { if (!model.busy) dismiss() }, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+    Dialog(onDismissRequest = { if (model.workoutSaving == 0) dismiss() }, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         BoxWithConstraints(Modifier.fillMaxSize().systemBarsPadding().imePadding().padding(8.dp)) {
             val compact = maxWidth < 640.dp
             Surface(Modifier.align(if (compact) Alignment.BottomCenter else Alignment.Center).widthIn(max = 512.dp).fillMaxWidth().heightIn(max = maxHeight).testTag("completed-set-dialog"), shape = RoundedCornerShape(if (compact) 18.dp else 20.dp)) {
@@ -37,28 +37,28 @@ import org.json.JSONObject
                             Text("Правка подхода", fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
                             Text(source.text("name"), fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        IconButton(onClick = dismiss, enabled = !model.busy, modifier = Modifier.size(32.dp)) { Icon(Icons.Outlined.Close, "Закрыть правку", Modifier.size(16.dp)) }
+                        IconButton(onClick = dismiss, enabled = model.workoutSaving == 0, modifier = Modifier.size(32.dp)) { Icon(Icons.Outlined.Close, "Закрыть правку", Modifier.size(16.dp)) }
                     }
                     Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
                         FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                            if (timed) WorkoutNumberControl("Время (сек)", time, { time = it }, 1.0, Modifier.width(192.dp), dark = false, enabled = !model.busy)
+                            if (timed) WorkoutNumberControl("Время (сек)", time, { time = it }, 1.0, Modifier.width(192.dp), dark = false, enabled = model.workoutSaving == 0)
                             else {
-                                WorkoutNumberControl("Повторы", reps, { reps = it }, 1.0, Modifier.width(192.dp), dark = false, enabled = !model.busy)
-                                if (weighted) WorkoutNumberControl("Вес (кг)", weight, { weight = it }, 2.0, Modifier.width(192.dp), dark = false, enabled = !model.busy)
+                                WorkoutNumberControl("Повторы", reps, { reps = it }, 1.0, Modifier.width(192.dp), dark = false, enabled = model.workoutSaving == 0)
+                                if (weighted) WorkoutNumberControl("Вес (кг)", weight, { weight = it }, 2.0, Modifier.width(192.dp), dark = false, enabled = model.workoutSaving == 0)
                             }
                         }
                         (validation ?: model.error)?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                     }
                     FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = dismiss, enabled = !model.busy, contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp), colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant), shape = RoundedCornerShape(12.dp)) { Text("Отмена") }
+                        OutlinedButton(onClick = dismiss, enabled = model.workoutSaving == 0, contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp), colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant), shape = RoundedCornerShape(12.dp)) { Text("Отмена") }
                         OutlinedButton(onClick = {
                             model.undoCompletedSet(logged, dismiss)
-                        }, enabled = !model.busy, border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = .2f)), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp), shape = RoundedCornerShape(12.dp)) { Text("Отменить выполнение") }
+                        }, enabled = model.workoutSaving == 0, border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = .2f)), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp), shape = RoundedCornerShape(12.dp)) { Text("Отменить выполнение") }
                         Button(onClick = {
                             try { setLogPayload(model.plan.getInt("id"), exercise, set.getInt("set_index"), reps, weight, time); validation = null }
                             catch (e: IllegalArgumentException) { validation = e.message; return@Button }
                             model.logSet(exercise, set, reps, weight, time, logged, onSaved = dismiss)
-                        }, enabled = !model.busy, contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp), shape = RoundedCornerShape(12.dp)) { Text("Сохранить") }
+                        }, enabled = model.workoutSaving == 0, contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp), shape = RoundedCornerShape(12.dp)) { Text("Сохранить") }
                     }
                 }
             }

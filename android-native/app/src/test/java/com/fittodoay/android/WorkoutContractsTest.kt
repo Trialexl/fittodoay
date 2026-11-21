@@ -4,6 +4,22 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class WorkoutContractsTest {
+    @Test fun pendingUndoWinsOverAStaleServerSnapshotAndAcknowledgement() {
+        val log = obj("id" to 7, "template_exercise" to 3, "set_index" to 1, "actual_reps" to 10)
+        val server = obj("logs" to org.json.JSONArray().put(log))
+        val removal = obj("key" to "set:1:3:1", "date" to "2026-11-19", "method" to "DELETE", "path" to "/api/workouts/logs/7/", "body" to log)
+        assertTrue(withQueuedChanges(server, listOf(removal), "2026-11-19").array("logs").isEmpty())
+        assertTrue(withSyncedChange(server, removal, obj()).array("logs").isEmpty())
+        assertEquals(1, server.array("logs").size)
+    }
+    @Test fun pendingWeightIsVisibleBeforeTheServerAcceptsIt() {
+        val server = listOf(obj("date" to "2026-11-19", "weight_kg" to 80), obj("date" to "2026-11-18", "weight_kg" to 81))
+        val pending = obj("date" to "2026-11-19", "path" to "/api/workouts/weigh-in/", "body" to obj("date" to "2026-11-19", "weight_kg" to 82))
+        val result = withQueuedWeights(server, listOf(pending))
+        assertEquals(2, result.size)
+        assertEquals(82, result.single { it.text("date") == "2026-11-19" }.getInt("weight_kg"))
+        assertEquals(80, server.first().getInt("weight_kg"))
+    }
     @Test fun refreshingAnOlderServerPlanCannotHidePendingLocalEdits() {
         val server = obj("logs" to org.json.JSONArray().put(obj("id" to 7, "template_exercise" to 3, "set_index" to 1, "actual_reps" to 10)))
         val entry = obj("key" to "set:1:3:1", "date" to "2026-11-19", "path" to "/api/workouts/logs/7/", "body" to obj("template_exercise" to 3, "set_index" to 1, "actual_reps" to 11))
@@ -27,6 +43,7 @@ class WorkoutContractsTest {
         assertEquals(9, plan.array("logs").single().getInt("id"))
         assertEquals(7, plan.getInt("id"))
         assertEquals("80.5", plan.getJSONObject("weigh_in").text("weight_kg"))
+        assertFalse(plan.has("plan_snapshot")); assertFalse(plan.has("set_logs"))
     }
     @Test fun timedSetsDoNotRecordHiddenRepsOrWeight() {
         val exercise = obj("template_exercise_id" to 8, "source" to obj("has_time" to true, "has_weight" to true))

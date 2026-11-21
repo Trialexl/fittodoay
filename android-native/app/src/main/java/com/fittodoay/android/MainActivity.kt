@@ -5,6 +5,8 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.*
+import androidx.compose.animation.*
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -41,6 +43,13 @@ class MainActivity : ComponentActivity() {
     val modern = true
     var menu by remember { mutableStateOf(false) }
     var appearance by remember { mutableStateOf(false) }
+    var syncInfo by remember { mutableStateOf(false) }
+    val snackbar = remember { SnackbarHostState() }
+    LaunchedEffect(model.notice) {
+        val message = model.notice
+        if (message == null) snackbar.currentSnackbarData?.dismiss()
+        else snackbar.showSnackbar(message, withDismissAction = true)
+    }
     val screenState = key(model.token) { rememberSaveableStateHolder() }
     BackHandler(enabled = model.token.isNotEmpty() && model.screen != Screen.Workout && !appearance && !menu) { model.navigate(Screen.Workout) }
     val view = LocalView.current
@@ -57,7 +66,7 @@ class MainActivity : ComponentActivity() {
     MaterialTheme(colorScheme = scheme, typography = FitTypography, shapes = Shapes(small = RoundedCornerShape(12.dp), medium = RoundedCornerShape(18.dp), large = RoundedCornerShape(24.dp), extraLarge = RoundedCornerShape(24.dp))) {
         BoxWithConstraints {
         val wide = maxWidth >= 840.dp
-        Scaffold(
+        Scaffold(snackbarHost = { SnackbarHost(snackbar) },
             topBar = {
                 TopAppBar(expandedHeight = 56.dp, colors = TopAppBarDefaults.topAppBarColors(containerColor = scheme.background), title = {
                     Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
@@ -67,6 +76,10 @@ class MainActivity : ComponentActivity() {
                     }
                 },
                     actions = { if (model.token.isNotEmpty()) {
+                        IconButton(onClick = { syncInfo = true }, enabled = model.pendingCount > 0) {
+                            Icon(if (model.workoutSync.error != null) Icons.Outlined.CloudOff else if (model.pendingCount > 0) Icons.Outlined.CloudUpload else Icons.Outlined.CloudDone,
+                                if (model.pendingCount > 0) "Сохранено на устройстве, ожидает отправки: ${model.pendingCount}" else "Все изменения отправлены", Modifier.size(18.dp))
+                        }
                         Box {
                             OutlinedButton(onClick = { menu = true }, enabled = !model.busy, shape = RoundedCornerShape(10.dp), contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp), modifier = Modifier.heightIn(min = 48.dp)) { Text("Ещё⌄", style = MaterialTheme.typography.bodySmall) }
                             DropdownMenu(menu, { menu = false }) {
@@ -91,7 +104,7 @@ class MainActivity : ComponentActivity() {
                     MinimizedWorkoutTimer(model)
                     MiniPlayer(model)
                     if (!wide) NavigationBar(containerColor = scheme.surface, tonalElevation = 0.dp, modifier = Modifier.heightIn(min = if (androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.2f) 96.dp else 72.dp).testTag("bottom-navigation"), windowInsets = WindowInsets(0, 0, 0, 0)) { Screen.entries.filter { it != Screen.Settings }.forEachIndexed { i, screen ->
-                        NavigationBarItem(selected = screen == model.screen, enabled = !model.busy,
+                        NavigationBarItem(selected = screen == model.screen,
                             modifier = Modifier.semantics { contentDescription = screen.title },
                             onClick = { model.navigate(screen) }, icon = { Icon(icons[i], null, Modifier.size(24.dp)) },
                             colors = NavigationBarItemDefaults.colors(indicatorColor = accent.copy(alpha = .09f), selectedIconColor = accent, selectedTextColor = scheme.onSurface, unselectedIconColor = scheme.onSurfaceVariant),
@@ -112,8 +125,7 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             Column(Modifier.weight(1f).fillMaxHeight().imePadding()) {
-                if (model.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-                if (model.pendingCount > 0) Text("Ожидают синхронизации: ${model.pendingCount}", Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+                Box(Modifier.fillMaxWidth().height(3.dp)) { if (model.busy || model.refreshing) LinearProgressIndicator(Modifier.fillMaxWidth()) }
                 model.error?.let { message ->
                     Surface(color = MaterialTheme.colorScheme.errorContainer) {
                         Row(Modifier.fillMaxWidth().padding(12.dp)) {
@@ -121,26 +133,25 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
-                model.notice?.let { notice ->
-                    Surface(color = MaterialTheme.colorScheme.surfaceVariant) {
-                        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 9.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-                            Icon(Icons.Outlined.Info, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text(notice, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                }
-                if (model.token.isEmpty()) AuthScreen(model) else screenState.SaveableStateProvider(model.screen.name) { when (model.screen) {
+
+                if (model.token.isEmpty()) AuthScreen(model) else AnimatedContent(targetState = model.screen, modifier = Modifier.weight(1f),
+                    transitionSpec = { (fadeIn(tween(180)) + slideInHorizontally(tween(180)) { it / 30 }) togetherWith fadeOut(tween(100)) }, label = "navigation") { destination ->
+                    screenState.SaveableStateProvider(destination.name) { when (destination) {
                     Screen.Workout -> WorkoutScreen(model)
                     Screen.Programs -> ProgramsScreen(model)
                     Screen.Analytics -> AnalyticsScreen(model)
                     Screen.Technique -> TechniqueScreen(model)
                     Screen.Assistant -> AssistantScreen(model)
                     Screen.Settings -> SettingsScreen(model)
-                } }
+                } } }
             }
         }
         }
         }
+        if (syncInfo) AlertDialog(onDismissRequest = { syncInfo = false }, title = { Text("Синхронизация") },
+            text = { Text(model.workoutSync.error ?: "Результаты сохранены на устройстве. Ожидает отправки: ${model.pendingCount}.") },
+            confirmButton = { TextButton(onClick = { model.retryWorkoutSync(); syncInfo = false }) { Text("Повторить") } },
+            dismissButton = { TextButton(onClick = { syncInfo = false }) { Text("Закрыть") } })
         if (appearance) AppearanceDialog(model) { appearance = false }
         TimerDialogs(model)
     }

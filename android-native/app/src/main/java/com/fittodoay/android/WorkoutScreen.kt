@@ -6,6 +6,9 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.*
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.material.icons.outlined.*
@@ -28,7 +31,8 @@ import kotlin.math.ceil
 import kotlin.math.roundToInt
 
 @Composable fun WorkoutScreen(model: AppModel) {
-    var weight by remember(model.plan) { mutableStateOf(model.plan.optJSONObject("weigh_in")?.text("weight_kg").orEmpty().replace('.', ',')) }
+    val savedWeight = model.plan.optJSONObject("weigh_in")?.text("weight_kg").orEmpty().replace('.', ',')
+    var weight by remember(model.date, savedWeight) { mutableStateOf(savedWeight) }
     var info by remember { mutableStateOf<JSONObject?>(null) }
     var chat by remember { mutableStateOf(false) }
     var calendar by remember { mutableStateOf(false) }
@@ -51,13 +55,18 @@ import kotlin.math.roundToInt
                 Text(LocalDate.parse(model.date).format(java.time.format.DateTimeFormatter.ofPattern("d MMM", java.util.Locale.forLanguageTag("ru"))), style = MaterialTheme.typography.bodySmall)
             }
         }
-        if (modern) WorkoutOverview(model, exercises, logs, total)
+        if (modern && model.plan.optInt("id") > 0) WorkoutOverview(model, exercises, logs, total)
         if (exercises.isNotEmpty() && (!modern || model.preferences.text("muscle_summary_view", "chips") != "chips")) FitCard {
             MuscleSummary(exercises, logs, model.preferences.text("muscle_summary_view", "chips"))
         }
-        BodyWeightCard(model, weight) { weight = it }
+        if (model.plan.optInt("id") > 0) BodyWeightCard(model, weight) { weight = it }
+        else Panel("Данные тренировки") {
+            if (model.refreshing) LinearProgressIndicator(Modifier.fillMaxWidth())
+            Text(if (model.refreshing) "Загружаем тренировку…" else "Эта дата ещё не сохранена на устройстве.")
+            if (!model.refreshing) TextButton(onClick = model::refresh) { Text("Повторить") }
+        }
 
-        if (model.plan.array("folders").isEmpty() && !model.busy) Panel("День без тренировок") {
+        if (model.plan.optInt("id") > 0 && model.plan.array("folders").isEmpty() && !model.busy && !model.refreshing) Panel("День без тренировок") {
             Text("На эту дату нет активных тренировок. Выберите другую дату или настройте расписание программы.")
             Action("К программам") { model.navigate(Screen.Programs) }
         }
@@ -111,10 +120,11 @@ import kotlin.math.roundToInt
     var editing by remember(key) { mutableStateOf(false) }
     val planned = if (hasTime) "${set.text("default_time", defaults.text("time", "30"))} сек" else "${set.text("default_reps", defaults.text("reps", "10"))} повт." + if (hasWeight) " · ${set.text("default_weight", defaults.text("weight", "0"))} кг" else ""
     val actual = if (hasTime) "$time сек" else "$reps повт." + if (hasWeight) " · $weight кг" else ""
+    val completedTint by animateColorAsState(if (logged != null) androidx.compose.ui.graphics.Color(0xffdcfce7) else MaterialTheme.colorScheme.surfaceVariant, label = "set-completed")
     Column(Modifier.fillMaxWidth().testTag("set-row-${exercise.optInt("template_exercise_id")}-${set.optInt("set_index")}")) {
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-        Row(Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Surface(shape = androidx.compose.foundation.shape.CircleShape, color = if (logged != null) androidx.compose.ui.graphics.Color(0xffdcfce7) else MaterialTheme.colorScheme.surfaceVariant) {
+        Row(Modifier.fillMaxWidth().animateContentSize(tween(180)).heightIn(min = 64.dp).padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Surface(shape = androidx.compose.foundation.shape.CircleShape, color = completedTint) {
                 Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) {
                     Text(if (logged != null) "✓" else set.optInt("set_index").toString().padStart(2, '0'), style = MaterialTheme.typography.bodySmall,
                         color = if (logged != null) androidx.compose.ui.graphics.Color(0xff15803d) else MaterialTheme.colorScheme.onSurfaceVariant)
@@ -131,28 +141,11 @@ import kotlin.math.roundToInt
             if (logged == null) OutlinedButton(onClick = {
                 if (hasTime) { if ((time.toIntOrNull() ?: 0) > 0) model.startExecution(exercise, set, reps, weight, time) }
                 else model.openRest(exercise, set, reps, weight, time)
-            }, shape = androidx.compose.foundation.shape.RoundedCornerShape(9.dp), contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp), enabled = !model.busy && !model.workoutTimerActive) {
+            }, shape = androidx.compose.foundation.shape.RoundedCornerShape(9.dp), contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp), enabled = !model.workoutTimerActive) {
                 Text(if (hasTime) "▷ Начать" else "+ Отметить", style = MaterialTheme.typography.labelSmall)
             }
         }
         if (editing && logged != null) CompletedSetDialog(model, exercise, set, defaults, logged) { editing = false }
 
     }
-}
-
-@Composable fun NumberControl(label: String, value: String, onChange: (String) -> Unit, step: Double) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        OutlinedTextField(value, onChange, Modifier.weight(1f), label = { Text(label) }, singleLine = true,
-            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal))
-        val current by rememberUpdatedState(value); val change by rememberUpdatedState(onChange)
-        fun adjust(delta: Double) { val next = ((current.replace(',', '.').toDoubleOrNull() ?: 0.0) + delta).coerceAtLeast(0.0); change(if (next % 1.0 == 0.0) next.toInt().toString() else next.toString()) }
-        RepeatButton("−") { adjust(-step) }; RepeatButton("+") { adjust(step) }
-    }
-}
-
-@Composable private fun RepeatButton(label: String, action: () -> Unit) {
-    val interactions = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
-    val pressed by interactions.collectIsPressedAsState(); val latest by rememberUpdatedState(action)
-    LaunchedEffect(pressed) { if (pressed) { delay(400); while (true) { latest(); delay(90) } } }
-    TextButton(onClick = action, interactionSource = interactions) { Text(label) }
 }
