@@ -17,6 +17,12 @@ class CalendarParityTest {
         try {
             qa.visible(hasContentDescription("Открыть календарь тренировок"), "calendar").performClick()
             compose.onNodeWithTag("workout-calendar").assertIsDisplayed()
+            compose.waitUntil(15_000) { compose.onAllNodesWithTag("calendar-loading").fetchSemanticsNodes().isEmpty() }
+            compose.onNodeWithText("Не удалось загрузить нагрузку календаря", substring = false).assertDoesNotExist()
+            compose.onNodeWithContentDescription("Следующий месяц").performClick()
+            compose.onNodeWithContentDescription("Предыдущий месяц").performClick()
+            compose.waitUntil(15_000) { compose.onAllNodesWithTag("calendar-loading").fetchSemanticsNodes().isEmpty() }
+            qa.capture("components-calendar-live")
             compose.onNodeWithTag("calendar-date-$yesterday").performClick(); qa.waitRequest()
             assertEquals(yesterday, qa.model.plan.text("date"))
             qa.visible(hasContentDescription("Открыть календарь тренировок"), "calendar").performClick()

@@ -67,7 +67,7 @@ class CrossClientParityTest {
                     qa.visible("+ Отметить").performClick(); qa.waitRequest()
                     compose.onNodeWithText("Пропустить отдых").performScrollTo().performClick(); qa.waitRequest()
                 }
-                compose.onNode(hasText("Вес, кг", substring = false) and hasAnyAncestor(hasTestTag("body-weight-panel"))).performScrollTo().performTextReplacement("81,25")
+                compose.onNode(hasContentDescription("Вес, кг") and hasAnyAncestor(hasTestTag("body-weight-panel"))).performScrollTo().performTextReplacement("81,25")
                 qa.visible(hasContentDescription("Сохранить вес"), "save weight").performClick(); qa.waitRequest()
                 assertEquals(81.25, qa.model.plan.getJSONObject("weigh_in").getDouble("weight_kg"), 0.001)
             }

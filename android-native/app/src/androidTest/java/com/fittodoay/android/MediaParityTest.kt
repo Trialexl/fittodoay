@@ -20,6 +20,7 @@ class MediaParityTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
     private val qa by lazy { QaHarness(compose) }
     private val device get() = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
+    private val mediaSuffix get() = InstrumentationRegistry.getArguments().getString("layoutName")?.let { "-$it" }.orEmpty()
     private fun shellOutput(command: String) = android.os.ParcelFileDescriptor.AutoCloseInputStream(
         InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(command)
     ).use { it.readBytes().toString(Charsets.UTF_8).trim() }
@@ -29,7 +30,7 @@ class MediaParityTest {
         val track = qa.model.tracks.first { it.text("source_type") == "stream" }
         try {
             compose.runOnIdle { qa.model.audio.stop() }
-            qa.visible(hasContentDescription("Источник"), "source menu").performClick()
+            qa.visible(hasContentDescription("Фильтры музыки"), "source menu").performClick()
             compose.onNodeWithText("Радио", substring = false).performClick()
             qa.visible(hasText(track.text("title", track.text("name")), substring = true) and hasClickAction() and hasAnyAncestor(hasTestTag("music-track-${track.getInt("id")}")), "server radio track").performClick()
             compose.waitUntil(60_000) { qa.model.audio.playing || qa.model.audio.error != null }
@@ -92,6 +93,30 @@ class MediaParityTest {
         }
         qa.waitRequest()
     }
+    @Test fun playlistFiltersAndGroupingUseTheServerCatalog() {
+        qa.navigate(Screen.Workout)
+        val original = qa.model.preferences.text("music_group_by", "folder")
+        try {
+            compose.onNodeWithContentDescription("Плейлист").performClick()
+            compose.onNodeWithContentDescription("Фильтры музыки").performClick()
+            compose.onNodeWithText("Радио", substring = false).performClick()
+            val radio = qa.model.tracks.first { it.text("source_type") == "stream" }
+            compose.onNodeWithTag("playlist-list").performScrollToNode(hasTestTag("music-track-${radio.getInt("id")}"))
+            compose.onNodeWithTag("music-track-${radio.getInt("id")}").assertIsDisplayed()
+            qa.capture("components-music-radio-filter")
+            compose.onNodeWithContentDescription("Фильтры музыки").performClick()
+            compose.onNodeWithText("Исполнитель", substring = false).performClick(); qa.waitRequest()
+            assertEquals("artist", qa.model.preferences.text("music_group_by"))
+            val artist = radio.text("artist").ifBlank { "Без группы" }.uppercase()
+            compose.onNodeWithTag("playlist-list").performScrollToNode(hasText(artist, substring = false))
+            compose.onNodeWithText(artist, substring = false).assertIsDisplayed()
+            qa.capture("components-music-grouping")
+            qa.report("components-music-filters", obj("result" to "passed", "radio_source" to true, "artist_grouping_persisted" to true))
+        } finally {
+            if (compose.onAllNodesWithTag("playlist-sheet").fetchSemanticsNodes().isNotEmpty()) compose.onNodeWithContentDescription("Закрыть").performClick()
+            compose.runOnIdle { qa.model.preferences(obj("music_group_by" to original)) }; qa.waitRequest()
+        }
+    }
     @Test fun globalPlaylistUploadsWithoutLeavingTheWorkout() = runBlocking<Unit> {
         qa.navigate(Screen.Workout)
         val name = "android-qa-sheet-${UUID.randomUUID().toString().take(8)}.mp3"
@@ -131,7 +156,7 @@ class MediaParityTest {
                 created += track
             }
             assertEquals(2, created.size)
-            qa.visible(hasContentDescription("Источник"), "source menu").performClick()
+            qa.visible(hasContentDescription("Фильтры музыки"), "source menu").performClick()
             compose.onNodeWithText("Файлы", substring = false).performClick()
             for (track in created) {
                 qa.visible(hasContentDescription("Действия с треком: ${track.text("title", track.text("name"))}") and hasAnyAncestor(hasTestTag("music-track-${track.getInt("id")}")), "track actions").performClick()
@@ -157,7 +182,7 @@ class MediaParityTest {
             search.performClick()
             // Exercise the real text-field tap too; a semantics click can focus
             // the field without asking the platform IME to display its keys.
-            checkNotNull(device.wait(Until.findObject(By.desc("Поиск музыки")), 5000)).click()
+            checkNotNull(device.wait(Until.findObject(By.descContains("Поиск музыки")), 5000)).click()
             try { compose.waitUntil(10_000) {
                 val view = android.view.inspector.WindowInspector.getGlobalWindowViews().lastOrNull { it.hasWindowFocus() } ?: compose.activity.window.decorView
                 (androidx.core.view.ViewCompat.getRootWindowInsets(view)?.getInsets(androidx.core.view.WindowInsetsCompat.Type.ime())?.bottom ?: 0) > 140 * qa.context.resources.displayMetrics.density
@@ -166,7 +191,7 @@ class MediaParityTest {
             compose.onNodeWithTag("playlist-transport").assertIsDisplayed()
             compose.onNodeWithTag("playlist-list").assertHeightIsAtLeast(72.dp)
             compose.onNodeWithTag("music-track-${nextTrack.getInt("id")}").assertIsDisplayed()
-            qa.capture("density-playlist-keyboard")
+            qa.capture("density-playlist-keyboard$mediaSuffix")
             device.pressBack(); compose.waitForIdle()
             compose.onNodeWithTag("music-track-${nextTrack.getInt("id")}").assertIsDisplayed()
             compose.onNodeWithContentDescription("Действия с треком: ${nextTrack.text("title", nextTrack.text("name"))}").performClick()
@@ -181,21 +206,34 @@ class MediaParityTest {
             compose.onNodeWithContentDescription("Пауза или воспроизведение в плейлисте").performClick()
             compose.waitUntil(10_000) { qa.model.audio.playing }
             compose.onNodeWithText("Очередь · 3", substring = false).performClick()
+            val queueLabel = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
+            compose.onNodeWithText("Очередь · 3", substring = false, useUnmergedTree = true).performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult) { it(queueLabel) }
+            val labelLayout = queueLabel.single()
+            qa.report("components-tab-layout$mediaSuffix", obj("width_px" to labelLayout.size.width, "text_right_px" to labelLayout.getLineRight(0), "visible_characters" to labelLayout.getLineEnd(0, visibleEnd = true), "total_characters" to labelLayout.layoutInput.text.length, "ellipsized" to labelLayout.isLineEllipsized(0)))
+            // Paragraph layout can reserve more width than the actual glyphs in a Tab.
+            // Check the rendered text and count, allowing only pixel rounding.
+            assertFalse("The queue label must not be ellipsized", labelLayout.isLineEllipsized(0))
+            assertEquals(labelLayout.layoutInput.text.length, labelLayout.getLineEnd(0, visibleEnd = true))
+            assertTrue("All queue glyphs must fit: ${labelLayout.getLineRight(0)} > ${labelLayout.size.width}", labelLayout.getLineRight(0) <= labelLayout.size.width + 1f)
             compose.onNodeWithTag("queue-1").assertIsSelected()
             compose.onNodeWithTag("queue-2").assertIsNotSelected()
             compose.onNode(hasText(nextTrack.text("title", nextTrack.text("name"))) and hasAnyAncestor(hasTestTag("queue-2"))).performClick()
             compose.waitUntil(10_000) { qa.model.audio.queueIndex == 2 && qa.model.audio.playing }
             compose.onNodeWithTag("queue-2").assertIsSelected()
             compose.onNodeWithTag("queue-1").assertIsNotSelected()
-            qa.capture("density-playlist-queue")
+            qa.capture("density-playlist-queue$mediaSuffix")
             compose.onNodeWithContentDescription("Предыдущий трек").performClick()
             compose.waitUntil(10_000) { qa.model.audio.queueIndex == 1 }
             compose.onNodeWithText("Треки", substring = false).performClick()
             compose.onNodeWithContentDescription("Предыдущий трек").performClick()
             compose.waitUntil(10_000) { qa.model.audio.trackId == created.first().getInt("id") }
             compose.onNodeWithTag("music-seek").performTouchInput { click(center) }
-            compose.waitUntil(10_000) { qa.model.audio.positionMs > 40_000 && qa.model.audio.playing }
-            qa.capture("density-playlist-playing")
+            try { compose.waitUntil(60_000) { (qa.model.audio.positionMs > 40_000 && qa.model.audio.playing) || qa.model.audio.error != null }; assertNull(qa.model.audio.error); assertTrue(qa.model.audio.playing) }
+            catch (error: Throwable) {
+                qa.report("component-seek-failure", obj("position" to qa.model.audio.positionMs, "duration" to qa.model.audio.durationMs, "playing" to qa.model.audio.playing, "buffering" to qa.model.audio.buffering, "error" to qa.model.audio.error))
+                qa.capture("component-seek-failure"); throw error
+            }
+            qa.capture("components-playlist-playing$mediaSuffix")
             compose.onNodeWithContentDescription("Закрыть").performClick()
             val position = qa.model.audio.positionMs
             device.pressHome()

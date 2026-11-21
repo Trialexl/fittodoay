@@ -27,7 +27,7 @@ fun summarizeMuscles(exercises: List<JSONObject>, logs: List<JSONObject>): List<
     }
     return counts.map { MuscleProgress(it.key, it.value.first, it.value.second) }.sortedWith(compareByDescending<MuscleProgress> { it.total }.thenBy { it.name })
 }
-@OptIn(ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable fun MuscleSummary(exercises: List<JSONObject>, logs: List<JSONObject>, mode: String) {
     val summary = remember(exercises, logs) { summarizeMuscles(exercises, logs) }
     if (summary.isEmpty()) return
@@ -58,13 +58,10 @@ fun summarizeMuscles(exercises: List<JSONObject>, logs: List<JSONObject>): List<
             summary.forEach { group ->
                 Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(group.name.replaceFirstChar(Char::titlecase), Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-                    androidx.compose.foundation.Canvas(Modifier.weight(1.2f).height(7.dp).semantics {
-                        contentDescription = "${group.name}: выполнено упражнений"
-                        progressBarRangeInfo = ProgressBarRangeInfo(group.completed.toFloat(), 0f..group.total.toFloat())
-                    }) {
-                        val width = size.width * group.total / largest
-                        drawRoundRect(accent.copy(alpha = .17f), size = androidx.compose.ui.geometry.Size(width, size.height), cornerRadius = androidx.compose.ui.geometry.CornerRadius(size.height / 2))
-                        if (group.completed > 0) drawRoundRect(accent, size = androidx.compose.ui.geometry.Size(width * group.completed / group.total, size.height), cornerRadius = androidx.compose.ui.geometry.CornerRadius(size.height / 2))
+                    Box(Modifier.weight(1.2f)) {
+                        LinearProgressIndicator(progress = { group.completed.toFloat() / group.total.coerceAtLeast(1) },
+                            modifier = Modifier.fillMaxWidth(group.total.toFloat() / largest).height(7.dp).semantics { contentDescription = "${group.name}: выполнено ${group.completed} из ${group.total}" },
+                            color = accent, trackColor = accent.copy(alpha = .17f), gapSize = 0.dp, drawStopIndicator = {})
                     }
                     Text("${group.completed} из ${group.total}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }

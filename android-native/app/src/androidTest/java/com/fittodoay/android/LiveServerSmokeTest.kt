@@ -147,8 +147,8 @@ class LiveServerSmokeTest {
         }
         report.put("analytics_fixture_date", historyDate)
         report.put("analytics_fixture_source", "synthetic_api_setup")
-        compose.onAllNodesWithText("Вес, кг", substring = false).onFirst().performScrollTo().performTextClearance()
-        compose.onAllNodesWithText("Вес, кг", substring = false).onFirst().performTextInput("80.5")
+        compose.onNode(hasContentDescription("Вес, кг") and hasAnyAncestor(hasTestTag("body-weight-panel"))).performScrollTo().performTextClearance()
+        compose.onNode(hasContentDescription("Вес, кг") and hasAnyAncestor(hasTestTag("body-weight-panel"))).performTextInput("80.5")
         compose.onNodeWithContentDescription("Сохранить вес").performScrollTo().performClick(); waitForRequest()
         val weighIn = api.call("/api/workouts/weigh-in/?date=$date") as JSONObject
         assertEquals(80.5, weighIn.getDouble("weight_kg"), 0.001)

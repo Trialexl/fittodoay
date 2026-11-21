@@ -63,8 +63,17 @@ class VisualSnapshotTest {
                     qa.capture("reference$suffix-$design-${screen.name.lowercase()}")
                 }
             }
+            fun reviewCalendar(prefix: String) {
+                qa.visible(hasContentDescription("Открыть календарь тренировок"), "calendar preview").performClick()
+                compose.onNodeWithTag("workout-calendar").assertIsDisplayed()
+                qa.capture("components-$prefix-calendar$suffix")
+                compose.onNodeWithContentDescription("Следующий месяц").performClick()
+                qa.capture("components-$prefix-calendar-next$suffix")
+                compose.onNodeWithText("Закрыть", substring = false).performClick()
+            }
             // Inspect the actual secondary surfaces, not only route headings.
             compose.runOnIdle { qa.model.screen = Screen.Workout; qa.model.preferences = JSONObject(qa.model.preferences.toString()).put("muscle_summary_view", "bars") }
+            reviewCalendar("light")
             qa.visible("Группы мышц").assertExists()
             qa.capture("design-muscle-widget$suffix")
             compose.onNodeWithTag("body-weight-panel").performScrollTo()
@@ -88,6 +97,11 @@ class VisualSnapshotTest {
             compose.onNodeWithContentDescription("Плейлист", useUnmergedTree = true).performClick()
             compose.onNodeWithTag("playlist-sheet").assertIsDisplayed()
             qa.capture("design-playlist$suffix")
+            compose.onNodeWithContentDescription("Фильтры музыки").performClick()
+            compose.onNodeWithText("Альбом", substring = false).assertExists()
+            qa.capture("components-music-filters$suffix")
+            androidx.test.uiautomator.UiDevice.getInstance(InstrumentationRegistry.getInstrumentation()).pressBack()
+            compose.onNodeWithTag("playlist-sheet").assertIsDisplayed()
             compose.onNodeWithText("Добавить музыку", substring = false).assertIsDisplayed().performClick()
             compose.onNodeWithText("Загрузить MP3", substring = false).assertIsDisplayed()
             qa.capture("design-playlist-upload$suffix")
@@ -251,6 +265,7 @@ class VisualSnapshotTest {
                 qa.capture("dark$suffix-${screen.name.lowercase()}")
             }
             compose.runOnIdle { qa.model.screen = Screen.Workout }
+            reviewCalendar("dark")
             qa.visible("Группы мышц").performScrollTo()
             qa.capture("design-dark-muscle-widget$suffix")
             compose.onNodeWithTag("body-weight-panel").performScrollTo()

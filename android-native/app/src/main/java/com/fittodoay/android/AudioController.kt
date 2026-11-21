@@ -20,6 +20,8 @@ class AudioController(context: Context) {
     var trackId by mutableStateOf<Int?>(null); private set
     var title by mutableStateOf(""); private set
     var playing by mutableStateOf(false); private set
+    var playRequested by mutableStateOf(false); private set
+    var buffering by mutableStateOf(false); private set
     var error by mutableStateOf<String?>(null); private set
     var positionMs by mutableLongStateOf(0); private set
     var durationMs by mutableLongStateOf(0); private set
@@ -32,6 +34,12 @@ class AudioController(context: Context) {
     var volume: Float get() = volumeState
         set(value) { volumeState = value.coerceIn(0f, 1f); ready { it.volume = volumeState } }
     private val observer = object : Player.Listener {
+        override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+            if (BuildConfig.DEBUG) android.util.Log.d("fitTODOayAudio", "playWhenReady=$playWhenReady reason=$reason")
+        }
+        override fun onPlaybackStateChanged(playbackState: Int) {
+            if (BuildConfig.DEBUG) android.util.Log.d("fitTODOayAudio", "state=$playbackState")
+        }
         override fun onEvents(player: Player, events: Player.Events) { sync() }
         override fun onPlayerError(exception: PlaybackException) {
             if (BuildConfig.DEBUG) android.util.Log.w("fitTODOay", "Playback failed: ${exception.errorCodeName}", exception)
@@ -50,6 +58,8 @@ class AudioController(context: Context) {
     private fun ready(action: (MediaController) -> Unit) { if (!released) controller?.let(action) ?: run { pending += action } }
     private fun sync() { controller?.let { player ->
         trackId = player.currentMediaItem?.mediaId?.toIntOrNull(); title = player.mediaMetadata.title?.toString().orEmpty(); playing = player.isPlaying
+        playRequested = player.playWhenReady && player.mediaItemCount > 0 && player.playerError == null && player.playbackState != Player.STATE_IDLE
+        buffering = player.playbackState == Player.STATE_BUFFERING
         if (player.playerError == null && player.playbackState != Player.STATE_IDLE) error = null
         positionMs = player.currentPosition.coerceAtLeast(0); durationMs = player.duration.takeIf { it > 0 } ?: 0
         shuffleState = player.shuffleModeEnabled; volumeState = player.volume
@@ -66,7 +76,7 @@ class AudioController(context: Context) {
         }
         ready { player -> player.setMediaItems(items, tracks.indexOfFirst { it.optInt("id") == track.optInt("id") }.coerceAtLeast(0), 0); player.prepare(); player.play() }
     }
-    fun toggle() = ready { if (it.playWhenReady) it.pause() else { error = null; it.prepare(); it.play() } }
+    fun toggle() = ready { if (it.playWhenReady && it.playerError == null && it.playbackState != Player.STATE_IDLE) it.pause() else { error = null; it.prepare(); it.play() } }
     fun next(direction: Int = 1) = ready { if (direction < 0) it.seekToPreviousMediaItem() else it.seekToNextMediaItem() }
     fun seek(position: Long) = ready { it.seekTo(position.coerceIn(0, durationMs.coerceAtLeast(0))) }
     fun move(from: Int, to: Int) = ready { if (from in 0 until it.mediaItemCount && to in 0 until it.mediaItemCount) it.moveMediaItem(from, to) }

@@ -125,12 +125,8 @@ private suspend fun prepareUpload(context: Context, uri: Uri, maxMb: Int): Pair<
         androidx.compose.ui.window.Dialog(onDismissRequest = { video = null }) {
             Surface {
                 Column(Modifier.padding(12.dp)) {
-                    androidx.compose.ui.viewinterop.AndroidView(factory = { context ->
-                        android.widget.VideoView(context).apply {
-                            setMediaController(android.widget.MediaController(context).also { it.setAnchorView(this) })
-                            setVideoURI(Uri.fromFile(file)); setOnPreparedListener { start() }
-                        }
-                    }, onRelease = { it.stopPlayback() }, modifier = Modifier.fillMaxWidth().height(360.dp))
+                    LocalTechniqueVideo(file)
+
                     TextButton(onClick = { video = null }) { Text("Закрыть видео") }
                 }
             }

@@ -12,9 +12,11 @@ Android остаётся отдельным клиентом в каталоге
 Промежуточные APK и галереи остаются локальными. Публикация — после завершения
 сверки приложения с вебом и проверки пользовательских сценариев.
 
-Текущая локальная итерация `0.4.2-dev`: графики Vico/KoalaPlot и галерея
-Compose Pager, приглушение музыки при сигнале таймера. Выбор компонентов — [UI_COMPONENTS.md](UI_COMPONENTS.md),
-проверки и ограничения — [LIBRARY_REVIEW.md](LIBRARY_REVIEW.md).
+Текущая локальная итерация `0.4.3-dev`: плейлист Material 3, календарь
+Kizitonwose, видео Media3 и стандартные поля/индикаторы. Проверки и ограничения —
+[COMPONENTS_REVIEW.md](COMPONENTS_REVIEW.md). Выбор компонентов — [UI_COMPONENTS.md](UI_COMPONENTS.md).
+Предыдущая итерация `0.4.2-dev`: графики Vico/KoalaPlot, галерея Compose Pager
+и приглушение музыки при сигнале таймера — [LIBRARY_REVIEW.md](LIBRARY_REVIEW.md).
 Предыдущая локальная итерация с компактным чеклистом и управлением плейлистом:
 [DENSITY_REVIEW.md](DENSITY_REVIEW.md).
 

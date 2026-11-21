@@ -38,7 +38,8 @@ private fun clock(seconds: Int) = "${seconds.coerceAtLeast(0) / 60}:${(seconds.c
 }
 private fun timerExercise(state: JSONObject?) = state?.optJSONObject("exercise")?.optJSONObject("source")?.text("name").orEmpty()
 
-/** Geometry and order follow frontend/src/app/timer-v2.css, not Material's progress indicator. */
+/** Material owns the progress ring; the web V2 tick marks remain decorative. */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable private fun TimerDial(seconds: Int, duration: Int, accent: Color, modifier: Modifier, mini: Boolean = false, digits: Int = 62) {
     val fraction = if (duration > 0) (seconds.toFloat() / duration).coerceIn(0f, 1f) else 0f
     Box(modifier, contentAlignment = Alignment.Center) {
@@ -50,19 +51,13 @@ private fun timerExercise(state: JSONObject?) = state?.optJSONObject("exercise")
                 val angle = Math.toRadians(i * 6.0 - 90)
                 drawLine(if (i % 5 == 0) Color(0x38ffffff) else Color(0x19ffffff), at(151f, angle), at(if (i % 5 == 0) 142f else 146f, angle), (if (i % 5 == 0) 1.5f else 1f) * unit)
             }
-            val radius = 126f * unit; val stroke = (if (mini) 16f else 5f) * unit
-            drawCircle(Color(0x09ffffff), radius, center, style = Stroke(stroke))
-            val top = center - Offset(radius, radius)
-            if (fraction > 0) {
-                drawArc(accent.copy(alpha = .12f), -90f, fraction * 360, false, top, Size(radius * 2, radius * 2), style = Stroke(stroke * 2, cap = StrokeCap.Round))
-                drawArc(accent, -90f, fraction * 360, false, top, Size(radius * 2, radius * 2), style = Stroke(stroke, cap = StrokeCap.Round))
-                if (!mini) {
-                    val point = at(126f, Math.toRadians(fraction * 360.0 - 90))
-                    drawCircle(accent.copy(alpha = .15f), 13 * unit, point)
-                    drawCircle(accent, 6.5f * unit, point); drawCircle(Color.White, 3.5f * unit, point)
-                }
-            }
         }
+        BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            val diameter = minOf(maxWidth, maxHeight)
+            CircularProgressIndicator(progress = { fraction }, modifier = Modifier.size(diameter * (if (mini) .8375f else .803125f)),
+                color = accent, trackColor = Color(0x09ffffff), strokeWidth = diameter * (if (mini) .05f else .015625f), strokeCap = StrokeCap.Round, gapSize = 0.dp)
+        }
+
         if (!mini) Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(clock(seconds), color = TimerInk, fontSize = (if (clock(seconds).length > 5) 40 else digits).sp,
                 lineHeight = (if (clock(seconds).length > 5) 46 else (digits * 1.15).toInt()).sp, fontWeight = FontWeight(450), letterSpacing = (-3).sp, modifier = Modifier.testTag("workout-timer-clock").semantics { contentDescription = "Осталось $seconds секунд" })

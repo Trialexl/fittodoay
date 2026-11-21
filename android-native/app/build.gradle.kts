@@ -10,8 +10,8 @@ android {
         applicationId = "com.fittodoay.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 8
-        versionName = "0.4.2-dev"
+        versionCode = 9
+        versionName = "0.4.3-dev"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "SERVER_URL", "\"https://trialexl4.freemyip.com\"")
     }
@@ -53,6 +53,8 @@ dependencies {
     implementation("io.github.koalaplot:koalaplot-core:0.8.0")
     implementation("androidx.media3:media3-exoplayer:1.6.1")
     implementation("androidx.media3:media3-session:1.6.1")
+    implementation("androidx.media3:media3-ui:1.6.1")
+    implementation("com.kizitonwose.calendar:compose:2.7.0")
     implementation("androidx.media3:media3-datasource-okhttp:1.6.1")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
