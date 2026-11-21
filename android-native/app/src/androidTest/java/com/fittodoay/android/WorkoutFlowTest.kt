@@ -132,7 +132,7 @@ class WorkoutFlowTest {
             val changed = JSONObject(qa.model.plan.toString())
             val exercises = changed.array("folders").single().array("templates").single().array("exercises")
             exercises.first().getJSONArray("sets").getJSONObject(0).put("rest", 0)
-            exercises.last().getJSONArray("sets").getJSONObject(0).put("default_time", 2)
+            exercises.last().getJSONArray("sets").getJSONObject(0).put("default_time", 60)
             qa.model.plan = changed
         }
         clickSet(91001, 1)
@@ -146,6 +146,12 @@ class WorkoutFlowTest {
         compose.onNodeWithText("Прервать", substring = false).performScrollTo().performClick()
         assertEquals(1, offline.queue().size)
         assertFalse(qa.model.workoutTimerActive)
+        compose.runOnIdle {
+            val changed = JSONObject(qa.model.plan.toString())
+            changed.array("folders").single().array("templates").single().array("exercises")
+                .last().getJSONArray("sets").getJSONObject(0).put("default_time", 2)
+            qa.model.plan = changed
+        }
         clickSet(91012, 1)
         compose.waitUntil(8000) { qa.model.executionUntil == 0L && qa.model.restPending != null }
         assertEquals("2", qa.model.restPending!!.text("time"))

@@ -9,6 +9,10 @@
 Общая ветка разработки — `main`: backend, веб и Android обновляются вместе из одного репозитория.
 Android остаётся отдельным клиентом в каталоге `android-native` и использует общий backend API.
 
+Переработка плейлиста, виджетов, информации об упражнениях и всех диаграмм в 0.4.0:
+[DESIGN_REVIEW.md](DESIGN_REVIEW.md). Проверки и ограничения сборки:
+[RELEASE_CHECKS.md](RELEASE_CHECKS.md).
+
 JDK 17, Android SDK 35, build-tools 35.0.0, Gradle 8.11.1.
 Минимальная версия устройства: Android 8 (API 26).
 

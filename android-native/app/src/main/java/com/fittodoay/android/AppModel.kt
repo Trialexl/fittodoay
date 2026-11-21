@@ -33,6 +33,7 @@ class AppModel(application: Application) : AndroidViewModel(application) {
         }
     }
     var screen by mutableStateOf(Screen.Workout)
+    var focusBodyWeight by mutableStateOf(false)
     var busy by mutableStateOf(false); private set
     var error by mutableStateOf<String?>(null)
     var notice by mutableStateOf<String?>(null)
@@ -158,6 +159,7 @@ class AppModel(application: Application) : AndroidViewModel(application) {
         load()
     }
     fun logout() {
+        focusBodyWeight = false
         authPasswordDraft = ""
         pauseLocalSync(); localSyncResult = JSONObject(); localSyncAttempt = 0
         syncRetry?.cancel(); syncRetry = null; syncFailures = 0; syncBlocked = false

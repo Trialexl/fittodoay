@@ -90,12 +90,12 @@ class MainActivity : ComponentActivity() {
                     Column(Modifier.navigationBarsPadding()) {
                     MinimizedWorkoutTimer(model)
                     MiniPlayer(model)
-                    if (!wide) NavigationBar(containerColor = scheme.surface, tonalElevation = 0.dp, modifier = Modifier.heightIn(min = 72.dp).testTag("bottom-navigation"), windowInsets = WindowInsets(0, 0, 0, 0)) { Screen.entries.filter { it != Screen.Settings }.forEachIndexed { i, screen ->
+                    if (!wide) NavigationBar(containerColor = scheme.surface, tonalElevation = 0.dp, modifier = Modifier.heightIn(min = if (androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.2f) 96.dp else 72.dp).testTag("bottom-navigation"), windowInsets = WindowInsets(0, 0, 0, 0)) { Screen.entries.filter { it != Screen.Settings }.forEachIndexed { i, screen ->
                         NavigationBarItem(selected = screen == model.screen, enabled = !model.busy,
                             modifier = Modifier.semantics { contentDescription = screen.title },
                             onClick = { model.navigate(screen) }, icon = { Icon(icons[i], null, Modifier.size(24.dp)) },
                             colors = NavigationBarItemDefaults.colors(indicatorColor = accent.copy(alpha = .09f), selectedIconColor = accent, selectedTextColor = scheme.onSurface, unselectedIconColor = scheme.onSurfaceVariant),
-                            label = { Text(when(screen) { Screen.Workout -> "Сегодня"; Screen.Programs -> "Планы"; Screen.Analytics -> "Прогресс"; else -> screen.title }, maxLines = 1, fontSize = 11.sp) }, alwaysShowLabel = true)
+                            label = { Text(when(screen) { Screen.Workout -> "Сегодня"; Screen.Programs -> "Планы"; Screen.Analytics -> "Прогресс"; Screen.Assistant -> if (androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.2f) "ИИ" else screen.title; else -> screen.title }, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, textAlign = androidx.compose.ui.text.style.TextAlign.Center, fontSize = 11.sp) }, alwaysShowLabel = true)
                     } }
                     }
                 }
@@ -121,7 +121,14 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
-                model.notice?.let { Text(it, Modifier.padding(horizontal = 20.dp, vertical = 8.dp), color = MaterialTheme.colorScheme.primary) }
+                model.notice?.let { notice ->
+                    Surface(color = MaterialTheme.colorScheme.surfaceVariant) {
+                        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 9.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                            Icon(Icons.Outlined.Info, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(notice, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
                 if (model.token.isEmpty()) AuthScreen(model) else screenState.SaveableStateProvider(model.screen.name) { when (model.screen) {
                     Screen.Workout -> WorkoutScreen(model)
                     Screen.Programs -> ProgramsScreen(model)
@@ -162,10 +169,8 @@ class MainActivity : ComponentActivity() {
 }
 @Composable fun Choices(label: String, value: String, options: List<Pair<String, String>>, onChange: (String) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(label, style = MaterialTheme.typography.labelLarge)
-        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            options.forEach { (id, text) -> FilterChip(selected = value == id, onClick = { onChange(id) }, label = { Text(text) }) }
-        }
+        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        SegmentedOptions(value, options, onChange)
     }
 }
 @Composable fun Action(label: String, enabled: Boolean = true, onClick: () -> Unit) {

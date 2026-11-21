@@ -56,7 +56,7 @@ private suspend fun prepareUpload(context: Context, uri: Uri, maxMb: Int): Pair<
     Action(if (preparing) "Подготовка файла…" else label, !model.busy && !preparing) { launcher.launch(arrayOf(mime)) }
 }
 
-@Composable private fun MusicBatchUploadButton(model: AppModel) {
+@Composable fun MusicBatchUploadButton(model: AppModel) {
     val context = LocalContext.current; val scope = rememberCoroutineScope()
     var preparing by remember { mutableStateOf(false) }
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
@@ -244,49 +244,10 @@ private suspend fun prepareUpload(context: Context, uri: Uri, maxMb: Int): Pair<
 }
 
 @Composable private fun MusicPanel(model: AppModel) {
-    var group by remember(model.preferences) { mutableStateOf(model.preferences.text("music_group_by", "none")) }
-    var deleting by remember { mutableStateOf<Int?>(null) }
-    var sourceFilter by remember { mutableStateOf("all") }
     Panel("Музыка") {
-        model.audio.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-        Row { Checkbox(model.audio.shuffle, { model.audio.shuffle = it }, Modifier.testTag("music-shuffle")); Text("Перемешивать", Modifier.padding(top = 12.dp)) }
-        if (model.audio.trackId != null) {
-            Text(model.audio.title, style = MaterialTheme.typography.titleSmall)
-            Row { TextButton(onClick = { model.audio.next(-1) }) { Text("Предыдущий") }; TextButton(onClick = model.audio::toggle) { Text(if (model.audio.playing) "Пауза" else "Продолжить") }; TextButton(onClick = { model.audio.next() }) { Text("Следующий") } }
-            if (model.audio.durationMs > 0) {
-                var seeking by remember { mutableStateOf<Float?>(null) }
-                Slider(modifier = Modifier.testTag("music-seek"), value = seeking ?: (model.audio.positionMs.toFloat() / model.audio.durationMs).coerceIn(0f, 1f),
-                    onValueChange = { seeking = it }, onValueChangeFinished = { model.audio.seek(((seeking ?: 0f) * model.audio.durationMs).toLong()); seeking = null })
-                Text("${model.audio.positionMs / 1000} / ${model.audio.durationMs / 1000} сек")
-            }
-            Text("Громкость"); Slider(value = model.audio.volume, onValueChange = { model.audio.volume = it })
-            model.audio.queue.forEachIndexed { index, item -> Row(Modifier.testTag("queue-$index")) {
-                Text(item.second, Modifier.weight(1f)); TextButton(onClick = { model.audio.move(index, index - 1) }, enabled = index > 0) { Text("↑") }
-                TextButton(onClick = { model.audio.move(index, index + 1) }, enabled = index < model.audio.queue.lastIndex) { Text("↓") }
-                TextButton(onClick = { model.audio.remove(index) }) { Text("Убрать") }
-            } }
-        }
-        Choices("Группировать", group, listOf("none" to "Все", "artist" to "Исполнитель", "album" to "Альбом", "folder" to "Папка")) { group = it; model.preferences(obj("music_group_by" to it)) }
-        Choices("Источник", sourceFilter, listOf("all" to "Все источники", "file" to "Файлы", "stream" to "Радио")) { sourceFilter = it }
         UploadButton(model, "Загрузить MP3", "audio/*", "/api/workouts/music/tracks/upload/", "file", 130)
         MusicBatchUploadButton(model)
-        val shown = model.tracks.filter { sourceFilter == "all" || it.text("source_type") == sourceFilter }
-        shown.groupBy { track -> if (group == "none") "Все треки" else if (group == "folder") {
-            if (track.text("source_type") == "stream") "Радио · " + if (track.text("stream_category") == "relax") "Релакс" else "Тренировка"
-            else track.text("filename").substringBeforeLast('/', "Без папки").replace(Regex("^user_[0-9]+$"), "Мои треки").replace(Regex("^system$"), "Системные")
-        } else track.text(group, "Без группы") }.forEach { (title, tracks) ->
-            Text(title, style = MaterialTheme.typography.titleSmall)
-            tracks.forEach { track ->
-                Row(Modifier.testTag("music-track-${track.getInt("id")}")) {
-                    TextButton(onClick = {
-                        if (model.audio.trackId == track.getInt("id")) model.audio.toggle()
-                        else model.audio.play(track, shown, model.token)
-                    }, Modifier.weight(1f)) { Text("${if (model.audio.trackId == track.optInt("id") && model.audio.playing) "Ⅱ" else "▶"} ${track.text("title", track.text("name"))}") }
-                    TextButton(onClick = { model.audio.enqueue(track) }) { Text("В очередь") }
-                    if (track.optBoolean("is_mine") && track.text("source_type") != "stream") TextButton(onClick = { deleting = track.getInt("id") }) { Text("Удалить") }
-                }
-            }
-        }
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        PlaylistContent(model)
     }
-    deleting?.let { id -> ConfirmDelete("трек", { deleting = null }) { model.delete("/api/workouts/music/tracks/$id/") } }
 }

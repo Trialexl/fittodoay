@@ -28,7 +28,7 @@ import kotlin.math.ceil
 import kotlin.math.roundToInt
 
 @Composable fun WorkoutScreen(model: AppModel) {
-    var weight by remember(model.plan) { mutableStateOf(model.plan.optJSONObject("weigh_in")?.text("weight_kg").orEmpty()) }
+    var weight by remember(model.plan) { mutableStateOf(model.plan.optJSONObject("weigh_in")?.text("weight_kg").orEmpty().replace('.', ',')) }
     var info by remember { mutableStateOf<JSONObject?>(null) }
     var chat by remember { mutableStateOf(false) }
     var calendar by remember { mutableStateOf(false) }
@@ -52,17 +52,7 @@ import kotlin.math.roundToInt
         if (exercises.isNotEmpty() && (!modern || model.preferences.text("muscle_summary_view", "chips") != "chips")) FitCard {
             MuscleSummary(exercises, logs, model.preferences.text("muscle_summary_view", "chips"))
         }
-        FitCard(Modifier.testTag("body-weight-panel"), padding = 10.dp) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Icon(androidx.compose.material.icons.Icons.Outlined.BarChart, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
-                Text("Вес перед тренировкой", style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(1f))
-                Box(Modifier.width(80.dp)) { CompactInput("Вес, кг", weight, { weight = it }, "Вес, кг") }
-                OutlinedIconButton(onClick = { model.weighIn(weight) }, enabled = !model.busy, shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)) {
-                    Icon(androidx.compose.material.icons.Icons.Outlined.Check, "Сохранить вес", Modifier.size(18.dp))
-                }
-            }
-        }
-
+        BodyWeightCard(model, weight) { weight = it }
 
         if (model.plan.array("folders").isEmpty() && !model.busy) Panel("День без тренировок") {
             Text("На эту дату нет активных тренировок. Выберите другую дату или настройте расписание программы.")

@@ -62,12 +62,73 @@ class VisualSnapshotTest {
                     qa.capture("reference$suffix-$design-${screen.name.lowercase()}")
                 }
             }
+            // Inspect the actual secondary surfaces, not only route headings.
+            compose.runOnIdle { qa.model.screen = Screen.Workout; qa.model.preferences = JSONObject(qa.model.preferences.toString()).put("muscle_summary_view", "bars") }
+            qa.visible("Группы мышц").assertExists()
+            qa.capture("design-muscle-widget$suffix")
+            compose.onNodeWithTag("body-weight-panel").performScrollTo()
+            qa.capture("design-body-weight$suffix")
+            qa.visible(hasContentDescription("Техника и описание"), "exercise information").performClick()
+            compose.onNodeWithTag("exercise-info-sheet").assertIsDisplayed()
+            qa.capture("design-exercise-description$suffix")
+            compose.onNodeWithText("Статистика", substring = false).performClick()
+            qa.capture("design-exercise-statistics$suffix")
+            compose.onNode(hasText("Источник:", substring = true) and hasAnyAncestor(hasTestTag("exercise-info-sheet"))).performScrollTo()
+            qa.capture("design-exercise-statistics-bottom$suffix")
+            compose.onNodeWithContentDescription("Закрыть").performClick()
+            compose.onNodeWithContentDescription("Плейлист", useUnmergedTree = true).performClick()
+            compose.onNodeWithTag("playlist-sheet").assertIsDisplayed()
+            qa.capture("design-playlist$suffix")
+            compose.onNodeWithText("Добавить музыку", substring = false).assertIsDisplayed().performClick()
+            compose.onNodeWithText("Загрузить MP3", substring = false).assertIsDisplayed()
+            qa.capture("design-playlist-upload$suffix")
+            compose.onNodeWithText("Скрыть загрузку", substring = false).performClick()
+            val search = compose.onNode(hasSetTextAction() and hasAnyAncestor(hasTestTag("playlist-sheet")))
+            search.performTextReplacement("qa-no-matching-track-999")
+            compose.onNodeWithText("Ничего не найдено", substring = false).assertExists()
+            qa.capture("design-playlist-empty$suffix")
+            search.performTextClearance()
+            compose.onNodeWithContentDescription("Закрыть").performClick()
+            compose.runOnIdle { qa.model.screen = Screen.Analytics }
+            compose.onNodeWithTag("chart-weight_kg").performScrollTo()
+            qa.capture("design-body-weight-chart$suffix")
+            fun reviewPlots(prefix: String) {
+            val originalTrends = qa.model.trends
+            // Clearly separate synthetic dense-series stress views from recorded-server screenshots.
+            val stress = JSONObject(originalTrends.toString())
+            val base = stress.array("folders").first()
+            run {
+                val samples = org.json.JSONArray()
+                repeat(18) { i -> samples.put(obj("date" to java.time.LocalDate.of(2026, 11, 1).plusDays(i.toLong()).toString(), "load" to (180 + i * 14 + (i % 4) * 35))) }
+                base.put("series", samples)
+                val second = JSONObject(base.toString()).put("id", 990001).put("name", "QA вторая серия")
+                val more = org.json.JSONArray()
+                repeat(18) { i -> more.put(obj("date" to java.time.LocalDate.of(2026, 11, 1).plusDays(i.toLong()).toString(), "load" to (140 + i * 9 + (i % 3) * 50))) }
+                second.put("series", more)
+                stress.getJSONArray("folders").put(second)
+                compose.runOnIdle { qa.model.trends = stress }
+                for ((style, title) in trendStyles) {
+                    compose.onNodeWithText(title, substring = false).performScrollTo().performClick()
+                    compose.onNodeWithTag("trend-chart-$style").performScrollTo().performTouchInput { click(center) }
+                    compose.onNodeWithTag("trend-chart-$style-panel").performScrollTo()
+                    qa.capture("$prefix-chart-$style$suffix")
+                }
+                compose.runOnIdle { qa.model.trends = originalTrends }
+            }
+            }
+            reviewPlots("stress")
             compose.runOnIdle { qa.model.screen = Screen.Programs }
             val template = qa.model.templates.first { it.array("template_exercises").isNotEmpty() }
             val folderId = template.getInt("folder")
+            compose.onNodeWithTag("program-library").performScrollTo()
             compose.onNodeWithTag("select-program-$folderId").performScrollTo().performClick()
+            compose.waitForIdle()
+            val programDay = compose.onNodeWithTag("program-day-${template.getInt("id")}")
+            programDay.assertExists()
+            if (programDay.fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsProperties.StateDescription] == "Свёрнуто")
+                compose.onNode(hasContentDescription("Раскрыть день") and hasAnyAncestor(hasTestTag("program-day-${template.getInt("id")}"))).performScrollTo().performClick()
             val exercise = template.array("template_exercises").first()
-            compose.onNodeWithText(programExerciseSummary(exercise), substring = false).performScrollTo().assertIsDisplayed()
+            qa.visible(programExerciseSummary(exercise)).assertIsDisplayed()
             qa.capture("program-targets$suffix")
             compose.runOnIdle { qa.model.screen = Screen.Assistant }
             for (step in 2..4) {
@@ -106,12 +167,29 @@ class VisualSnapshotTest {
                 compose.waitForIdle()
                 qa.capture("dark$suffix-${screen.name.lowercase()}")
             }
+            compose.runOnIdle { qa.model.screen = Screen.Workout }
+            qa.visible("Группы мышц").performScrollTo()
+            qa.capture("design-dark-muscle-widget$suffix")
+            compose.onNodeWithTag("body-weight-panel").performScrollTo()
+            qa.capture("design-dark-body-weight$suffix")
+            qa.visible(hasContentDescription("Техника и описание"), "dark exercise information").performClick()
+            qa.capture("design-dark-exercise-description$suffix")
+            compose.onNodeWithText("Статистика", substring = false).performClick()
+            qa.capture("design-dark-exercise-statistics$suffix")
+            compose.onNode(hasText("Источник:", substring = true) and hasAnyAncestor(hasTestTag("exercise-info-sheet"))).performScrollTo()
+            qa.capture("design-dark-exercise-statistics-bottom$suffix")
+            compose.onNodeWithContentDescription("Закрыть").performClick()
+            compose.onNodeWithContentDescription("Плейлист", useUnmergedTree = true).performClick()
+            qa.capture("design-dark-playlist$suffix")
+            compose.onNodeWithContentDescription("Закрыть").performClick()
+            compose.runOnIdle { qa.model.screen = Screen.Analytics }
+            reviewPlots("stress-dark")
             compose.onNodeWithContentDescription("Настройки оформления").performClick()
             compose.onNodeWithText("Готово", substring = false).assertIsDisplayed()
             qa.capture("appearance-dialog$suffix")
             compose.onNodeWithText("Готово", substring = false).performClick()
             qa.report("visual-snapshot$suffix", obj("result" to "passed", "source" to "recorded-server-responses", "network_enabled" to false,
-                "layout" to layout, "routes" to Screen.entries.size, "designs" to 1, "design" to "v2", "system_navigation_insets_respected" to true, "editing_does_not_apply_without_confirmation" to true))
+                "layout" to layout, "routes" to Screen.entries.size, "designs" to 1, "design" to "v2", "system_navigation_insets_respected" to true, "editing_does_not_apply_without_confirmation" to true, "chart_styles_per_theme" to 7, "chart_stress_source" to "synthetic", "playlist_search_and_upload_form" to true, "exercise_description_and_statistics" to true))
         } finally { compose.runOnIdle { qa.model.preferences = originalPreferences; qa.model.screen = Screen.Workout } }
     }
 }

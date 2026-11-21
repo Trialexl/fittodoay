@@ -59,6 +59,7 @@ class QaHarness(val compose: AndroidComposeTestRule<ActivityScenarioRule<MainAct
         check(model.preferences.text("design_version") == "v2")
         check(model.screen == Screen.Programs) { "Program picker requires the Programs screen" }
         check(model.folders.any { it.optInt("id") == id }) { "Requested QA program is absent from the loaded server response" }
+        compose.onNodeWithTag("program-library").performScrollTo()
         compose.onNodeWithTag("select-program-$id").performScrollTo().performClick()
         compose.waitForIdle()
     }
@@ -85,7 +86,12 @@ class QaHarness(val compose: AndroidComposeTestRule<ActivityScenarioRule<MainAct
         val device = androidx.test.uiautomator.UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
         device.waitForIdle(1000)
         check(!device.hasObject(androidx.test.uiautomator.By.res("android", "aerr_close"))) { "A system ANR dialog covers the screenshot" }
-        check(device.wait(androidx.test.uiautomator.Until.hasObject(androidx.test.uiautomator.By.pkg("com.fittodoay.android")), 8000)) { "The application is not visible for the screenshot" }
+        if (!device.wait(androidx.test.uiautomator.Until.hasObject(androidx.test.uiautomator.By.pkg("com.fittodoay.android")), 8000)) {
+            InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()?.let { bitmap ->
+                File(directory, "failure-focus-$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }; bitmap.recycle()
+            }
+            error("The application is not visible for the screenshot: ${device.currentPackageName}")
+        }
         if (android.os.Build.VERSION.SDK_INT >= 29) {
             // Semantics can update before the GPU presents the new screen.
             // Wait for the focused window's rendered frame, including dialogs.

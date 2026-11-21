@@ -15,14 +15,23 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.ui.layout.onGloballyPositioned
 import kotlin.math.roundToInt
 import org.json.JSONObject
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable fun AnalyticsScreen(model: AppModel) {
     var detail by remember { mutableStateOf("programs") }
     var chartStyle by remember { mutableStateOf("line") }
     var folderId by remember { mutableStateOf<Int?>(null) }
     var chat by remember { mutableStateOf(false) }
+    val weightFocus = remember { BringIntoViewRequester() }
+    var weightReady by remember { mutableStateOf(false) }
+    LaunchedEffect(model.focusBodyWeight, model.busy, weightReady) {
+        if (model.focusBodyWeight && !model.busy && weightReady) { weightFocus.bringIntoView(); model.focusBodyWeight = false }
+    }
     Page {
         ScreenHeading("Аналитика", "Прогресс и рекомендации", "Следи за нагрузкой и обсуждай тренды с AI-экспертом.")
         BoxWithConstraints(Modifier.fillMaxWidth()) {
@@ -58,12 +67,14 @@ import org.json.JSONObject
                 Text("${it.text("sets")} подходов", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        Panel("Вес тела") { Chart(model.weights, "weight_kg") }
+        Panel("Вес тела", Modifier.testTag("analytics-body-weight").bringIntoViewRequester(weightFocus).onGloballyPositioned { weightReady = true }) { Chart(model.weights, "weight_kg") }
         Panel("Динамика по программам") {
-            Choices("Период", model.range, listOf("week" to "Неделя", "month" to "Месяц", "half-year" to "Полгода", "year" to "Год")) { if (!model.busy) { model.range = it; model.refresh() } }
-            Choices("Группировка", model.granularity, listOf("day" to "День", "week" to "Неделя")) { if (!model.busy) { model.granularity = it; model.refresh() } }
-            Choices("Детализация", detail, listOf("programs" to "Программы", "exercises" to "Упражнения")) { detail = it }
-            Choices("Вид графика", chartStyle, trendStyles) { chartStyle = it }
+            SegmentedOptions(model.range, listOf("week" to "Неделя", "month" to "Месяц", "half-year" to "Полгода", "year" to "Год")) { if (!model.busy) { model.range = it; model.refresh() } }
+            SegmentedOptions(model.granularity, listOf("day" to "День", "week" to "Неделя")) { if (!model.busy) { model.granularity = it; model.refresh() } }
+            Text("Детализация", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            SegmentedOptions(detail, listOf("programs" to "Программы", "exercises" to "Упражнения")) { detail = it }
+            Text("Вид графика", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            SegmentedOptions(chartStyle, trendStyles) { chartStyle = it }
             if (detail == "exercises") model.trends.array("folders").forEach { folder ->
                 FilterChip((folderId ?: model.trends.array("folders").firstOrNull()?.optInt("id")) == folder.optInt("id"), { folderId = folder.optInt("id") }, label = { Text(folder.text("name")) })
             }
@@ -90,24 +101,8 @@ import org.json.JSONObject
 }
 
 @Composable fun Chart(rows: List<JSONObject>, metric: String) {
-    val data = rows.filter { !it.isNull(metric) && it.optDouble(metric, Double.NaN).isFinite() }
-    if (data.isEmpty()) { Text("Нет данных за этот период"); return }
-    val values = data.map { it.optDouble(metric).toFloat() }
-    val min = if (metric == "weight_kg") (values.minOrNull()!! - 1f).coerceAtLeast(0f) else 0f
-    val max = values.maxOrNull()!!.coerceAtLeast(min + 1f)
-    val color = MaterialTheme.colorScheme.primary
-    val grid = MaterialTheme.colorScheme.outlineVariant
-    var selected by remember(rows, metric) { mutableIntStateOf(values.lastIndex) }
-    Text("${data[selected.coerceIn(data.indices)].text("date")} · ${"%.2f".format(values[selected.coerceIn(values.indices)])}", style = MaterialTheme.typography.labelLarge)
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text("${"%.1f".format(min)}"); Text("${"%.1f".format(max)}") }
-    Canvas(Modifier.fillMaxWidth().height(160.dp).testTag("chart-$metric").pointerInput(data, metric) {
-        detectTapGestures { point -> selected = (point.x / size.width.coerceAtLeast(1) * (values.size - 1)).roundToInt().coerceIn(values.indices) }
-    }) {
-        repeat(4) { index -> val y = size.height * index / 3; drawLine(grid, Offset(0f, y), Offset(size.width, y)) }
-        val points = values.mapIndexed { index, value -> Offset(if (values.size == 1) size.width / 2 else size.width * index / (values.size - 1), size.height * (1 - (value - min) / (max - min))) }
-        val path = Path().apply { points.forEachIndexed { i, point -> if (i == 0) moveTo(point.x, point.y) else lineTo(point.x, point.y) } }
-        drawPath(path, color, style = Stroke(3.dp.toPx())); points.forEach { drawCircle(color, 3.dp.toPx(), it) }
-        points.getOrNull(selected)?.let { drawCircle(color, 6.dp.toPx(), it) }
-    }
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(data.first().text("date"), style = MaterialTheme.typography.labelSmall); Text(data.last().text("date"), style = MaterialTheme.typography.labelSmall) }
+    val data = rows.filter { !it.isNull(metric) && it.optDouble(metric, Double.NaN).isFinite() }.sortedBy { it.text("date") }
+    val label = when (metric) { "weight_kg" -> "Вес тела, кг"; "avg_weight" -> "Средний вес, кг"; else -> "Нагрузка" }
+    val line = TrendLine(metric, label, data.associate { it.text("date") to it.optDouble(metric) })
+    MetricPlot(listOf(line), "line", "chart-$metric", label, zero = metric == "load")
 }

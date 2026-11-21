@@ -56,6 +56,15 @@ class NativeParityTest {
         val bitmap = InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
         File(dir, "$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }; bitmap.recycle()
     }
+    @Test fun bodyWeightShortcutOpensTheMeasurementChart() {
+        navigate(Screen.Workout)
+        compose.onNodeWithContentDescription("Открыть статистику веса").performScrollTo().performClick()
+        waitRequest()
+        assertEquals(Screen.Analytics, model.screen)
+        compose.waitUntil(10_000) { !model.focusBodyWeight }
+        compose.onNodeWithTag("analytics-body-weight").assertIsDisplayed()
+        capture("body-weight-shortcut")
+    }
     @Test fun serverPreferenceCapabilities() = runBlocking<Unit> {
         val before = api.call("/api/profile/preferences/") as JSONObject
         val report = obj("keys" to org.json.JSONArray(before.keys().asSequence().toList()), "before_muscles" to before.text("muscle_summary_view"), "before_design" to before.text("design_version"))
@@ -100,7 +109,7 @@ class NativeParityTest {
             compose.waitUntil(30_000) { compose.onAllNodesWithTag("chart-load").fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithTag("chart-load").performTouchInput { click(center) }
             capture("exercise-statistics"); compose.onNodeWithText("Средний вес").performClick(); capture("exercise-average-weight")
-            compose.onNodeWithText("Закрыть", substring = false).performClick()
+            compose.onNodeWithContentDescription("Закрыть").performClick()
         } finally {
             api.call("/api/profile/preferences/", "PUT", saved)
             compose.runOnIdle { model.refresh() }; waitRequest()
@@ -134,15 +143,25 @@ class NativeParityTest {
     }
     @Test fun offlineBodyWeightSurvivesRecreationAndUpsertsOnce() = runBlocking<Unit> {
         navigate(Screen.Workout)
+        val originalDate = model.date
+        if (model.plan.getJSONObject("weigh_in").isNull("weight_kg")) {
+            // The suite may cross midnight. Reuse an existing synthetic measurement
+            // so cleanup can restore it without creating an undeletable daily row.
+            val recorded = api.call("/api/analytics/body-weight/").rows().last { !it.isNull("weight_kg") }
+            compose.runOnIdle { model.date = recorded.text("date"); model.refresh() }; waitRequest()
+        }
         val date = model.date
         val previous = model.plan.getJSONObject("weigh_in").getDouble("weight_kg")
         try {
             network(false)
-            compose.onNode(hasText("Вес, кг", substring = false) and hasAnyAncestor(hasTestTag("body-weight-panel"))).performScrollTo().performTextReplacement("81,1")
+            compose.onNode(hasContentDescription("Вес, кг") and hasAnyAncestor(hasTestTag("body-weight-panel"))).performScrollTo().performTextReplacement("81,1")
             QaHarness(compose).visible(hasContentDescription("Сохранить вес"), "save weight").performClick(); waitRequest()
             assertTrue(model.pendingCount > 0)
             compose.runOnIdle { compose.activity.viewModelStore.clear() }; compose.activityRule.scenario.recreate()
             compose.runOnIdle { model = compose.activity.model }; waitRequest()
+            // A fresh model opens today. Reopen the measurement's date before
+            // checking the durable historical value selected by the fixture above.
+            if (model.date != date) { compose.runOnIdle { model.date = date; model.refresh() }; waitRequest() }
             assertEquals(81.1, model.plan.getJSONObject("weigh_in").getDouble("weight_kg"), .001)
             network(true); compose.runOnIdle { model.refresh() }; waitRequest()
             compose.waitUntil(180_000) { model.pendingCount == 0 && !model.busy }
@@ -155,7 +174,7 @@ class NativeParityTest {
             network(true)
             OfflineStore(context, model.token).remove("weight:$date")
             api.call("/api/workouts/weigh-in/", "PUT", obj("date" to date, "weight_kg" to previous))
-            compose.runOnIdle { model.refresh() }; waitRequest()
+            compose.runOnIdle { model.date = originalDate; model.refresh() }; waitRequest()
         }
     }
     @Test fun offlineEditsPersistAndSynchronizeWithoutDuplicateSets() = runBlocking<Unit> {

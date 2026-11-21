@@ -25,7 +25,8 @@ class MediaParityTest {
         val track = qa.model.tracks.first { it.text("source_type") == "stream" }
         try {
             compose.runOnIdle { qa.model.audio.stop() }
-            qa.visible("Радио").performClick()
+            qa.visible(hasContentDescription("Источник"), "source menu").performClick()
+            compose.onNodeWithText("Радио", substring = false).performClick()
             qa.visible(hasText(track.text("title", track.text("name")), substring = true) and hasClickAction() and hasAnyAncestor(hasTestTag("music-track-${track.getInt("id")}")), "server radio track").performClick()
             compose.waitUntil(60_000) { qa.model.audio.playing || qa.model.audio.error != null }
             qa.report("radio", obj("playing" to qa.model.audio.playing, "error" to qa.model.audio.error, "track_id" to track.getInt("id")))
@@ -87,6 +88,29 @@ class MediaParityTest {
         }
         qa.waitRequest()
     }
+    @Test fun globalPlaylistUploadsWithoutLeavingTheWorkout() = runBlocking<Unit> {
+        qa.navigate(Screen.Workout)
+        val name = "android-qa-sheet-${UUID.randomUUID().toString().take(8)}.mp3"
+        val before = qa.api.call("/api/workouts/music/tracks/").rows().map { it.getInt("id") }.toSet()
+        val uri = document(name, "qa-music.mp3", "audio/mpeg")
+        var uploadedId: Int? = null
+        try {
+            compose.onNodeWithContentDescription("Плейлист").performClick()
+            compose.onNodeWithText("Добавить музыку", substring = false).performClick()
+            upload("Загрузить MP3", name)
+            val uploaded = qa.model.tracks.single { it.getInt("id") !in before }
+            uploadedId = uploaded.getInt("id")
+            assertEquals(Screen.Workout, qa.model.screen)
+            compose.onNodeWithTag("playlist-sheet").assertIsDisplayed()
+            qa.capture("global-playlist-upload")
+            compose.onNodeWithContentDescription("Закрыть").performClick()
+            qa.report("global-playlist-upload", obj("result" to "passed", "remained_on_workout" to true, "native_picker_and_server_upload" to true))
+        } finally {
+            if (compose.onAllNodesWithTag("playlist-sheet").fetchSemanticsNodes().isNotEmpty()) compose.onNodeWithContentDescription("Закрыть").performClick()
+            uploadedId?.let { qa.api.call("/api/workouts/music/tracks/$it/", "DELETE") }
+            qa.context.contentResolver.delete(uri, null, null)
+        }
+    }
     @Test fun uploadQueueSeekShuffleAndBackgroundPlayback() = runBlocking<Unit> {
         qa.navigate(Screen.Settings)
         val prefix = "android-qa-${UUID.randomUUID().toString().take(8)}"
@@ -102,8 +126,12 @@ class MediaParityTest {
                 created += track
             }
             assertEquals(2, created.size)
-            qa.visible("Файлы").performClick()
-            for (track in created) qa.visible(hasText("В очередь", substring = false) and hasAnyAncestor(hasTestTag("music-track-${track.getInt("id")}")), "queue uploaded track").performClick()
+            qa.visible(hasContentDescription("Источник"), "source menu").performClick()
+            compose.onNodeWithText("Файлы", substring = false).performClick()
+            for (track in created) {
+                qa.visible(hasContentDescription("Действия с треком: ${track.text("title", track.text("name"))}") and hasAnyAncestor(hasTestTag("music-track-${track.getInt("id")}")), "track actions").performClick()
+                compose.onNodeWithText("В очередь", substring = false).performClick()
+            }
             compose.waitUntil(20_000) { qa.model.audio.queue.size == 2 }
             compose.onNodeWithContentDescription("Пауза или воспроизведение").performClick()
             compose.waitUntil(30_000) { qa.model.audio.playing || qa.model.audio.error != null }

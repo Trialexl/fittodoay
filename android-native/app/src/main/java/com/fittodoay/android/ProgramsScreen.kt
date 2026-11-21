@@ -2,6 +2,9 @@ package com.fittodoay.android
 
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ChevronLeft
+import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -33,13 +36,15 @@ import java.time.LocalDate
     val selectedId = selectedFolder.takeIf { id -> model.folders.any { it.optInt("id") == id } } ?: model.folders.firstOrNull()?.optInt("id")
     Page {
         ScreenHeading("Программы и шаблоны", "Мои программы", "Выбирайте программу, настраивайте дни и упражнения.")
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { model.navigate(Screen.Assistant) }, modifier = Modifier.weight(1f), enabled = !model.busy,
+        val programActions: @Composable (Modifier) -> Unit = { itemModifier ->
+            Button(onClick = { model.navigate(Screen.Assistant) }, modifier = itemModifier, enabled = !model.busy,
                 shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp), contentPadding = PaddingValues(horizontal = 8.dp, vertical = 12.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.onSurface, contentColor = MaterialTheme.colorScheme.surface)) { Text("Создать с помощником", maxLines = 1, style = MaterialTheme.typography.labelMedium) }
-            Button(onClick = { editFolder = JSONObject() }, modifier = Modifier.weight(1f), enabled = !model.busy,
-                shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp), contentPadding = PaddingValues(horizontal = 8.dp, vertical = 12.dp)) { Text("Новая программа", maxLines = 1, style = MaterialTheme.typography.labelMedium) }
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.onSurface, contentColor = MaterialTheme.colorScheme.surface)) { Text("Создать с помощником", maxLines = 2, style = MaterialTheme.typography.labelMedium) }
+            Button(onClick = { editFolder = JSONObject() }, modifier = itemModifier, enabled = !model.busy,
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp), contentPadding = PaddingValues(horizontal = 8.dp, vertical = 12.dp)) { Text("Новая программа", maxLines = 2, style = MaterialTheme.typography.labelMedium) }
         }
+        if (androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.2f) Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { programActions(Modifier.fillMaxWidth()) }
+        else Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { programActions(Modifier.weight(1f)) }
         if (model.folders.isEmpty() && !model.busy) Text("Добавьте программу и запланируйте первый день тренировок.")
         if (modern && model.folders.isNotEmpty()) ModernProgramLibrary(model, selectedId, { selectedFolder = it }, { editFolder = JSONObject() })
         if (modern) model.folders.firstOrNull { it.optInt("id") == selectedId }?.let { folder ->
@@ -242,21 +247,37 @@ fun scheduleLabel(day: JSONObject): String {
         } catch (e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e; detailError = "Не удалось загрузить подробную технику" }
         finally { loading = false }
     }
-    AlertDialog(onDismissRequest = dismiss, title = { Text(source.text("name")) }, text = {
-        Column(Modifier.heightIn(max = 500.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Choices("Информация", tab, listOf("technique" to "Техника", "statistics" to "Статистика")) { tab = it }
+    var imageIndex by remember(source.text("id")) { mutableIntStateOf(0) }
+    DetailSurface(source.text("name"), tag = "exercise-info-sheet", dismiss = dismiss) {
+        DetailTabs(tab, listOf("technique" to "Описание", "statistics" to "Статистика")) { tab = it }
+        Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(18.dp)) {
             if (tab == "statistics") ExerciseStatistics(source, model) else {
-            if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
-            detailError?.let { Text(it); TextButton(onClick = { retry++ }) { Text("Повторить") } }
-            Text(detail.text("target_muscles")); Text(detail.text("difficulty")); Text(detail.text("description"))
-            detail.array("images").forEach { image ->
-                val path = image.text("path")
-                val url = exerciseImageUrl(path)
-                val localImage by produceState<Any?>(null, url, model.token) { value = model.imageOnDevice(url) }
-                AsyncImage(localImage, "Техника упражнения", Modifier.fillMaxWidth().height(200.dp))
-            }
-            if (detail.text("common_errors").isNotBlank()) { Text("Частые ошибки", style = MaterialTheme.typography.titleSmall); Text(detail.text("common_errors")) }
+                if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
+                detailError?.let { Text(it, color = MaterialTheme.colorScheme.error); TextButton(onClick = { retry++ }) { Text("Повторить") } }
+                if (detail.text("difficulty").isNotBlank()) Text("Сложность: ${detail.text("difficulty")}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (detail.text("target_muscles").isNotBlank()) Text("Мышцы: ${detail.text("target_muscles")}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(detail.text("description").ifBlank { "Описание упражнения пока не добавлено." }, style = MaterialTheme.typography.bodyMedium)
+                val images = detail.array("images")
+                if (images.isNotEmpty()) {
+                    val index = imageIndex.coerceIn(images.indices)
+                    val url = exerciseImageUrl(images[index].text("path"))
+                    val localImage by produceState<Any?>(null, url, model.token) { value = model.imageOnDevice(url) }
+                    Surface(shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
+                        androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth().height(260.dp), contentAlignment = androidx.compose.ui.Alignment.Center) {
+                            AsyncImage(localImage, "Техника упражнения, шаг ${index + 1}", Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Fit)
+                            Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                                FilledTonalIconButton(onClick = { imageIndex = (index - 1 + images.size) % images.size }) { Icon(Icons.Outlined.ChevronLeft, "Предыдущее изображение") }
+                                FilledTonalIconButton(onClick = { imageIndex = (index + 1) % images.size }) { Icon(Icons.Outlined.ChevronRight, "Следующее изображение") }
+                            }
+                        }
+                    }
+                    Text("${index + 1} / ${images.size}", Modifier.align(androidx.compose.ui.Alignment.CenterHorizontally), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                if (detail.text("common_errors").isNotBlank()) {
+                    Text("Частые ошибки", style = MaterialTheme.typography.titleSmall)
+                    Text(detail.text("common_errors"), style = MaterialTheme.typography.bodyMedium)
+                }
             }
         }
-    }, confirmButton = { TextButton(onClick = dismiss) { Text("Закрыть") } })
+    }
 }

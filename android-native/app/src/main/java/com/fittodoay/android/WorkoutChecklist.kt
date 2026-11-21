@@ -71,7 +71,7 @@ private fun completedSets(exercise: JSONObject, logs: List<JSONObject>) = exerci
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Box(Modifier.weight(1f)) { Disclosure(source.text("name"), "$completed из ${sets.size} подходов", exerciseOpen,
                                             "workout-exercise-toggle-${exercise.optInt("template_exercise_id")}") { rememberExpansion(exerciseKey, !exerciseOpen) } }
-                                        IconButton(onClick = { info(source) }) { Icon(Icons.Outlined.Info, "Техника и описание") }
+                                        IconButton(onClick = { info(exerciseInfoSource(source, folder)) }) { Icon(Icons.Outlined.Info, "Техника и описание") }
                                     }
                                     if (exercise.text("note").isNotBlank()) Text(exercise.text("note"), style = MaterialTheme.typography.bodySmall)
                                     if (exerciseOpen) sets.forEach { set ->

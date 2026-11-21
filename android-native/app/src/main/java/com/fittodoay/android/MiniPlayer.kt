@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.dp
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable fun MiniPlayer(model: AppModel) {
     val audio = model.audio
+    var playlist by remember { mutableStateOf(false) }
     var seeking by remember { mutableStateOf<Float?>(null) }
     Surface(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp).testTag("mini-player"), shape = RoundedCornerShape(18.dp),
         color = MaterialTheme.colorScheme.surface, border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), shadowElevation = 0.dp) {
@@ -30,13 +31,13 @@ import androidx.compose.ui.unit.dp
                 }, enabled = audio.trackId != null || model.tracks.isNotEmpty(), modifier = Modifier.size(40.dp)) {
                     Icon(if (audio.playing) Icons.Outlined.Pause else Icons.Outlined.PlayArrow, "Пауза или воспроизведение", Modifier.size(20.dp))
                 }
-                Text(audio.title.ifBlank { "Выберите трек" }, Modifier.weight(1f).clickable(enabled = !model.busy) { model.navigate(Screen.Settings) }, maxLines = 1,
+                Text(audio.title.ifBlank { "Выберите трек" }, Modifier.weight(1f).clickable { playlist = true }, maxLines = 1,
                     overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 IconButton(onClick = { audio.next() }, enabled = audio.trackId != null, modifier = Modifier.size(40.dp)) { Icon(Icons.Outlined.SkipNext, "Следующий трек", Modifier.size(20.dp)) }
                 IconButton(onClick = { audio.shuffle = !audio.shuffle }, modifier = Modifier.size(40.dp)) {
                     Icon(Icons.Outlined.Shuffle, "Случайный порядок", Modifier.size(18.dp), tint = if (audio.shuffle) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                IconButton(onClick = { model.navigate(Screen.Settings) }, enabled = !model.busy, modifier = Modifier.size(40.dp)) { Icon(Icons.Outlined.QueueMusic, "Плейлист", Modifier.size(20.dp)) }
+                IconButton(onClick = { playlist = true }, modifier = Modifier.size(40.dp)) { Icon(Icons.Outlined.QueueMusic, "Плейлист", Modifier.size(20.dp)) }
             }
             Slider(value = seeking ?: if (audio.durationMs > 0) (audio.positionMs.toFloat() / audio.durationMs).coerceIn(0f, 1f) else 0f,
                 onValueChange = { seeking = it }, enabled = audio.durationMs > 0,
@@ -55,6 +56,7 @@ import androidx.compose.ui.unit.dp
             }
         }
     }
+    if (playlist) PlaylistSheet(model) { playlist = false }
 }
 
 private fun playbackTime(milliseconds: Long): String {

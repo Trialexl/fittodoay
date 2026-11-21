@@ -178,7 +178,10 @@ switch ($Action) {
                 & $adb shell svc data disable
                 & $adb shell wm size $viewport.Size
                 & $adb shell wm density $viewport.Density
-                Restore-TestWindow
+                # Let ActivityScenario launch a fresh activity after resizing. A
+                # separately started task can race the launcher on this API 35 AVD.
+                & $adb shell am force-stop com.fittodoay.android
+                & $adb shell am force-stop com.google.android.apps.nexuslauncher
                 $output = & $adb shell am instrument -w -e class com.fittodoay.android.VisualSnapshotTest -e visualSnapshot true -e layoutName $viewport.Name com.fittodoay.android.test/androidx.test.runner.AndroidJUnitRunner
                 $output | Write-Output
                 $output | Set-Content -LiteralPath (Join-Path $artifactDir ("visual-snapshot-" + $viewport.Name + ".txt"))
