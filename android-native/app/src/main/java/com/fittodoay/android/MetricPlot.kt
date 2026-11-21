@@ -1,27 +1,49 @@
 package com.fittodoay.android
 
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.ui.draw.alpha
 import androidx.compose.foundation.*
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.animation.core.*
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.grid.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.*
 import androidx.compose.ui.graphics.*
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.clipRect
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.sp
+import com.patrykandpatrick.vico.compose.cartesian.*
+import com.patrykandpatrick.vico.compose.cartesian.axis.*
+import com.patrykandpatrick.vico.compose.cartesian.layer.*
+import com.patrykandpatrick.vico.compose.cartesian.marker.rememberDefaultCartesianMarker
+import com.patrykandpatrick.vico.compose.common.component.*
+import com.patrykandpatrick.vico.compose.common.fill
+import com.patrykandpatrick.vico.compose.common.insets
+import com.patrykandpatrick.vico.core.cartesian.axis.*
+import com.patrykandpatrick.vico.core.cartesian.data.*
+import com.patrykandpatrick.vico.core.cartesian.layer.*
+import com.patrykandpatrick.vico.core.cartesian.marker.*
+import com.patrykandpatrick.vico.core.common.component.LineComponent
+import com.patrykandpatrick.vico.core.common.data.ExtraStore
+import com.patrykandpatrick.vico.core.common.shape.CorneredShape
+import io.github.koalaplot.core.pie.*
+import io.github.koalaplot.core.polar.*
+import io.github.koalaplot.core.style.AreaStyle
+import io.github.koalaplot.core.style.LineStyle
+import io.github.koalaplot.core.util.ExperimentalKoalaPlotApi
 import java.util.Locale
 import kotlin.math.*
 
@@ -47,203 +69,197 @@ fun plotNumber(value: Double): String = when {
     else -> String.format(Locale.forLanguageTag("ru"), "%.2f", value).trimEnd('0').trimEnd(',')
 }
 fun plotPointNumber(value: Double): String = String.format(Locale.forLanguageTag("ru"), "%.2f", value).trimEnd('0').trimEnd(',')
-/** Canvas coordinates are local to the plot, excluding its Y-axis. */
-fun plotDateIndex(style: String, count: Int, x: Float, width: Float): Int {
-    if (count <= 1 || width <= 0 || !x.isFinite()) return 0
-    val fraction = (x / width).coerceIn(0f, 1f)
-    return if (style in listOf("columns", "heatmap")) (fraction * count).toInt().coerceIn(0, count - 1)
-    else (fraction * (count - 1)).roundToInt().coerceIn(0, count - 1)
-}
 fun plotDate(date: String): String = runCatching { java.time.LocalDate.parse(date).format(java.time.format.DateTimeFormatter.ofPattern("dd.MM")) }.getOrDefault(date)
 
-/** Shared axes, selection, and legend for dashboard, body weight, and exercise statistics. */
+/** Charts share data, colors and selection details; libraries own drawing and hit testing. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable fun MetricPlot(lines: List<TrendLine>, style: String, tag: String, label: String = "Нагрузка", zero: Boolean = true) {
     var focus by remember(lines) { mutableStateOf<String?>(null) }
-    val shown = lines.filter { focus == null || focus == it.key }
+    val shown = lines.filter { focus == null || it.key == focus }
     val dates = shown.flatMap { it.points.keys }.distinct().sorted()
-    if (dates.isEmpty() || shown.none { it.points.values.any { v -> v != null } }) {
+    if (dates.isEmpty() || shown.none { it.points.values.any { v -> v != null && v.isFinite() } }) {
         Column(Modifier.fillMaxWidth().padding(vertical = 32.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Данные ещё появятся", style = MaterialTheme.typography.titleSmall)
             Text("Выполните подход или выберите другой период", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         return
     }
-    val data = shown.map { line -> interpolateTrend(dates.map { line.points[it] }) }
-    val totals = shown.map { it.points.values.filterNotNull().sum() }
-    val total = totals.sum()
-    val domain = chartDomain(if (style == "columns") totals else if (style == "stacked") dates.indices.map { d -> data.sumOf { it[d] } } else data.flatten(), zero || style in listOf("area", "stacked", "columns", "radar"))
-    var point by remember(dates, style) { mutableIntStateOf(dates.lastIndex) }
-    var seriesIndex by remember(lines, style) { mutableIntStateOf(0) }
-    val selected = point.coerceIn(dates.indices)
-    var tooltip by remember(lines, style, focus) { mutableStateOf<Offset?>(null) }
-    val reveal = remember(lines, style, focus) { Animatable(0f) }
-    LaunchedEffect(reveal) { reveal.animateTo(1f, tween(700, easing = FastOutSlowInEasing)) }
-    fun selectAt(tap: Offset, width: Int, height: Int, dismissSame: Boolean = false) {
-        val previousPoint = point; val previousSeries = seriesIndex
-        val anchor = Offset((tap.x / width.coerceAtLeast(1)).coerceIn(0f, 1f), (tap.y / height.coerceAtLeast(1)).coerceIn(0f, 1f))
-        if (style == "pie") {
-            val angle = (atan2(tap.y - height / 2, tap.x - width / 2) * 180 / PI + 450) % 360
-            var sum = 0.0
-            seriesIndex = totals.indices.firstOrNull { sum += if (total > 0) totals[it] / total * 360 else 0.0; angle < sum } ?: 0
-        } else if (style == "columns") {
-            seriesIndex = plotDateIndex("columns", shown.size, tap.x, width.toFloat())
-        } else if (style == "radar") {
-            val angle = (atan2(tap.y - height / 2, tap.x - width / 2) + PI / 2 + 2 * PI) % (2 * PI)
-            point = (angle / (2 * PI) * dates.size).roundToInt() % dates.size
-        } else {
-            point = plotDateIndex(style, dates.size, tap.x, width.toFloat())
-            if (style == "heatmap") seriesIndex = (tap.y / height.coerceAtLeast(1) * shown.size).toInt().coerceIn(shown.indices)
-        }
-        tooltip = if (dismissSame && tooltip != null && previousPoint == point && previousSeries == seriesIndex) null else anchor
-    }
-    val accent = MaterialTheme.colorScheme.primary
-    val palette = listOf(accent, Color(0xff16a6a0), Color(0xffee9d36), Color(0xffe46a8b), Color(0xff6489dd), Color(0xffa18b6e))
-    fun color(i: Int) = palette[lines.indexOf(shown[i]).coerceAtLeast(0) % palette.size]
-    val grid = MaterialTheme.colorScheme.outlineVariant
-    val muted = MaterialTheme.colorScheme.onSurfaceVariant
-    Column(Modifier.testTag("$tag-panel"), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(label, style = MaterialTheme.typography.labelSmall, color = muted)
-                val selectedValues = shown.mapNotNull { it.points[dates[selected]] }
-                Text(if (style == "pie") plotNumber(total) else if (style == "columns") plotNumber(totals[seriesIndex.coerceIn(totals.indices)]) else if (selectedValues.isNotEmpty()) plotNumber(selectedValues.sum()) else "Нет записи", style = MaterialTheme.typography.headlineSmall)
+    val values = shown.map { line -> interpolateTrend(dates.map { line.points[it]?.takeIf(Double::isFinite) }) }
+    val totals = shown.map { it.points.values.filterNotNull().filter(Double::isFinite).sum() }
+    val palette = listOf(MaterialTheme.colorScheme.primary, Color(0xff16a6a0), Color(0xffee9d36), Color(0xffe46a8b), Color(0xff6489dd), Color(0xffa18b6e))
+    val colors = shown.map { palette[lines.indexOf(it) % palette.size] }
+    var selected by remember(shown, style) { mutableStateOf<Int?>(null) }
+    var selectedSeries by remember(shown, style) { mutableIntStateOf(0) }
+    val period = style in listOf("columns", "pie")
+    val selectedDate = selected?.coerceIn(dates.indices)
+    val description = if (selectedDate == null) "Нажмите на график, чтобы посмотреть значения" else if (period) "За выбранный период" else dates[selectedDate]
+    Column(Modifier.testTag("$tag-panel"), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        key(shown, style) {
+            val modifier = Modifier.fillMaxWidth().height(if (style == "heatmap") (shown.size * 36 + 24).coerceIn(96, 320).dp else 240.dp).testTag(tag).semantics {
+                contentDescription = "$label, ${dates.size} точек. Нажмите для просмотра значения."
+                stateDescription = if (selectedDate == null) description else description + ", " + shown.mapIndexed { i, line -> "${line.label}: ${(if (period) totals[i] else line.points[dates[selectedDate]])?.let(::plotPointNumber) ?: "Нет записи"}" }.joinToString(", ")
             }
-            Surface(shape = RoundedCornerShape(9.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
-                Text(if (style in listOf("pie", "columns")) "За период" else plotDate(dates[selected]), Modifier.padding(horizontal = 10.dp, vertical = 7.dp), style = MaterialTheme.typography.labelSmall, color = muted)
+            when (style) {
+                "pie" -> DonutPlot(totals, colors, modifier) { selectedSeries = it; selected = 0 }
+                "radar" -> RadarPlot(dates, values, colors, modifier) { d, s -> selected = d; selectedSeries = s }
+                "heatmap" -> HeatmapPlot(shown, dates, colors, modifier) { d, s -> selected = d; selectedSeries = s }
+                else -> CartesianPlot(shown, dates, values, totals, colors, style, zero, modifier) { x ->
+                    selected = if (period) 0 else x.coerceIn(dates.indices)
+                    if (period) selectedSeries = x.coerceIn(shown.indices)
+                }
             }
         }
-        Surface(shape = RoundedCornerShape(14.dp), border = BorderStroke(1.dp, grid.copy(alpha = .7f)), color = MaterialTheme.colorScheme.surface) {
-            Column(Modifier.padding(top = 18.dp, bottom = 12.dp, start = 8.dp, end = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                val cartesian = style !in listOf("pie", "radar", "heatmap")
-                val chartHeight = if (style == "heatmap") (shown.size * 32).coerceIn(64, 400).dp else 220.dp
-                Row {
-                    if (cartesian) Column(Modifier.width(38.dp).height(chartHeight), verticalArrangement = Arrangement.SpaceBetween, horizontalAlignment = Alignment.End) {
-                        repeat(domain.intervals + 1) { i -> Text(plotNumber(domain.maximum - (domain.maximum - domain.minimum) * i / domain.intervals), style = MaterialTheme.typography.labelSmall, color = muted) }
-                    }
-                    BoxWithConstraints(Modifier.weight(1f).padding(horizontal = 8.dp)) {
-                        Canvas(Modifier.fillMaxWidth().height(chartHeight).testTag(tag).semantics { contentDescription = "$label, ${dates.size} точек. Нажмите или проведите по горизонтали для просмотра значения." }
-                            .pointerInput(dates, shown, style) {
-                                detectTapGestures { tap -> selectAt(tap, size.width, size.height, dismissSame = true) }
-                            }.pointerInput(dates, shown, style) {
-                                detectHorizontalDragGestures(onDragStart = { selectAt(it, size.width, size.height) }) { change, _ ->
-                                    change.consume(); selectAt(change.position, size.width, size.height)
-                                }
-                            }) {
-                            val drawProgress = reveal.value
-                            fun x(i: Int) = if (style == "columns") size.width * (i + .5f) / shown.size else if (dates.size == 1) size.width / 2 else size.width * i / (dates.size - 1)
-                            fun y(v: Double) = (size.height * (1 - (v - domain.minimum) / (domain.maximum - domain.minimum))).toFloat()
-                            if (cartesian) {
-                                repeat(domain.intervals + 1) { i -> val at = size.height * i / domain.intervals; drawLine(grid.copy(alpha = .65f), Offset(0f, at), Offset(size.width, at), pathEffect = PathEffect.dashPathEffect(floatArrayOf(3.dp.toPx(), 4.dp.toPx()))) }
-                                drawLine(accent.copy(alpha = .2f), Offset(x(if (style == "columns") seriesIndex.coerceIn(shown.indices) else selected), 0f), Offset(x(if (style == "columns") seriesIndex.coerceIn(shown.indices) else selected), size.height), pathEffect = PathEffect.dashPathEffect(floatArrayOf(3.dp.toPx(), 4.dp.toPx())))
-                            }
-                            clipRect(right = if (cartesian && style != "columns") size.width * drawProgress else size.width) {
-                            when (style) {
-                                "pie" -> {
-                                    val diameter = min(size.width, size.height) - 32.dp.toPx(); val inset = Offset((size.width - diameter) / 2, (size.height - diameter) / 2)
-                                    var angle = -90f
-                                    if (total <= 0) drawArc(grid, 0f, 360f, false, inset, Size(diameter, diameter), style = Stroke(24.dp.toPx()))
-                                    totals.forEachIndexed { i, v -> val sweep = if (total == 0.0) 0f else (v / total * 360).toFloat() * drawProgress
-                                        val gap = min(1.5f, sweep / 5)
-                                        drawArc(color(i).copy(alpha = if (i == seriesIndex) 1f else .65f), angle + gap / 2, (sweep - gap).coerceAtLeast(0f), false, inset, Size(diameter, diameter), style = Stroke(if (i == seriesIndex) 30.dp.toPx() else 24.dp.toPx(), cap = StrokeCap.Butt)); angle += sweep }
-                                }
-                                "columns" -> {
-                                    val width = size.width / shown.size * .55f
-                                    totals.forEachIndexed { i, value ->
-                                        val top = y(value * drawProgress)
-                                        drawRoundRect(color(i), Offset(x(i) - width / 2, top), Size(width, (y(0.0) - top).coerceAtLeast(0f)), CornerRadius(5.dp.toPx()))
-                                    }
-                                }
-                                "radar" -> {
-                                    val center = Offset(size.width / 2, size.height / 2); val radius = min(size.width, size.height) * .42f * drawProgress
-                                    fun radial(i: Int, v: Double) = center + Offset((cos(2 * PI * i / dates.size - PI / 2) * radius * v / domain.maximum).toFloat(), (sin(2 * PI * i / dates.size - PI / 2) * radius * v / domain.maximum).toFloat())
-                                    repeat(4) { ring -> val path = Path(); dates.indices.forEach { i -> val p = radial(i, domain.maximum * (ring + 1) / 4); if (i == 0) path.moveTo(p.x, p.y) else path.lineTo(p.x, p.y) }; path.close(); drawPath(path, grid, style = Stroke(1.dp.toPx())) }
-                                    val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color = muted.toArgb(); textSize = 10.sp.toPx(); textAlign = android.graphics.Paint.Align.CENTER }
-                                    val step = ceil(dates.size / 6.0).toInt().coerceAtLeast(1)
-                                    dates.indices.filter { it % step == 0 }.forEach { j -> val p = radial(j, domain.maximum * 1.16); drawContext.canvas.nativeCanvas.drawText(plotDate(dates[j]), p.x, p.y + paint.textSize / 3, paint) }
-                                    data.forEachIndexed { i, values -> val path = Path(); values.forEachIndexed { j, v -> val p = radial(j, v); if (j == 0) path.moveTo(p.x, p.y) else path.lineTo(p.x, p.y) }; path.close(); drawPath(path, color(i).copy(alpha = .1f)); drawPath(path, color(i), style = Stroke(2.dp.toPx())); values.forEachIndexed { j, v -> drawCircle(color(i), if (j == selected) 5.dp.toPx() else 2.dp.toPx(), radial(j, v)) } }
-                                }
-                                "heatmap" -> {
-                                    val w = size.width / dates.size; val h = size.height / shown.size
-                                    data.forEachIndexed { i, values -> values.forEachIndexed { j, v -> drawRoundRect(color(i).copy(alpha = ((.06 + .94 * v / domain.maximum) * drawProgress).toFloat().coerceIn(0f, 1f)), Offset(j * w + 2, i * h + 2), Size((w - 4).coerceAtLeast(1f), (h - 4).coerceAtLeast(1f)), CornerRadius(4.dp.toPx())) } }
-                                    drawRoundRect(accent, Offset(selected * w, 0f), Size(w, size.height), CornerRadius(5.dp.toPx()), style = Stroke(1.5.dp.toPx()))
-                                }
-                                else -> {
-                                    val accumulated = DoubleArray(dates.size)
-                                    data.forEachIndexed { i, values ->
-                                        val base = accumulated.copyOf()
-                                        val points = values.mapIndexed { j, v -> Offset(x(j), y(v + if (style == "stacked") base[j] else 0.0)) }
-                                        val path = Path().apply { points.forEachIndexed { j, p -> if (j == 0) moveTo(p.x, p.y) else { val prev = points[j-1]; val middle = (prev.x + p.x) / 2; cubicTo(middle, prev.y, middle, p.y, p.x, p.y) } } }
-                                        run {
-                                            if (style in listOf("area", "stacked")) {
-                                                val fill = Path().apply {
-                                                    addPath(path)
-                                                    val bottom = dates.indices.reversed().map { j -> Offset(x(j), y(if (style == "stacked") base[j] else domain.minimum)) }
-                                                    bottom.forEachIndexed { j, p -> if (j == 0) lineTo(p.x, p.y) else { val previous = bottom[j - 1]; val middle = (previous.x + p.x) / 2; cubicTo(middle, previous.y, middle, p.y, p.x, p.y) } }
-                                                    close()
-                                                }
-                                                drawPath(fill, Brush.verticalGradient(listOf(color(i).copy(alpha = .25f), color(i).copy(alpha = .02f))))
-                                            }
-                                            drawPath(path, color(i), style = Stroke(2.5.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
-                                            points.forEachIndexed { j, p -> if (dates.size < 16 || j == selected) { drawCircle(color(i), if (j == selected) 4.dp.toPx() else 2.dp.toPx(), p); if (j == selected) drawCircle(Color.White, 1.8.dp.toPx(), p) } }
-                                        }
-                                        values.indices.forEach { j -> accumulated[j] = values[j] + if (style == "stacked") base[j] else 0.0 }
-                                    }
-                                }
-                            }
-                            }
-                        }
-                        tooltip?.let { anchor ->
-                            val density = androidx.compose.ui.platform.LocalDensity.current
-                            val tooltipWidth = minOf(220.dp, maxWidth)
-                            val left = ((maxWidth - tooltipWidth) * anchor.x).coerceAtLeast(0.dp)
-                            val top = if (anchor.y > .5f) 8.dp else (chartHeight - 100.dp).coerceAtLeast(8.dp)
-                            val entries = if (style in listOf("pie", "columns", "heatmap")) listOf(seriesIndex.coerceIn(shown.indices)) else shown.indices.toList()
-                            // A Material Surface consumes pointer input even without an onClick.
-                            // Draw this overlay without input nodes so scrubbing continues underneath.
-                            Box(Modifier.offset { IntOffset(with(density) { left.roundToPx() }, with(density) { top.roundToPx() }) }
-                                .width(tooltipWidth).shadow(6.dp, RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surface, RoundedCornerShape(10.dp))
-                                .border(1.dp, grid, RoundedCornerShape(10.dp)).testTag("$tag-tooltip").semantics { liveRegion = LiveRegionMode.Polite }) {
-                                Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                                    Text(if (style in listOf("pie", "columns")) "За выбранный период" else dates[selected], style = MaterialTheme.typography.labelSmall, color = muted)
-                                    entries.take(4).forEach { i ->
-                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                            Box(Modifier.size(6.dp).background(color(i), RoundedCornerShape(3.dp)))
-                                            Text(shown[i].label, Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                                            Text((if (style in listOf("pie", "columns")) totals[i] else shown[i].points[dates[selected]])?.let(::plotPointNumber) ?: "Нет записи", style = MaterialTheme.typography.labelMedium)
-                                        }
-                                    }
-                                    if (entries.size > 4) Text("Ещё ${entries.size - 4} · выберите серию в легенде", style = MaterialTheme.typography.labelSmall, color = muted)
-                                }
-                            }
-                        }
-                        if (style == "pie" && tooltip == null) Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(plotNumber(total), style = MaterialTheme.typography.headlineSmall)
-                            Text("за период", style = MaterialTheme.typography.labelSmall, color = muted)
-                        }
+        // A stable detail area keeps text readable and accessible without obscuring the plot.
+        Column(Modifier.fillMaxWidth().heightIn(min = 58.dp).then(if (selected != null) Modifier.testTag("$tag-tooltip") else Modifier)
+            .semantics { liveRegion = LiveRegionMode.Polite }, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(description, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (selectedDate != null) {
+                val entries = if (style in listOf("columns", "pie", "heatmap", "radar")) listOf(selectedSeries) else shown.indices.toList()
+                entries.forEach { i ->
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Box(Modifier.size(6.dp).background(colors[i], CircleShape))
+                        Text(shown[i].label, Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Text((if (period) totals[i] else shown[i].points[dates[selectedDate]])?.let(::plotPointNumber) ?: "Нет записи", style = MaterialTheme.typography.labelMedium)
                     }
                 }
-                if (style == "columns") Row(Modifier.fillMaxWidth().padding(start = 46.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
-                    shown.forEach { line -> Text(line.label, Modifier.weight(1f).padding(horizontal = 3.dp), style = MaterialTheme.typography.labelSmall, color = muted,
-                        maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = androidx.compose.ui.text.style.TextAlign.Center) }
-                }
-                else if (style != "pie") Row(Modifier.fillMaxWidth().padding(start = if (cartesian) 46.dp else 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(plotDate(dates.first()), style = MaterialTheme.typography.labelSmall, color = muted)
-                    if (dates.size > 2) Text(plotDate(dates[dates.size / 2]), style = MaterialTheme.typography.labelSmall, color = muted)
-                    if (dates.size > 1) Text(plotDate(dates.last()), style = MaterialTheme.typography.labelSmall, color = muted)
-                }
             }
         }
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        if (lines.size > 1) FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             lines.forEachIndexed { i, line ->
-                Surface(onClick = { focus = if (focus == line.key) null else line.key }, shape = RoundedCornerShape(10.dp),
-                    color = if (focus == line.key) palette[i % palette.size].copy(alpha = .1f) else MaterialTheme.colorScheme.surfaceVariant) {
-                    Row(Modifier.padding(horizontal = 10.dp, vertical = 9.dp).widthIn(max = 290.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                        Box(Modifier.size(7.dp).background(palette[i % palette.size], RoundedCornerShape(3.dp)))
-                        Text(line.label, Modifier.weight(1f, fill = false), style = MaterialTheme.typography.labelSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        Text((if (style in listOf("pie", "columns")) line.points.values.filterNotNull().sum() else line.points[dates[selected]])?.let(::plotNumber) ?: "—", style = MaterialTheme.typography.labelSmall, color = palette[i % palette.size])
-                    }
-                }
+                FilterChip(selected = focus == line.key, onClick = { focus = if (focus == line.key) null else line.key },
+                    label = { Text(line.label, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 230.dp), style = MaterialTheme.typography.labelSmall) },
+                    leadingIcon = { Box(Modifier.size(7.dp).background(palette[i % palette.size], CircleShape)) })
+            }
+        }
+    }
+}
+
+@Composable private fun CartesianPlot(lines: List<TrendLine>, dates: List<String>, values: List<List<Double>>, totals: List<Double>, colors: List<Color>, style: String, zero: Boolean, modifier: Modifier, select: (Int) -> Unit) {
+    val columns = style == "columns"
+    val stacked = style == "stacked"
+    val plotted = if (stacked) stackedTrendValues(values) else values
+    val chartColors = if (stacked) colors.reversed() else colors
+    val domain = chartDomain(if (columns) totals else plotted.flatten(), zero || style != "line")
+    val isolated = if (columns) totals.size == 1 else dates.size == 1
+    val range = remember(domain, isolated) { CartesianLayerRangeProvider.fixed(minX = if (isolated) -1.0 else null, maxX = if (isolated) 1.0 else null, minY = domain.minimum, maxY = domain.maximum) }
+    val producer = remember { CartesianChartModelProducer() }
+    LaunchedEffect(plotted, totals, style) {
+        producer.runTransaction {
+            if (columns) columnSeries { series(totals) }
+            else lineSeries { plotted.forEach { series(it) } }
+        }
+    }
+    val label = rememberTextComponent(color = MaterialTheme.colorScheme.onSurfaceVariant, textSize = 10.sp)
+    val axis = rememberAxisGuidelineComponent(fill = fill(MaterialTheme.colorScheme.outlineVariant.copy(alpha = .55f)))
+    val surface = MaterialTheme.colorScheme.surface
+    val columnComponents = colors.map { rememberLineComponent(fill(it), thickness = 24.dp, shape = CorneredShape.rounded(topLeftDp = 6f, topRightDp = 6f)) }
+    val columnProvider = remember(columnComponents) { object : ColumnCartesianLayer.ColumnProvider {
+        override fun getColumn(entry: ColumnCartesianLayerModel.Entry, seriesIndex: Int, extraStore: ExtraStore): LineComponent = columnComponents[entry.x.roundToInt().coerceIn(columnComponents.indices)]
+        override fun getWidestSeriesColumn(seriesIndex: Int, extraStore: ExtraStore): LineComponent = columnComponents.first()
+    } }
+    val layer = if (columns) rememberColumnCartesianLayer(columnProvider = columnProvider, rangeProvider = range,
+    ) else rememberLineCartesianLayer(
+        lineProvider = LineCartesianLayer.LineProvider.series(chartColors.map { color ->
+            LineCartesianLayer.rememberLine(fill = LineCartesianLayer.LineFill.single(fill(color)),
+                stroke = LineCartesianLayer.LineStroke.continuous(thickness = 2.5.dp),
+                pointProvider = LineCartesianLayer.PointProvider.single(LineCartesianLayer.point(rememberShapeComponent(fill(color), CorneredShape.Pill), if (dates.size < 16) 5.dp else 3.dp)),
+                areaFill = if (style in listOf("area", "stacked")) LineCartesianLayer.AreaFill.single(fill(if (stacked) color.copy(alpha = .25f).compositeOver(surface) else color.copy(alpha = .13f))) else null,
+                pointConnector = LineCartesianLayer.PointConnector.cubic())
+        }), rangeProvider = range,
+    )
+    val currentSelect by rememberUpdatedState(select)
+    var pinned by remember { mutableStateOf<Double?>(null) }
+    // Use Vico's rendered targets, including its axis insets and zoom, rather than mapping pixels to dates.
+    fun selectTarget(x: Float) {
+        val target = layer.markerTargets.values.flatten().minByOrNull { abs(it.canvasX - x) } ?: return
+        pinned = target.x
+        currentSelect(target.x.roundToInt())
+    }
+    val marker = rememberDefaultCartesianMarker(
+        labelPosition = DefaultCartesianMarker.LabelPosition.AroundPoint,
+        label = rememberTextComponent(color = MaterialTheme.colorScheme.onSurface, textSize = 11.sp, lineCount = 6, padding = insets(8.dp, 5.dp),
+            background = rememberShapeComponent(fill(MaterialTheme.colorScheme.surfaceContainerHigh), CorneredShape.rounded(8f))),
+        valueFormatter = DefaultCartesianMarker.ValueFormatter { _, targets ->
+            val x = targets.first().x.roundToInt()
+            if (columns) lines.getOrNull(x)?.let { "${it.label}: ${plotPointNumber(totals[x])}" }.orEmpty()
+            else dates.getOrNull(x)?.let { date -> date + "\n" + lines.take(4).joinToString("\n") { line -> "${line.label}: ${line.points[date]?.let(::plotPointNumber) ?: "Нет записи"}" } }.orEmpty()
+        }, guideline = rememberAxisGuidelineComponent(fill = fill(MaterialTheme.colorScheme.primary)),
+    )
+    CartesianChartHost(
+        chart = rememberCartesianChart(layer,
+            startAxis = VerticalAxis.rememberStart(label = label, line = null, tick = null, guideline = axis,
+                itemPlacer = VerticalAxis.ItemPlacer.step(step = { (domain.maximum - domain.minimum) / domain.intervals }), valueFormatter = CartesianValueFormatter { _, value, _ -> plotNumber(value) }),
+            bottomAxis = HorizontalAxis.rememberBottom(label = label, line = null, tick = null, guideline = null,
+                itemPlacer = HorizontalAxis.ItemPlacer.aligned(spacing = { if (isolated) 2 else if (columns) ceil(lines.size / 4.0).toInt().coerceAtLeast(1) else ceil((dates.size - 1) / 3.0).toInt().coerceAtLeast(1) }, offset = { if (isolated) 1 else 0 }),
+                valueFormatter = CartesianValueFormatter { _, x, _ -> if (columns) lines[x.roundToInt().coerceIn(lines.indices)].label.let { if (it.length > 13) it.take(12) + "…" else it } else plotDate(dates[x.roundToInt().coerceIn(dates.indices)]) }),
+            persistentMarkers = { pinned?.let { marker at it } },
+            layerPadding = { cartesianLayerPadding(unscalableStart = 12.dp, unscalableEnd = 12.dp) }),
+        modelProducer = producer, modifier = modifier
+            .pointerInput(layer) { detectTapGestures { selectTarget(it.x) } }
+            .pointerInput(layer) { detectHorizontalDragGestures(onDragStart = { selectTarget(it.x) }) { change, _ -> change.consume(); selectTarget(change.position.x) } },
+        scrollState = rememberVicoScrollState(scrollEnabled = false),
+        animationSpec = tween(700), animateIn = true,
+        placeholder = { Box(Modifier.fillMaxSize().testTag("metric-chart-loading"), contentAlignment = Alignment.Center) { CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp) } },
+    )
+}
+
+@OptIn(ExperimentalKoalaPlotApi::class)
+@Composable private fun DonutPlot(totals: List<Double>, colors: List<Color>, modifier: Modifier, select: (Int) -> Unit) {
+    if (totals.sum() <= 0) { Box(modifier, contentAlignment = Alignment.Center) { Text("Нет нагрузки за период", style = MaterialTheme.typography.bodySmall) }; return }
+    PieChart(values = totals.map { it.coerceAtLeast(0.0).toFloat() }, modifier = modifier, holeSize = .76f, pieAnimationSpec = tween(700), labelConnector = {},
+        slice = { i -> DefaultSlice(colors[i], modifier = Modifier.testTag("pie-slice-$i"), clickable = true, antiAlias = true, gap = 1f, onClick = { select(i) }) },
+        holeContent = { Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(plotNumber(totals.sum()), style = MaterialTheme.typography.headlineSmall)
+            Text("за период", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } })
+}
+
+@OptIn(ExperimentalKoalaPlotApi::class)
+@Composable private fun RadarPlot(dates: List<String>, values: List<List<Double>>, colors: List<Color>, modifier: Modifier, select: (Int, Int) -> Unit) {
+    val domain = chartDomain(values.flatten(), true)
+    val grid = MaterialTheme.colorScheme.outlineVariant
+    val centers = remember(dates, values) { mutableMapOf<Pair<Int, Int>, Offset>() }
+    var origin by remember { mutableStateOf(Offset.Zero) }
+    val currentSelect by rememberUpdatedState(select)
+    val interactions = modifier.onGloballyPositioned { origin = it.positionInRoot() }.pointerInput(dates, values) {
+        detectTapGestures { tap ->
+            centers.minByOrNull { (_, center) -> (center - (tap + origin)).getDistanceSquared() }?.key?.let { (d, s) -> currentSelect(d, s) }
+        }
+    }
+    PolarGraph(radialAxisModel = rememberFloatRadialAxisModel((0..4).map { (domain.maximum * it / 4).toFloat() }),
+        angularAxisModel = rememberCategoryAngularAxisModel(dates), modifier = interactions,
+        radialAxisLabels = { Text(plotNumber(it.toDouble()), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) },
+        angularAxisLabels = { d -> if (dates.indexOf(d) % ceil(dates.size / 6.0).toInt().coerceAtLeast(1) == 0) Text(plotDate(d), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) },
+        polarGraphProperties = PolarGraphDefaults.PolarGraphPropertyDefaults().copy(radialGridType = RadialGridType.LINES, radialAxisGridLineStyle = LineStyle(SolidColor(grid), strokeWidth = 1.dp), angularAxisGridLineStyle = LineStyle(SolidColor(grid.copy(alpha = .5f)), strokeWidth = 1.dp))) {
+        values.forEachIndexed { s, series ->
+            PolarPlotSeries(data = dates.indices.map { PolarPoint(series[it].toFloat(), dates[it]) },
+                lineStyle = LineStyle(SolidColor(colors[s]), strokeWidth = 2.dp), areaStyle = AreaStyle(SolidColor(colors[s]), alpha = .1f), animationSpec = tween(700),
+                symbols = { point ->
+                    val d = dates.indexOf(point.theta)
+                    Box(Modifier.size(5.dp).testTag("radar-point-$d-$s").onGloballyPositioned { centers[d to s] = it.boundsInRoot().center }
+                        .background(colors[s], CircleShape).semantics {
+                            contentDescription = "${point.theta}, ${plotPointNumber(point.r.toDouble())}"
+                            onClick { select(d, s); true }
+                        })
+                })
+        }
+    }
+}
+
+/** A scrollable matrix uses Foundation's lazy grid and Material cells, including real missing records. */
+@Composable private fun HeatmapPlot(lines: List<TrendLine>, dates: List<String>, colors: List<Color>, modifier: Modifier, select: (Int, Int) -> Unit) {
+    val max = lines.flatMap { it.points.values }.filterNotNull().maxOrNull()?.coerceAtLeast(1.0) ?: 1.0
+    var appeared by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { appeared = true }
+    val alpha by animateFloatAsState(if (appeared) 1f else 0f, tween(700), label = "heatmap appearance")
+    LazyHorizontalGrid(rows = GridCells.Fixed(lines.size), modifier = modifier.alpha(alpha),
+        horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp), contentPadding = PaddingValues(vertical = 12.dp)) {
+        items(dates.size * lines.size) { index ->
+            val d = index / lines.size; val s = index % lines.size; val value = lines[s].points[dates[d]]
+            Surface(onClick = { select(d, s) }, modifier = Modifier.width(36.dp).fillMaxHeight().testTag("heatmap-cell-$d-$s").semantics { contentDescription = "${dates[d]}, ${lines[s].label}, ${value?.let(::plotPointNumber) ?: "Нет записи"}" },
+                color = if (value == null) MaterialTheme.colorScheme.surfaceContainerHigh else colors[s].copy(alpha = (.12 + .88 * value / max).toFloat().coerceIn(0f, 1f)).compositeOver(MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(6.dp)) {
+                Box(contentAlignment = Alignment.Center) { Text(if (value == null) "—" else plotDate(dates[d]).substringBefore('.'), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface) }
             }
         }
     }

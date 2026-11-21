@@ -1,21 +1,7 @@
 package com.fittodoay.android
 
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.layout.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.Composable
 import org.json.JSONObject
-import kotlin.math.*
 
 data class TrendLine(val key: String, val label: String, val points: Map<String, Double?>)
 fun trendLines(trends: JSONObject, exercises: Boolean, folderId: Int?): List<TrendLine> {
@@ -38,7 +24,11 @@ fun interpolateTrend(values: List<Double?>): List<Double> {
         }
     }
 }
-private val trendColors = listOf(Color(0xff7c3aed), Color(0xfff97316), Color(0xff0ea5e9), Color(0xff22c55e), Color(0xffec4899), Color(0xff64748b), Color(0xffeab308), Color(0xff14b8a6))
+/** Vico draws cumulative areas from back to front; selection always uses original records. */
+fun stackedTrendValues(values: List<List<Double>>): List<List<Double>> = values.indices.reversed().map { series ->
+    values[series].indices.map { point -> (0..series).sumOf { values[it][point] } }
+}
+
 val trendStyles = listOf("line" to "Линия", "area" to "Площадь", "stacked" to "Сложение", "columns" to "Столбцы", "heatmap" to "Тепло", "pie" to "Круг", "radar" to "Радар")
 
 @Composable fun TrendChart(lines: List<TrendLine>, style: String) {

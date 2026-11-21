@@ -163,7 +163,7 @@ class AppModel(application: Application) : AndroidViewModel(application) {
         authPasswordDraft = ""
         pauseLocalSync(); localSyncResult = JSONObject(); localSyncAttempt = 0
         syncRetry?.cancel(); syncRetry = null; syncFailures = 0; syncBlocked = false
-        if (token.isNotEmpty()) { timers().clear("rest"); timers().clear("execution") }
+        if (token.isNotEmpty()) { timers().clear("rest", dismissSignal = true); timers().clear("execution", dismissSignal = true) }
         audio.stop(); pendingCount = 0
         session.write(""); token = ""; plan = JSONObject(); folders = emptyList(); templates = emptyList()
         catalog = emptyList(); customExercises = emptyList(); recommendations = emptyList()

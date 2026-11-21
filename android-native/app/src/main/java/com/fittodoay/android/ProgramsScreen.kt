@@ -2,6 +2,9 @@ package com.fittodoay.android
 
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import kotlinx.coroutines.launch
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ChevronLeft
 import androidx.compose.material.icons.outlined.ChevronRight
@@ -247,7 +250,7 @@ fun scheduleLabel(day: JSONObject): String {
         } catch (e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e; detailError = "Не удалось загрузить подробную технику" }
         finally { loading = false }
     }
-    var imageIndex by remember(source.text("id")) { mutableIntStateOf(0) }
+    val galleryScope = rememberCoroutineScope()
     DetailSurface(source.text("name"), tag = "exercise-info-sheet", dismiss = dismiss) {
         DetailTabs(tab, listOf("technique" to "Описание", "statistics" to "Статистика")) { tab = it }
         Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(18.dp)) {
@@ -259,19 +262,21 @@ fun scheduleLabel(day: JSONObject): String {
                 Text(detail.text("description").ifBlank { "Описание упражнения пока не добавлено." }, style = MaterialTheme.typography.bodyMedium)
                 val images = detail.array("images")
                 if (images.isNotEmpty()) {
-                    val index = imageIndex.coerceIn(images.indices)
-                    val url = exerciseImageUrl(images[index].text("path"))
-                    val localImage by produceState<Any?>(null, url, model.token) { value = model.imageOnDevice(url) }
+                    val pager = rememberPagerState(pageCount = { images.size })
                     Surface(shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
-                        androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth().height(260.dp), contentAlignment = androidx.compose.ui.Alignment.Center) {
-                            AsyncImage(localImage, "Техника упражнения, шаг ${index + 1}", Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Fit)
-                            Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                                FilledTonalIconButton(onClick = { imageIndex = (index - 1 + images.size) % images.size }) { Icon(Icons.Outlined.ChevronLeft, "Предыдущее изображение") }
-                                FilledTonalIconButton(onClick = { imageIndex = (index + 1) % images.size }) { Icon(Icons.Outlined.ChevronRight, "Следующее изображение") }
+                        Box(Modifier.fillMaxWidth().height(260.dp), contentAlignment = androidx.compose.ui.Alignment.Center) {
+                            HorizontalPager(state = pager, modifier = Modifier.fillMaxSize().testTag("exercise-image-pager")) { index ->
+                                val url = exerciseImageUrl(images[index].text("path"))
+                                val localImage by produceState<Any?>(null, url, model.token) { value = model.imageOnDevice(url) }
+                                AsyncImage(localImage, "Техника упражнения, шаг ${index + 1}", Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Fit)
+                            }
+                            if (images.size > 1) Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                                FilledTonalIconButton(onClick = { galleryScope.launch { pager.animateScrollToPage((pager.currentPage - 1 + images.size) % images.size) } }) { Icon(Icons.Outlined.ChevronLeft, "Предыдущее изображение") }
+                                FilledTonalIconButton(onClick = { galleryScope.launch { pager.animateScrollToPage((pager.currentPage + 1) % images.size) } }) { Icon(Icons.Outlined.ChevronRight, "Следующее изображение") }
                             }
                         }
                     }
-                    Text("${index + 1} / ${images.size}", Modifier.align(androidx.compose.ui.Alignment.CenterHorizontally), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("${pager.currentPage + 1} / ${images.size}", Modifier.align(androidx.compose.ui.Alignment.CenterHorizontally), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 if (detail.text("common_errors").isNotBlank()) {
                     Text("Частые ошибки", style = MaterialTheme.typography.titleSmall)

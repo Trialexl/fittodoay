@@ -75,6 +75,11 @@ class VisualSnapshotTest {
             qa.visible(hasContentDescription("Техника и описание"), "exercise information").performClick()
             compose.onNodeWithTag("exercise-info-sheet").assertIsDisplayed()
             qa.capture("design-exercise-description$suffix")
+            compose.onNodeWithTag("exercise-image-pager").performScrollTo().performTouchInput { swipeLeft() }
+            compose.onNodeWithText("2 / 2", substring = false).assertExists()
+            qa.capture("library-exercise-gallery$suffix")
+            compose.onNodeWithContentDescription("Предыдущее изображение").performClick()
+            compose.onNodeWithText("1 / 2", substring = false).assertExists()
             compose.onNodeWithText("Статистика", substring = false).performClick()
             qa.capture("design-exercise-statistics$suffix")
             compose.onNode(hasText("Источник:", substring = true) and hasAnyAncestor(hasTestTag("exercise-info-sheet"))).performScrollTo()
@@ -96,6 +101,12 @@ class VisualSnapshotTest {
             compose.runOnIdle { qa.model.screen = Screen.Analytics }
             compose.onNodeWithTag("chart-weight_kg").performScrollTo()
             qa.capture("design-body-weight-chart$suffix")
+            compose.waitUntil(10_000) { compose.onAllNodesWithTag("metric-chart-loading").fetchSemanticsNodes().isEmpty() }
+            compose.onNodeWithTag("chart-weight_kg").performTouchInput { click(center) }
+            compose.onNodeWithTag("chart-weight_kg-tooltip").assertExists()
+            val expectedWeight = plotPointNumber(qa.model.weights.minBy { it.text("date") }.optDouble("weight_kg"))
+            compose.onNode(hasText(expectedWeight) and hasAnyAncestor(hasTestTag("chart-weight_kg-tooltip")), useUnmergedTree = true).assertExists()
+            qa.capture("library-body-weight-selected$suffix")
             fun reviewPlots(prefix: String) {
             val originalTrends = qa.model.trends
             // Clearly separate synthetic dense-series stress views from recorded-server screenshots.
@@ -130,9 +141,18 @@ class VisualSnapshotTest {
                         compose.mainClock.autoAdvance = false
                         try {
                             compose.runOnUiThread { action() }
+                            var ready = false
+                            for (frame in 0..200) {
+                                compose.mainClock.advanceTimeByFrame()
+                                if (compose.onAllNodesWithTag("metric-chart-loading").fetchSemanticsNodes().isEmpty()) { ready = true; break }
+                                Thread.sleep(5) // Allow Vico's background model transaction to finish before measuring animation.
+                            }
+                            assertTrue("The library chart model must be ready", ready)
                             compose.mainClock.advanceTimeBy(64)
                             val before = framePixels("density-animation-start$suffix")
                             compose.mainClock.advanceTimeBy(800)
+                            // Vico prepares final drawing models on a worker; then Compose needs another frame.
+                            repeat(8) { Thread.sleep(16); compose.mainClock.advanceTimeByFrame() }
                             val after = framePixels("density-animation-complete$suffix")
                             val changed = before.indices.count { before[it] != after[it] }
                             assertTrue("The chart must animate its appearance", changed > 300)
@@ -141,19 +161,38 @@ class VisualSnapshotTest {
                     }
                     compose.onNodeWithText(title, substring = false).performScrollTo().performClick()
                     val chart = compose.onNodeWithTag("trend-chart-$style").performScrollTo()
-                    chart.performTouchInput { click(if (style == "pie") Offset(width * .9f, height * .5f) else Offset(width * .02f, height * .7f)) }
+                    compose.waitUntil(10_000) { compose.onAllNodesWithTag("metric-chart-loading").fetchSemanticsNodes().isEmpty() }
+                    compose.waitForIdle()
+                    when (style) {
+                        "pie" -> compose.onNodeWithTag("pie-slice-0").performTouchInput { click(Offset(width * .93f, height * .5f)) }
+                        "radar" -> compose.onNodeWithTag("radar-point-0-0").performTouchInput { click(center) }
+                        "heatmap" -> compose.onNodeWithTag("heatmap-cell-0-0").performTouchInput { click(center) }
+                        else -> chart.performTouchInput { click(Offset(width * .02f, height * .7f)) }
+                    }
+                    qa.capture("$prefix-tapped-$style$suffix")
                     val tooltip = compose.onNodeWithTag("trend-chart-$style-tooltip")
-                    tooltip.assertIsDisplayed()
-                    if (style !in listOf("pie", "radar", "columns")) {
+                    tooltip.assertExists()
+                    if (style in listOf("line", "area", "stacked", "columns")) chart.assert(androidx.compose.ui.test.SemanticsMatcher.expectValue(androidx.compose.ui.semantics.SemanticsProperties.StateDescription, if (style == "columns") "За выбранный период, ${base.text("name")}: 6257, QA вторая серия: 4797" else "2026-11-01, ${base.text("name")}: 180, QA вторая серия: 140"))
+                    if (style in listOf("line", "area", "stacked")) {
                         compose.onNode(hasText("2026-11-01") and hasAnyAncestor(hasTestTag("trend-chart-$style-tooltip")), useUnmergedTree = true).assertExists()
-                        chart.performTouchInput { swipe(Offset(width * .05f, height * .7f), Offset(width * .98f, height * .7f), 350) }
+                        chart.performTouchInput { swipe(Offset(width * .02f, height * .7f), Offset(width * .98f, height * .7f), 350) }
+                        compose.onNode(hasText("2026-11-18") and hasAnyAncestor(hasTestTag("trend-chart-$style-tooltip")), useUnmergedTree = true).assertExists()
+                    }
+                    if (style == "radar") {
+                        compose.onNode(hasText("2026-11-01") and hasAnyAncestor(hasTestTag("trend-chart-$style-tooltip")), useUnmergedTree = true).assertExists()
+                        compose.onNode(hasText("180") and hasAnyAncestor(hasTestTag("trend-chart-$style-tooltip")), useUnmergedTree = true).assertExists()
+                    }
+                    if (style == "heatmap") {
+                        chart.performScrollToIndex(34)
+                        compose.onNodeWithTag("heatmap-cell-17-0").performTouchInput { click(center) }
                         compose.onNode(hasText("2026-11-18") and hasAnyAncestor(hasTestTag("trend-chart-$style-tooltip")), useUnmergedTree = true).assertExists()
                     }
                     if (style == "columns") {
                         compose.onNode(hasText("6257") and hasAnyAncestor(hasTestTag("trend-chart-$style-tooltip")), useUnmergedTree = true).assertExists()
-                        chart.performTouchInput { swipe(Offset(width * .05f, height * .7f), Offset(width * .98f, height * .7f), 350) }
+                        chart.performTouchInput { swipe(Offset(width * .02f, height * .7f), Offset(width * .98f, height * .7f), 350) }
                         compose.onNode(hasText("4797") and hasAnyAncestor(hasTestTag("trend-chart-$style-tooltip")), useUnmergedTree = true).assertExists()
                     }
+                    tooltip.performScrollTo().assertIsDisplayed()
                     compose.onNodeWithTag("trend-chart-$style-panel").performScrollTo()
                     qa.capture("$prefix-chart-$style$suffix")
                 }

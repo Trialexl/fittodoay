@@ -2,8 +2,8 @@ package com.fittodoay.android
 
 import android.app.*
 import android.content.*
-import android.media.AudioManager
-import android.media.ToneGenerator
+import android.media.AudioAttributes
+import androidx.core.net.toUri
 import android.os.*
 import org.json.JSONObject
 import java.security.MessageDigest
@@ -30,9 +30,11 @@ class TimerStore(private val context: Context, token: String) {
         changes.keys().forEach { key -> state.put(key, changes.get(key)) }
         check(prefs.edit().putString(kind, state.toString()).commit())
     }
-    fun clear(kind: String) {
+    fun clear(kind: String, dismissSignal: Boolean = false) {
+        val completed = read(kind)?.optBoolean("notified") == true
         prefs.edit().remove(kind).commit(); alarms.cancel(pending(kind))
-        context.getSystemService(NotificationManager::class.java).cancel(if (kind == "rest") 601 else 602)
+        // Finishing a timer clears its state immediately; cancelling its notification would cut off the sound.
+        if (dismissSignal || !completed) context.getSystemService(NotificationManager::class.java).cancel(if (kind == "rest") 601 else 602)
     }
     fun claimSignal(kind: String, id: String): Boolean = synchronized(lock) {
         val value = read(kind) ?: return@synchronized false
@@ -52,17 +54,24 @@ class TimerReceiver : BroadcastReceiver() {
     companion object {
         fun signal(context: Context, kind: String) {
             val manager = context.getSystemService(NotificationManager::class.java)
-            val channel = NotificationChannel("workout-timers", "Таймеры тренировки", NotificationManager.IMPORTANCE_HIGH).apply { setSound(null, null) }
+            val sound = "android.resource://${context.packageName}/raw/timer_complete".toUri()
+            val channel = NotificationChannel("workout-timer-signals", "Сигналы таймеров тренировки", NotificationManager.IMPORTANCE_HIGH).apply {
+                setSound(sound, AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION_EVENT)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build())
+                enableVibration(true)
+                vibrationPattern = longArrayOf(0, 120, 80, 180, 80, 240)
+            }
             manager.createNotificationChannel(channel)
             val content = PendingIntent.getActivity(context, 600, Intent(context, MainActivity::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-            val notification = Notification.Builder(context, "workout-timers").setSmallIcon(R.drawable.ic_launcher)
+            val notification = Notification.Builder(context, "workout-timer-signals").setSmallIcon(R.drawable.ic_launcher)
                 .setContentTitle(if (kind == "rest") "Отдых завершён" else "Время упражнения истекло")
                 .setContentText("Вернитесь к тренировке").setContentIntent(content).setAutoCancel(true).build()
-            if (Build.VERSION.SDK_INT < 33 || context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) == android.content.pm.PackageManager.PERMISSION_GRANTED)
+            if (Build.VERSION.SDK_INT < 33 || context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                // SystemUI owns notification audio focus, including when this application is in the background.
+                // Honor a channel muted by the user; never add a second independently played beep.
                 manager.notify(if (kind == "rest") 601 else 602, notification)
-            runCatching {
-                val tone = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 80); tone.startTone(ToneGenerator.TONE_PROP_ACK, 600)
-                Handler(Looper.getMainLooper()).postDelayed({ tone.release() }, 700)
+            } else {
+                TimerSignalAudio.play(context)
                 context.getSystemService(Vibrator::class.java).vibrate(VibrationEffect.createOneShot(200, VibrationEffect.DEFAULT_AMPLITUDE))
             }
         }
