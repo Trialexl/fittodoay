@@ -23,7 +23,7 @@ import androidx.compose.ui.window.DialogProperties
 
 /** Shared V2 detail surface: fixed header, independently scrolling content. */
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable fun DetailSurface(title: String, subtitle: String? = null, tag: String, dismiss: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+@Composable fun DetailSurface(title: String, subtitle: String? = null, tag: String, dismiss: () -> Unit, compact: Boolean = false, content: @Composable ColumnScope.() -> Unit) {
     val window = androidx.compose.ui.platform.LocalWindowInfo.current.containerSize
     val density = androidx.compose.ui.platform.LocalDensity.current
     val windowWidth = with(density) { window.width.toDp() }
@@ -31,7 +31,7 @@ import androidx.compose.ui.window.DialogProperties
     val body: @Composable ColumnScope.() -> Unit = {
         Row(verticalAlignment = Alignment.Top) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                Text(title, style = if (compact) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                 subtitle?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             }
             FilledTonalIconButton(onClick = dismiss, modifier = Modifier.size(36.dp), shape = RoundedCornerShape(12.dp),
@@ -45,13 +45,13 @@ import androidx.compose.ui.window.DialogProperties
         ModalBottomSheet(onDismissRequest = dismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
             containerColor = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
             contentWindowInsets = { WindowInsets.safeDrawing }) {
-            Column(Modifier.fillMaxWidth().heightIn(max = windowHeight * .88f).imePadding().testTag(tag).padding(start = 20.dp, end = 20.dp, bottom = 20.dp),
-                verticalArrangement = Arrangement.spacedBy(18.dp), content = body)
+            Column(Modifier.fillMaxWidth().then(if (compact) Modifier.height(windowHeight * .88f) else Modifier.heightIn(max = windowHeight * .88f)).imePadding().testTag(tag).padding(start = if (compact) 14.dp else 20.dp, end = if (compact) 14.dp else 20.dp, bottom = if (compact) 10.dp else 20.dp),
+                verticalArrangement = Arrangement.spacedBy(if (compact) 10.dp else 18.dp), content = body)
         }
     } else Dialog(onDismissRequest = dismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         BoxWithConstraints(Modifier.fillMaxSize().systemBarsPadding().imePadding().padding(20.dp), contentAlignment = Alignment.Center) {
             Surface(Modifier.widthIn(max = 760.dp).fillMaxWidth().heightIn(max = maxHeight * .94f), shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surface) {
-                Column(Modifier.testTag(tag).padding(24.dp), verticalArrangement = Arrangement.spacedBy(18.dp), content = body)
+                Column(Modifier.then(if (compact) Modifier.height(maxHeight * .88f) else Modifier).testTag(tag).padding(if (compact) 18.dp else 24.dp), verticalArrangement = Arrangement.spacedBy(if (compact) 10.dp else 18.dp), content = body)
             }
         }
     }

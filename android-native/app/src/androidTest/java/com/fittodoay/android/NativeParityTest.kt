@@ -65,6 +65,30 @@ class NativeParityTest {
         compose.onNodeWithTag("analytics-body-weight").assertIsDisplayed()
         capture("body-weight-shortcut")
     }
+    @Test fun checklistOpensExistingProgramDayAndExerciseEditors() {
+        val qa = QaHarness(compose).also { it.model = model }
+        val dateBefore = model.date
+        val fixture = JSONObject(File(context.filesDir, "visual-reference.json").readText())
+        try {
+            compose.runOnIdle { model.date = fixture.getJSONObject("plan").text("date") }
+            qa.navigate(Screen.Workout)
+            val folder = model.plan.array("folders").first()
+            val day = folder.array("templates").first()
+            fun edit(label: String, title: String) {
+                qa.visible(hasContentDescription(label) and hasAnyAncestor(hasTestTag("workout-program-${folder.getInt("id")}")), label).performClick()
+                qa.waitRequest()
+                compose.onNodeWithText(title, substring = false).assertIsDisplayed()
+                assertEquals(Screen.Workout, model.screen)
+                compose.onNodeWithText("Отмена", substring = false).performClick()
+            }
+            edit("Редактировать программу", "Программа")
+            edit("Редактировать шаблон дня", "День тренировки")
+            val toggle = compose.onNodeWithTag("workout-day-toggle-${day.getInt("id")}")
+            if (toggle.fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsProperties.StateDescription] == "Свёрнуто") toggle.performClick()
+            edit("Редактировать упражнение", "Упражнение")
+            qa.report("checklist-editors", obj("result" to "passed", "program_day_exercise" to true, "same_workout_screen" to true))
+        } finally { compose.runOnIdle { model.date = dateBefore; model.refresh() }; waitRequest() }
+    }
     @Test fun serverPreferenceCapabilities() = runBlocking<Unit> {
         val before = api.call("/api/profile/preferences/") as JSONObject
         val report = obj("keys" to org.json.JSONArray(before.keys().asSequence().toList()), "before_muscles" to before.text("muscle_summary_view"), "before_design" to before.text("design_version"))

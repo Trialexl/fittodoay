@@ -33,6 +33,9 @@ import kotlin.math.roundToInt
     var chat by remember { mutableStateOf(false) }
     var calendar by remember { mutableStateOf(false) }
     var deletePath by remember { mutableStateOf<String?>(null) }
+    var editData by remember { mutableStateOf<JSONObject?>(null) }
+    var editKind by remember { mutableStateOf("") }
+    var editTemplate by remember { mutableIntStateOf(0) }
     val logs = model.plan.array("logs")
     val total = model.plan.array("folders").sumOf { f -> f.array("templates").sumOf { t -> t.array("exercises").filter { it.optBoolean("is_active", true) }.sumOf { e -> e.array("sets").size } } }
     val modern = true
@@ -60,7 +63,11 @@ import kotlin.math.roundToInt
         }
         WorkoutChecklist(model, info = { info = it }, chat = { folder ->
             chat = true; model.openChat(folder.getInt("id"), "post_workout_review", "Разбери тренировку за ${model.date}: оцени фактические результаты и предложи обоснованные изменения, если они доступны.")
-        }, delete = { log -> if (log.optBoolean("queued")) model.cancelQueued(log) else deletePath = "/api/workouts/logs/${log.getInt("id")}/" })
+        }, delete = { log -> if (log.optBoolean("queued")) model.cancelQueued(log) else deletePath = "/api/workouts/logs/${log.getInt("id")}/" },
+            edit = { kind, id, template -> model.run {
+                val data = model.api.call("/api/programs/$kind/$id/") as JSONObject
+                editKind = kind; editTemplate = template; editData = data
+            } })
         if (model.recommendations.isNotEmpty()) {
             OutlinedButton(onClick = model::recommendations, Modifier.fillMaxWidth(), enabled = !model.busy) { Text("Рекомендации по прогрессии") }
             model.recommendations.forEach { folder ->
@@ -85,6 +92,11 @@ import kotlin.math.roundToInt
     info?.let { ExerciseInfo(it, model) { info = null } }
     if (calendar) WorkoutCalendar(model) { calendar = false }
     if (chat) ChatDialog(model) { chat = false }
+    editData?.let { data -> when (editKind) {
+        "folders" -> FolderDialog(data, model) { editData = null }
+        "templates" -> DayDialog(data, model) { editData = null }
+        "template-exercises" -> ExerciseDialog(data, editTemplate, model) { editData = null }
+    } }
     deletePath?.let { path -> ConfirmDelete("запись подхода", { deletePath = null }) { model.delete(path) } }
 }
 
@@ -101,25 +113,26 @@ import kotlin.math.roundToInt
     val actual = if (hasTime) "$time сек" else "$reps повт." + if (hasWeight) " · $weight кг" else ""
     Column(Modifier.fillMaxWidth().testTag("set-row-${exercise.optInt("template_exercise_id")}-${set.optInt("set_index")}")) {
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-        Row(Modifier.fillMaxWidth().padding(vertical = 13.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Surface(shape = androidx.compose.foundation.shape.CircleShape, color = if (logged != null) androidx.compose.ui.graphics.Color(0xffdcfce7) else MaterialTheme.colorScheme.surfaceVariant) {
-                Box(Modifier.size(28.dp), contentAlignment = Alignment.Center) {
+                Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) {
                     Text(if (logged != null) "✓" else set.optInt("set_index").toString().padStart(2, '0'), style = MaterialTheme.typography.bodySmall,
                         color = if (logged != null) androidx.compose.ui.graphics.Color(0xff15803d) else MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
             Column(Modifier.weight(1f)) {
                 Text(if (logged != null) "Результат" else "План", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(if (logged != null) actual else planned, style = MaterialTheme.typography.titleSmall)
+                Text(if (logged != null) actual else planned, style = MaterialTheme.typography.labelMedium)
                 if (logged?.optBoolean("queued") == true) Text("В очереди · сохранено на устройстве", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                 if (logged != null) Text("План: $planned", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            if (logged != null) IconButton(onClick = { model.error = null; editing = true }, modifier = Modifier.size(48.dp)) { Icon(androidx.compose.material.icons.Icons.Outlined.Edit, "Изменить подход ${set.optInt("set_index")}", Modifier.size(16.dp)) }
+            if (logged != null) OutlinedButton(onClick = { model.error = null; editing = true }, modifier = Modifier.semantics { contentDescription = "Изменить подход ${set.optInt("set_index")}" },
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(9.dp), contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)) { Text("Изменить", style = MaterialTheme.typography.labelSmall) }
             if (logged == null) OutlinedButton(onClick = {
                 if (hasTime) { if ((time.toIntOrNull() ?: 0) > 0) model.startExecution(exercise, set, reps, weight, time) }
                 else model.openRest(exercise, set, reps, weight, time)
-            }, shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp), contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp), enabled = !model.busy && !model.workoutTimerActive) {
-                Text(if (hasTime) "▷ Начать" else "+ Отметить", style = MaterialTheme.typography.labelLarge)
+            }, shape = androidx.compose.foundation.shape.RoundedCornerShape(9.dp), contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp), enabled = !model.busy && !model.workoutTimerActive) {
+                Text(if (hasTime) "▷ Начать" else "+ Отметить", style = MaterialTheme.typography.labelSmall)
             }
         }
         if (editing && logged != null) CompletedSetDialog(model, exercise, set, defaults, logged) { editing = false }

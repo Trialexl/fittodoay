@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.MediaStore
 import androidx.compose.ui.test.*
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.*
@@ -19,6 +20,9 @@ class MediaParityTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
     private val qa by lazy { QaHarness(compose) }
     private val device get() = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
+    private fun shellOutput(command: String) = android.os.ParcelFileDescriptor.AutoCloseInputStream(
+        InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(command)
+    ).use { it.readBytes().toString(Charsets.UTF_8).trim() }
     @Before fun guard() { assumeTrue(InstrumentationRegistry.getArguments().getString("mediaParity") == "true"); qa.guard() }
     @Test fun radioFromServerCatalogPlaysAndPausesNatively() {
         qa.navigate(Screen.Settings)
@@ -112,6 +116,7 @@ class MediaParityTest {
         }
     }
     @Test fun uploadQueueSeekShuffleAndBackgroundPlayback() = runBlocking<Unit> {
+        val keyboardBefore = shellOutput("settings get secure show_ime_with_hard_keyboard")
         qa.navigate(Screen.Settings)
         val prefix = "android-qa-${UUID.randomUUID().toString().take(8)}"
         val a = "$prefix-a.mp3"; val b = "$prefix-b.mp3"
@@ -143,6 +148,55 @@ class MediaParityTest {
             qa.visible(hasTestTag("music-shuffle"), "shuffle").performClick()
             compose.waitUntil(10_000) { qa.model.audio.shuffle == expectedShuffle }
             qa.capture("music-controls")
+            qa.navigate(Screen.Workout)
+            compose.onNodeWithContentDescription("Плейлист").performClick()
+            compose.onNodeWithTag("playlist-transport").assertIsDisplayed()
+            val search = compose.onNodeWithContentDescription("Поиск музыки")
+            val nextTrack = created.last()
+            shellOutput("settings put secure show_ime_with_hard_keyboard 1")
+            search.performClick()
+            // Exercise the real text-field tap too; a semantics click can focus
+            // the field without asking the platform IME to display its keys.
+            checkNotNull(device.wait(Until.findObject(By.desc("Поиск музыки")), 5000)).click()
+            try { compose.waitUntil(10_000) {
+                val view = android.view.inspector.WindowInspector.getGlobalWindowViews().lastOrNull { it.hasWindowFocus() } ?: compose.activity.window.decorView
+                (androidx.core.view.ViewCompat.getRootWindowInsets(view)?.getInsets(androidx.core.view.WindowInsetsCompat.Type.ime())?.bottom ?: 0) > 140 * qa.context.resources.displayMetrics.density
+            } } catch (error: Throwable) { qa.capture("density-keyboard-failure"); throw error }
+            search.performTextReplacement(nextTrack.text("title", nextTrack.text("name")))
+            compose.onNodeWithTag("playlist-transport").assertIsDisplayed()
+            compose.onNodeWithTag("playlist-list").assertHeightIsAtLeast(72.dp)
+            compose.onNodeWithTag("music-track-${nextTrack.getInt("id")}").assertIsDisplayed()
+            qa.capture("density-playlist-keyboard")
+            device.pressBack(); compose.waitForIdle()
+            compose.onNodeWithTag("music-track-${nextTrack.getInt("id")}").assertIsDisplayed()
+            compose.onNodeWithContentDescription("Действия с треком: ${nextTrack.text("title", nextTrack.text("name"))}").performClick()
+            compose.onNodeWithText("Следующим", substring = false).performClick()
+            compose.waitUntil(10_000) { qa.model.audio.queue.size == 3 }
+            search.performTextClearance()
+            if (qa.model.audio.shuffle) compose.onNodeWithTag("music-shuffle").performClick()
+            compose.onNodeWithContentDescription("Следующий трек в плейлисте").performClick()
+            compose.waitUntil(10_000) { qa.model.audio.trackId == nextTrack.getInt("id") && qa.model.audio.playing }
+            compose.onNodeWithContentDescription("Пауза или воспроизведение в плейлисте").performClick()
+            compose.waitUntil(10_000) { !qa.model.audio.playing }
+            compose.onNodeWithContentDescription("Пауза или воспроизведение в плейлисте").performClick()
+            compose.waitUntil(10_000) { qa.model.audio.playing }
+            compose.onNodeWithText("Очередь · 3", substring = false).performClick()
+            compose.onNodeWithTag("queue-1").assertIsSelected()
+            compose.onNodeWithTag("queue-2").assertIsNotSelected()
+            compose.onNode(hasText(nextTrack.text("title", nextTrack.text("name"))) and hasAnyAncestor(hasTestTag("queue-2"))).performClick()
+            compose.waitUntil(10_000) { qa.model.audio.queueIndex == 2 && qa.model.audio.playing }
+            compose.onNodeWithTag("queue-2").assertIsSelected()
+            compose.onNodeWithTag("queue-1").assertIsNotSelected()
+            qa.capture("density-playlist-queue")
+            compose.onNodeWithContentDescription("Предыдущий трек").performClick()
+            compose.waitUntil(10_000) { qa.model.audio.queueIndex == 1 }
+            compose.onNodeWithText("Треки", substring = false).performClick()
+            compose.onNodeWithContentDescription("Предыдущий трек").performClick()
+            compose.waitUntil(10_000) { qa.model.audio.trackId == created.first().getInt("id") }
+            compose.onNodeWithTag("music-seek").performTouchInput { click(center) }
+            compose.waitUntil(10_000) { qa.model.audio.positionMs > 40_000 && qa.model.audio.playing }
+            qa.capture("density-playlist-playing")
+            compose.onNodeWithContentDescription("Закрыть").performClick()
             val position = qa.model.audio.positionMs
             device.pressHome()
             compose.waitUntil(10_000) { qa.model.audio.positionMs > position + 1500 }
@@ -154,6 +208,7 @@ class MediaParityTest {
             compose.waitUntil(10_000) { !qa.model.audio.playing }
             qa.report("music", obj("result" to "passed", "uploaded_tracks" to created.size, "queue_size" to qa.model.audio.queue.size, "seek_position_ms" to qa.model.audio.positionMs, "foreground_service" to true))
         } finally {
+            shellOutput(if (keyboardBefore in listOf("0", "1")) "settings put secure show_ime_with_hard_keyboard $keyboardBefore" else "settings delete secure show_ime_with_hard_keyboard")
             compose.runOnIdle { qa.model.audio.stop() }
             for (track in created) qa.api.call("/api/workouts/music/tracks/${track.getInt("id")}/", "DELETE")
             for (uri in documents) qa.context.contentResolver.delete(uri, null, null)

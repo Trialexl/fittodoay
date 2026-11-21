@@ -24,6 +24,7 @@ class AudioController(context: Context) {
     var positionMs by mutableLongStateOf(0); private set
     var durationMs by mutableLongStateOf(0); private set
     var queue by mutableStateOf<List<Pair<Int, String>>>(emptyList()); private set
+    var queueIndex by mutableIntStateOf(-1); private set
     private var shuffleState by mutableStateOf(false)
     var shuffle: Boolean get() = shuffleState
         set(value) { shuffleState = value; ready { it.shuffleModeEnabled = value } }
@@ -52,6 +53,7 @@ class AudioController(context: Context) {
         if (player.playerError == null && player.playbackState != Player.STATE_IDLE) error = null
         positionMs = player.currentPosition.coerceAtLeast(0); durationMs = player.duration.takeIf { it > 0 } ?: 0
         shuffleState = player.shuffleModeEnabled; volumeState = player.volume
+        queueIndex = if (player.mediaItemCount > 0) player.currentMediaItemIndex else -1
         queue = (0 until player.mediaItemCount).map { val item = player.getMediaItemAt(it); (item.mediaId.toIntOrNull() ?: -1) to item.mediaMetadata.title?.toString().orEmpty() }
     } }
     fun play(track: JSONObject, tracks: List<JSONObject>, authToken: String) {
@@ -69,10 +71,13 @@ class AudioController(context: Context) {
     fun seek(position: Long) = ready { it.seekTo(position.coerceIn(0, durationMs.coerceAtLeast(0))) }
     fun move(from: Int, to: Int) = ready { if (from in 0 until it.mediaItemCount && to in 0 until it.mediaItemCount) it.moveMediaItem(from, to) }
     fun remove(index: Int) = ready { if (index in 0 until it.mediaItemCount) it.removeMediaItem(index) }
-    fun enqueue(track: JSONObject) = ready { player ->
+    fun playQueued(index: Int) = ready { if (index in 0 until it.mediaItemCount) { error = null; it.seekTo(index, 0); it.prepare(); it.play() } }
+    fun clearQueue() = ready { it.stop(); it.clearMediaItems(); sync() }
+    fun enqueue(track: JSONObject, next: Boolean = false) = ready { player ->
         val raw = track.text("url"); val uri = if (raw.startsWith('/')) BuildConfig.SERVER_URL + raw else raw
-        player.addMediaItem(MediaItem.Builder().setMediaId(track.getInt("id").toString()).setUri(uri)
-            .setMediaMetadata(MediaMetadata.Builder().setTitle(track.text("title", track.text("name"))).setArtist(track.text("artist")).setAlbumTitle(track.text("album")).build()).build())
+        val item = MediaItem.Builder().setMediaId(track.getInt("id").toString()).setUri(uri)
+            .setMediaMetadata(MediaMetadata.Builder().setTitle(track.text("title", track.text("name"))).setArtist(track.text("artist")).setAlbumTitle(track.text("album")).build()).build()
+        if (next) player.addMediaItem((player.currentMediaItemIndex + 1).coerceIn(0, player.mediaItemCount), item) else player.addMediaItem(item)
         player.prepare()
     }
     fun stop() = ready { it.stop(); it.clearMediaItems(); error = null; sync() }

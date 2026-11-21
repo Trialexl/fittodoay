@@ -2,20 +2,25 @@ package com.fittodoay.android
 
 import androidx.compose.foundation.*
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.*
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.sp
 import java.util.Locale
 import kotlin.math.*
@@ -41,6 +46,14 @@ fun plotNumber(value: Double): String = when {
     value == floor(value) -> value.toLong().toString()
     else -> String.format(Locale.forLanguageTag("ru"), "%.2f", value).trimEnd('0').trimEnd(',')
 }
+fun plotPointNumber(value: Double): String = String.format(Locale.forLanguageTag("ru"), "%.2f", value).trimEnd('0').trimEnd(',')
+/** Canvas coordinates are local to the plot, excluding its Y-axis. */
+fun plotDateIndex(style: String, count: Int, x: Float, width: Float): Int {
+    if (count <= 1 || width <= 0 || !x.isFinite()) return 0
+    val fraction = (x / width).coerceIn(0f, 1f)
+    return if (style in listOf("columns", "heatmap")) (fraction * count).toInt().coerceIn(0, count - 1)
+    else (fraction * (count - 1)).roundToInt().coerceIn(0, count - 1)
+}
 fun plotDate(date: String): String = runCatching { java.time.LocalDate.parse(date).format(java.time.format.DateTimeFormatter.ofPattern("dd.MM")) }.getOrDefault(date)
 
 /** Shared axes, selection, and legend for dashboard, body weight, and exercise statistics. */
@@ -59,10 +72,31 @@ fun plotDate(date: String): String = runCatching { java.time.LocalDate.parse(dat
     val data = shown.map { line -> interpolateTrend(dates.map { line.points[it] }) }
     val totals = shown.map { it.points.values.filterNotNull().sum() }
     val total = totals.sum()
-    val domain = chartDomain(if (style == "stacked") dates.indices.map { d -> data.sumOf { it[d] } } else data.flatten(), zero || style in listOf("area", "stacked", "columns", "radar"))
+    val domain = chartDomain(if (style == "columns") totals else if (style == "stacked") dates.indices.map { d -> data.sumOf { it[d] } } else data.flatten(), zero || style in listOf("area", "stacked", "columns", "radar"))
     var point by remember(dates, style) { mutableIntStateOf(dates.lastIndex) }
     var seriesIndex by remember(lines, style) { mutableIntStateOf(0) }
     val selected = point.coerceIn(dates.indices)
+    var tooltip by remember(lines, style, focus) { mutableStateOf<Offset?>(null) }
+    val reveal = remember(lines, style, focus) { Animatable(0f) }
+    LaunchedEffect(reveal) { reveal.animateTo(1f, tween(700, easing = FastOutSlowInEasing)) }
+    fun selectAt(tap: Offset, width: Int, height: Int, dismissSame: Boolean = false) {
+        val previousPoint = point; val previousSeries = seriesIndex
+        val anchor = Offset((tap.x / width.coerceAtLeast(1)).coerceIn(0f, 1f), (tap.y / height.coerceAtLeast(1)).coerceIn(0f, 1f))
+        if (style == "pie") {
+            val angle = (atan2(tap.y - height / 2, tap.x - width / 2) * 180 / PI + 450) % 360
+            var sum = 0.0
+            seriesIndex = totals.indices.firstOrNull { sum += if (total > 0) totals[it] / total * 360 else 0.0; angle < sum } ?: 0
+        } else if (style == "columns") {
+            seriesIndex = plotDateIndex("columns", shown.size, tap.x, width.toFloat())
+        } else if (style == "radar") {
+            val angle = (atan2(tap.y - height / 2, tap.x - width / 2) + PI / 2 + 2 * PI) % (2 * PI)
+            point = (angle / (2 * PI) * dates.size).roundToInt() % dates.size
+        } else {
+            point = plotDateIndex(style, dates.size, tap.x, width.toFloat())
+            if (style == "heatmap") seriesIndex = (tap.y / height.coerceAtLeast(1) * shown.size).toInt().coerceIn(shown.indices)
+        }
+        tooltip = if (dismissSame && tooltip != null && previousPoint == point && previousSeries == seriesIndex) null else anchor
+    }
     val accent = MaterialTheme.colorScheme.primary
     val palette = listOf(accent, Color(0xff16a6a0), Color(0xffee9d36), Color(0xffe46a8b), Color(0xff6489dd), Color(0xffa18b6e))
     fun color(i: Int) = palette[lines.indexOf(shown[i]).coerceAtLeast(0) % palette.size]
@@ -73,10 +107,10 @@ fun plotDate(date: String): String = runCatching { java.time.LocalDate.parse(dat
             Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text(label, style = MaterialTheme.typography.labelSmall, color = muted)
                 val selectedValues = shown.mapNotNull { it.points[dates[selected]] }
-                Text(if (style == "pie") plotNumber(total) else if (selectedValues.isNotEmpty()) plotNumber(selectedValues.sum()) else "Нет записи", style = MaterialTheme.typography.headlineSmall)
+                Text(if (style == "pie") plotNumber(total) else if (style == "columns") plotNumber(totals[seriesIndex.coerceIn(totals.indices)]) else if (selectedValues.isNotEmpty()) plotNumber(selectedValues.sum()) else "Нет записи", style = MaterialTheme.typography.headlineSmall)
             }
             Surface(shape = RoundedCornerShape(9.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
-                Text(if (style == "pie") "За период" else plotDate(dates[selected]), Modifier.padding(horizontal = 10.dp, vertical = 7.dp), style = MaterialTheme.typography.labelSmall, color = muted)
+                Text(if (style in listOf("pie", "columns")) "За период" else plotDate(dates[selected]), Modifier.padding(horizontal = 10.dp, vertical = 7.dp), style = MaterialTheme.typography.labelSmall, color = muted)
             }
         }
         Surface(shape = RoundedCornerShape(14.dp), border = BorderStroke(1.dp, grid.copy(alpha = .7f)), color = MaterialTheme.colorScheme.surface) {
@@ -87,38 +121,41 @@ fun plotDate(date: String): String = runCatching { java.time.LocalDate.parse(dat
                     if (cartesian) Column(Modifier.width(38.dp).height(chartHeight), verticalArrangement = Arrangement.SpaceBetween, horizontalAlignment = Alignment.End) {
                         repeat(domain.intervals + 1) { i -> Text(plotNumber(domain.maximum - (domain.maximum - domain.minimum) * i / domain.intervals), style = MaterialTheme.typography.labelSmall, color = muted) }
                     }
-                    Box(Modifier.weight(1f).padding(horizontal = 8.dp)) {
-                        Canvas(Modifier.fillMaxWidth().height(chartHeight).testTag(tag).semantics { contentDescription = "$label, ${dates.size} точек. Нажмите для просмотра значения." }
+                    BoxWithConstraints(Modifier.weight(1f).padding(horizontal = 8.dp)) {
+                        Canvas(Modifier.fillMaxWidth().height(chartHeight).testTag(tag).semantics { contentDescription = "$label, ${dates.size} точек. Нажмите или проведите по горизонтали для просмотра значения." }
                             .pointerInput(dates, shown, style) {
-                                detectTapGestures { tap ->
-                                    if (style == "pie") {
-                                        val angle = (atan2(tap.y - size.height / 2, tap.x - size.width / 2) * 180 / PI + 450) % 360
-                                        var sum = 0.0
-                                        seriesIndex = totals.indices.firstOrNull { sum += if (total > 0) totals[it] / total * 360 else 0.0; angle < sum } ?: 0
-                                    } else if (style == "radar") {
-                                        val angle = (atan2(tap.y - size.height / 2, tap.x - size.width / 2) + PI / 2 + 2 * PI) % (2 * PI)
-                                        point = (angle / (2 * PI) * dates.size).roundToInt() % dates.size
-                                    } else point = if (style in listOf("columns", "heatmap")) (tap.x / size.width.coerceAtLeast(1) * dates.size).toInt().coerceIn(dates.indices)
-                                        else (tap.x / size.width.coerceAtLeast(1) * (dates.size - 1)).roundToInt().coerceIn(dates.indices)
+                                detectTapGestures { tap -> selectAt(tap, size.width, size.height, dismissSame = true) }
+                            }.pointerInput(dates, shown, style) {
+                                detectHorizontalDragGestures(onDragStart = { selectAt(it, size.width, size.height) }) { change, _ ->
+                                    change.consume(); selectAt(change.position, size.width, size.height)
                                 }
                             }) {
-                            fun x(i: Int) = if (style == "columns") size.width * (i + .5f) / dates.size else if (dates.size == 1) size.width / 2 else size.width * i / (dates.size - 1)
+                            val drawProgress = reveal.value
+                            fun x(i: Int) = if (style == "columns") size.width * (i + .5f) / shown.size else if (dates.size == 1) size.width / 2 else size.width * i / (dates.size - 1)
                             fun y(v: Double) = (size.height * (1 - (v - domain.minimum) / (domain.maximum - domain.minimum))).toFloat()
                             if (cartesian) {
                                 repeat(domain.intervals + 1) { i -> val at = size.height * i / domain.intervals; drawLine(grid.copy(alpha = .65f), Offset(0f, at), Offset(size.width, at), pathEffect = PathEffect.dashPathEffect(floatArrayOf(3.dp.toPx(), 4.dp.toPx()))) }
-                                drawLine(accent.copy(alpha = .2f), Offset(x(selected), 0f), Offset(x(selected), size.height), pathEffect = PathEffect.dashPathEffect(floatArrayOf(3.dp.toPx(), 4.dp.toPx())))
+                                drawLine(accent.copy(alpha = .2f), Offset(x(if (style == "columns") seriesIndex.coerceIn(shown.indices) else selected), 0f), Offset(x(if (style == "columns") seriesIndex.coerceIn(shown.indices) else selected), size.height), pathEffect = PathEffect.dashPathEffect(floatArrayOf(3.dp.toPx(), 4.dp.toPx())))
                             }
+                            clipRect(right = if (cartesian && style != "columns") size.width * drawProgress else size.width) {
                             when (style) {
                                 "pie" -> {
                                     val diameter = min(size.width, size.height) - 32.dp.toPx(); val inset = Offset((size.width - diameter) / 2, (size.height - diameter) / 2)
                                     var angle = -90f
                                     if (total <= 0) drawArc(grid, 0f, 360f, false, inset, Size(diameter, diameter), style = Stroke(24.dp.toPx()))
-                                    totals.forEachIndexed { i, v -> val sweep = if (total == 0.0) 0f else (v / total * 360).toFloat()
+                                    totals.forEachIndexed { i, v -> val sweep = if (total == 0.0) 0f else (v / total * 360).toFloat() * drawProgress
                                         val gap = min(1.5f, sweep / 5)
                                         drawArc(color(i).copy(alpha = if (i == seriesIndex) 1f else .65f), angle + gap / 2, (sweep - gap).coerceAtLeast(0f), false, inset, Size(diameter, diameter), style = Stroke(if (i == seriesIndex) 30.dp.toPx() else 24.dp.toPx(), cap = StrokeCap.Butt)); angle += sweep }
                                 }
+                                "columns" -> {
+                                    val width = size.width / shown.size * .55f
+                                    totals.forEachIndexed { i, value ->
+                                        val top = y(value * drawProgress)
+                                        drawRoundRect(color(i), Offset(x(i) - width / 2, top), Size(width, (y(0.0) - top).coerceAtLeast(0f)), CornerRadius(5.dp.toPx()))
+                                    }
+                                }
                                 "radar" -> {
-                                    val center = Offset(size.width / 2, size.height / 2); val radius = min(size.width, size.height) * .42f
+                                    val center = Offset(size.width / 2, size.height / 2); val radius = min(size.width, size.height) * .42f * drawProgress
                                     fun radial(i: Int, v: Double) = center + Offset((cos(2 * PI * i / dates.size - PI / 2) * radius * v / domain.maximum).toFloat(), (sin(2 * PI * i / dates.size - PI / 2) * radius * v / domain.maximum).toFloat())
                                     repeat(4) { ring -> val path = Path(); dates.indices.forEach { i -> val p = radial(i, domain.maximum * (ring + 1) / 4); if (i == 0) path.moveTo(p.x, p.y) else path.lineTo(p.x, p.y) }; path.close(); drawPath(path, grid, style = Stroke(1.dp.toPx())) }
                                     val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color = muted.toArgb(); textSize = 10.sp.toPx(); textAlign = android.graphics.Paint.Align.CENTER }
@@ -128,7 +165,7 @@ fun plotDate(date: String): String = runCatching { java.time.LocalDate.parse(dat
                                 }
                                 "heatmap" -> {
                                     val w = size.width / dates.size; val h = size.height / shown.size
-                                    data.forEachIndexed { i, values -> values.forEachIndexed { j, v -> drawRoundRect(color(i).copy(alpha = (.06 + .94 * v / domain.maximum).toFloat().coerceIn(0f, 1f)), Offset(j * w + 2, i * h + 2), Size((w - 4).coerceAtLeast(1f), (h - 4).coerceAtLeast(1f)), CornerRadius(4.dp.toPx())) } }
+                                    data.forEachIndexed { i, values -> values.forEachIndexed { j, v -> drawRoundRect(color(i).copy(alpha = ((.06 + .94 * v / domain.maximum) * drawProgress).toFloat().coerceIn(0f, 1f)), Offset(j * w + 2, i * h + 2), Size((w - 4).coerceAtLeast(1f), (h - 4).coerceAtLeast(1f)), CornerRadius(4.dp.toPx())) } }
                                     drawRoundRect(accent, Offset(selected * w, 0f), Size(w, size.height), CornerRadius(5.dp.toPx()), style = Stroke(1.5.dp.toPx()))
                                 }
                                 else -> {
@@ -137,10 +174,7 @@ fun plotDate(date: String): String = runCatching { java.time.LocalDate.parse(dat
                                         val base = accumulated.copyOf()
                                         val points = values.mapIndexed { j, v -> Offset(x(j), y(v + if (style == "stacked") base[j] else 0.0)) }
                                         val path = Path().apply { points.forEachIndexed { j, p -> if (j == 0) moveTo(p.x, p.y) else { val prev = points[j-1]; val middle = (prev.x + p.x) / 2; cubicTo(middle, prev.y, middle, p.y, p.x, p.y) } } }
-                                        if (style == "columns") {
-                                            val groupWidth = size.width / dates.size; val w = groupWidth * .72f / shown.size
-                                            values.forEachIndexed { j, v -> val top = y(v); drawRoundRect(color(i), Offset(x(j) - groupWidth * .36f + i * w, top), Size((w - 2.dp.toPx()).coerceAtLeast(1f), (y(0.0) - top).coerceAtLeast(0f)), CornerRadius(3.dp.toPx())) }
-                                        } else {
+                                        run {
                                             if (style in listOf("area", "stacked")) {
                                                 val fill = Path().apply {
                                                     addPath(path)
@@ -157,14 +191,43 @@ fun plotDate(date: String): String = runCatching { java.time.LocalDate.parse(dat
                                     }
                                 }
                             }
+                            }
                         }
-                        if (style == "pie") Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
+                        tooltip?.let { anchor ->
+                            val density = androidx.compose.ui.platform.LocalDensity.current
+                            val tooltipWidth = minOf(220.dp, maxWidth)
+                            val left = ((maxWidth - tooltipWidth) * anchor.x).coerceAtLeast(0.dp)
+                            val top = if (anchor.y > .5f) 8.dp else (chartHeight - 100.dp).coerceAtLeast(8.dp)
+                            val entries = if (style in listOf("pie", "columns", "heatmap")) listOf(seriesIndex.coerceIn(shown.indices)) else shown.indices.toList()
+                            // A Material Surface consumes pointer input even without an onClick.
+                            // Draw this overlay without input nodes so scrubbing continues underneath.
+                            Box(Modifier.offset { IntOffset(with(density) { left.roundToPx() }, with(density) { top.roundToPx() }) }
+                                .width(tooltipWidth).shadow(6.dp, RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surface, RoundedCornerShape(10.dp))
+                                .border(1.dp, grid, RoundedCornerShape(10.dp)).testTag("$tag-tooltip").semantics { liveRegion = LiveRegionMode.Polite }) {
+                                Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                                    Text(if (style in listOf("pie", "columns")) "За выбранный период" else dates[selected], style = MaterialTheme.typography.labelSmall, color = muted)
+                                    entries.take(4).forEach { i ->
+                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                            Box(Modifier.size(6.dp).background(color(i), RoundedCornerShape(3.dp)))
+                                            Text(shown[i].label, Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                            Text((if (style in listOf("pie", "columns")) totals[i] else shown[i].points[dates[selected]])?.let(::plotPointNumber) ?: "Нет записи", style = MaterialTheme.typography.labelMedium)
+                                        }
+                                    }
+                                    if (entries.size > 4) Text("Ещё ${entries.size - 4} · выберите серию в легенде", style = MaterialTheme.typography.labelSmall, color = muted)
+                                }
+                            }
+                        }
+                        if (style == "pie" && tooltip == null) Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(plotNumber(total), style = MaterialTheme.typography.headlineSmall)
                             Text("за период", style = MaterialTheme.typography.labelSmall, color = muted)
                         }
                     }
                 }
-                if (style != "pie") Row(Modifier.fillMaxWidth().padding(start = if (cartesian) 46.dp else 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                if (style == "columns") Row(Modifier.fillMaxWidth().padding(start = 46.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+                    shown.forEach { line -> Text(line.label, Modifier.weight(1f).padding(horizontal = 3.dp), style = MaterialTheme.typography.labelSmall, color = muted,
+                        maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = androidx.compose.ui.text.style.TextAlign.Center) }
+                }
+                else if (style != "pie") Row(Modifier.fillMaxWidth().padding(start = if (cartesian) 46.dp else 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text(plotDate(dates.first()), style = MaterialTheme.typography.labelSmall, color = muted)
                     if (dates.size > 2) Text(plotDate(dates[dates.size / 2]), style = MaterialTheme.typography.labelSmall, color = muted)
                     if (dates.size > 1) Text(plotDate(dates.last()), style = MaterialTheme.typography.labelSmall, color = muted)
@@ -178,7 +241,7 @@ fun plotDate(date: String): String = runCatching { java.time.LocalDate.parse(dat
                     Row(Modifier.padding(horizontal = 10.dp, vertical = 9.dp).widthIn(max = 290.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                         Box(Modifier.size(7.dp).background(palette[i % palette.size], RoundedCornerShape(3.dp)))
                         Text(line.label, Modifier.weight(1f, fill = false), style = MaterialTheme.typography.labelSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        Text((if (style == "pie") line.points.values.filterNotNull().sum() else line.points[dates[selected]])?.let(::plotNumber) ?: "—", style = MaterialTheme.typography.labelSmall, color = palette[i % palette.size])
+                        Text((if (style in listOf("pie", "columns")) line.points.values.filterNotNull().sum() else line.points[dates[selected]])?.let(::plotNumber) ?: "—", style = MaterialTheme.typography.labelSmall, color = palette[i % palette.size])
                     }
                 }
             }

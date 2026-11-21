@@ -10,8 +10,8 @@ android {
         applicationId = "com.fittodoay.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 6
-        versionName = "0.4.0"
+        versionCode = 7
+        versionName = "0.4.1-dev"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "SERVER_URL", "\"https://trialexl4.freemyip.com\"")
     }

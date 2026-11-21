@@ -1,6 +1,7 @@
 package com.fittodoay.android
 
 import androidx.compose.ui.test.*
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.platform.app.InstrumentationRegistry
 import org.json.JSONObject
@@ -68,6 +69,9 @@ class VisualSnapshotTest {
             qa.capture("design-muscle-widget$suffix")
             compose.onNodeWithTag("body-weight-panel").performScrollTo()
             qa.capture("design-body-weight$suffix")
+            val firstProgram = qa.model.plan.array("folders").first()
+            compose.onNodeWithTag("workout-program-${firstProgram.getInt("id")}").performScrollTo()
+            qa.capture("density-main-checklist$suffix")
             qa.visible(hasContentDescription("Техника и описание"), "exercise information").performClick()
             compose.onNodeWithTag("exercise-info-sheet").assertIsDisplayed()
             qa.capture("design-exercise-description$suffix")
@@ -108,8 +112,48 @@ class VisualSnapshotTest {
                 stress.getJSONArray("folders").put(second)
                 compose.runOnIdle { qa.model.trends = stress }
                 for ((style, title) in trendStyles) {
+                    if (style == "line") {
+                        compose.onNodeWithText("Площадь", substring = false).performScrollTo().performClick()
+                        compose.onNodeWithTag("trend-chart-area").performScrollTo()
+                        val action = compose.onNodeWithText(title, substring = false).fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsActions.OnClick].action!!
+                        fun framePixels(name: String): IntArray {
+                            val latch = java.util.concurrent.CountDownLatch(1)
+                            compose.runOnUiThread { compose.activity.window.decorView.postOnAnimation { latch.countDown() } }
+                            assertTrue(latch.await(2, java.util.concurrent.TimeUnit.SECONDS))
+                            InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+                            val bitmap = InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
+                            File(qa.directory, name + ".png").outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+                            val pixels = IntArray(bitmap.width * bitmap.height)
+                            bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height); bitmap.recycle()
+                            return pixels
+                        }
+                        compose.mainClock.autoAdvance = false
+                        try {
+                            compose.runOnUiThread { action() }
+                            compose.mainClock.advanceTimeBy(64)
+                            val before = framePixels("density-animation-start$suffix")
+                            compose.mainClock.advanceTimeBy(800)
+                            val after = framePixels("density-animation-complete$suffix")
+                            val changed = before.indices.count { before[it] != after[it] }
+                            assertTrue("The chart must animate its appearance", changed > 300)
+                            qa.report("chart-animation$suffix", obj("changed_pixels" to changed, "duration_ms" to 700))
+                        } finally { compose.mainClock.autoAdvance = true }
+                    }
                     compose.onNodeWithText(title, substring = false).performScrollTo().performClick()
-                    compose.onNodeWithTag("trend-chart-$style").performScrollTo().performTouchInput { click(center) }
+                    val chart = compose.onNodeWithTag("trend-chart-$style").performScrollTo()
+                    chart.performTouchInput { click(if (style == "pie") Offset(width * .9f, height * .5f) else Offset(width * .02f, height * .7f)) }
+                    val tooltip = compose.onNodeWithTag("trend-chart-$style-tooltip")
+                    tooltip.assertIsDisplayed()
+                    if (style !in listOf("pie", "radar", "columns")) {
+                        compose.onNode(hasText("2026-11-01") and hasAnyAncestor(hasTestTag("trend-chart-$style-tooltip")), useUnmergedTree = true).assertExists()
+                        chart.performTouchInput { swipe(Offset(width * .05f, height * .7f), Offset(width * .98f, height * .7f), 350) }
+                        compose.onNode(hasText("2026-11-18") and hasAnyAncestor(hasTestTag("trend-chart-$style-tooltip")), useUnmergedTree = true).assertExists()
+                    }
+                    if (style == "columns") {
+                        compose.onNode(hasText("6257") and hasAnyAncestor(hasTestTag("trend-chart-$style-tooltip")), useUnmergedTree = true).assertExists()
+                        chart.performTouchInput { swipe(Offset(width * .05f, height * .7f), Offset(width * .98f, height * .7f), 350) }
+                        compose.onNode(hasText("4797") and hasAnyAncestor(hasTestTag("trend-chart-$style-tooltip")), useUnmergedTree = true).assertExists()
+                    }
                     compose.onNodeWithTag("trend-chart-$style-panel").performScrollTo()
                     qa.capture("$prefix-chart-$style$suffix")
                 }
