@@ -23,7 +23,7 @@ class AppModel @JvmOverloads constructor(application: Application, private val b
     // Kept in memory across rotation, never in saved instance state or preferences.
     var authPasswordDraft by mutableStateOf("")
     val api = Api(baseUrl = baseUrl, transportOverride = transportOverride, storage = { if (token.isEmpty()) null else localData() }, networkAvailable = ::isOnline,
-        onLocalRead = { notice = "Показаны данные с устройства. Изменения сервера обновятся после подключения." }) { token }
+        onLocalRead = { usingLocalData = true }) { token }
     val audio = AudioController(application)
     private val connectivity = application.getSystemService(android.net.ConnectivityManager::class.java)
     private val networkCallback = object : android.net.ConnectivityManager.NetworkCallback() {
@@ -36,7 +36,59 @@ class AppModel @JvmOverloads constructor(application: Application, private val b
     }
     var screen by mutableStateOf(Screen.Workout)
     var focusBodyWeight by mutableStateOf(false)
-    var busy by mutableStateOf(false); private set
+    private val operations = mutableStateMapOf<String, String>()
+    private val operationJobs = mutableMapOf<String, Job>()
+    val busy get() = operations.containsKey(screen.name)
+    val anyBusy get() = operations.isNotEmpty()
+    val chatBusy get() = operations.containsKey("chat")
+    val catalogLoading get() = operations.containsKey("catalog")
+    var usingLocalData by mutableStateOf(false); private set
+    var draftLoading by mutableStateOf(false); private set
+    private var draftJob: Job? = null
+    private var archiveJob: Job? = null
+    private fun drafts() = LocalDrafts.get(getApplication(), token)
+    fun flushDrafts() { if (token.isNotEmpty()) drafts().flushInBackground() }
+    private fun bindLocalServices() {
+        draftJob?.cancel(); archiveJob?.cancel()
+        val account = token
+        if (account.isEmpty()) return
+        val draft = drafts()
+        draftLoading = true
+        draftJob = viewModelScope.launch {
+            try { draft.awaitReady() }
+            catch (e: CancellationException) { throw e }
+            catch (_: Exception) { if (token == account) error = "Не удалось открыть сохранённые черновики." }
+            finally { if (token == account) draftLoading = false }
+            draft.error.collect { if (token == account && it != null) error = it }
+        }
+        if (baseUrl != BuildConfig.SERVER_URL) return
+        archiveJob = viewModelScope.launch {
+            androidx.work.WorkManager.getInstance(getApplication()).getWorkInfosForUniqueWorkFlow(ArchiveSync.name(account)).collect { infos ->
+                if (token != account) return@collect
+                val active = infos.firstOrNull { !it.state.isFinished }
+                localSyncing = active != null
+                if (active != null) {
+                    localSyncMessage = when (active.state) {
+                        androidx.work.WorkInfo.State.RUNNING -> active.progress.getString("stage") ?: "Обновляем локальную копию"
+                        else -> if (active.runAttemptCount > 0) "Соединение прервалось. Продолжим сохранение автоматически." else "Локальная копия ожидает подключения"
+                    }
+                } else {
+                    // Finished WorkInfo rows have no chronological ordering guarantee.
+                    // The archive stores the last actual outcome and its timestamp.
+                    val saved = withContext(Dispatchers.IO) { LocalDataStore(getApplication(), account).read("local:sync") as? JSONObject }
+                    if (token == account) {
+                        if (saved != null) {
+                            localSyncResult = saved
+                            localSyncMessage = if (saved.optBoolean("complete")) "Локальная копия обновлена" else "Сохранены доступные данные. Не удалось загрузить файлов или разделов: ${saved.array("failures").size}"
+                        } else if (infos.isNotEmpty()) localSyncMessage = "Сохранение локальной копии приостановлено"
+                    }
+                }
+            }
+        }
+    }
+    private suspend fun readLocal(key: String): Any? { val account = token; return withContext(Dispatchers.IO) { LocalDataStore(getApplication(), account).read(key) } }
+    private suspend fun writeLocal(key: String, value: Any) { val account = token; withContext(Dispatchers.IO) { LocalDataStore(getApplication(), account).write(key, value) } }
+    private suspend fun removeLocal(key: String) { val account = token; withContext(Dispatchers.IO) { LocalDataStore(getApplication(), account).remove(key) } }
     var refreshing by mutableStateOf(false); private set
     var workoutSaving by mutableIntStateOf(0); private set
     var workoutSync by mutableStateOf(WorkoutSyncState()); private set
@@ -48,6 +100,7 @@ class AppModel @JvmOverloads constructor(application: Application, private val b
     private fun repository() = WorkoutRepository.get(getApplication(), token, baseUrl, transportOverride)
     private fun bindRepository() {
         repositoryJob?.cancel()
+        bindLocalServices()
         val account = token
         if (account.isEmpty()) return
         val repo = repository()
@@ -144,9 +197,6 @@ class AppModel @JvmOverloads constructor(application: Application, private val b
     var localSyncing by mutableStateOf(false); private set
     var localSyncMessage by mutableStateOf(""); private set
     var localSyncResult by mutableStateOf(JSONObject()); private set
-    private var localSyncJob: kotlinx.coroutines.Job? = null
-    private var localSyncAttempt = 0L
-    private var localSyncGeneration = 0L
     init {
         connectivity.registerDefaultNetworkCallback(networkCallback)
         if (token.isNotEmpty()) {
@@ -175,17 +225,20 @@ class AppModel @JvmOverloads constructor(application: Application, private val b
             while (true) { kotlinx.coroutines.delay(250); advanceWorkoutTimer() }
         }
     }
-    override fun onCleared() { refreshJob?.cancel(); repositoryJob?.cancel(); workoutSyncJob?.cancel(); localSyncJob?.cancel(); connectivity.unregisterNetworkCallback(networkCallback); audio.release(); super.onCleared() }
+    override fun onCleared() { refreshJob?.cancel(); repositoryJob?.cancel(); workoutSyncJob?.cancel(); draftJob?.cancel(); archiveJob?.cancel(); flushDrafts(); connectivity.unregisterNetworkCallback(networkCallback); audio.release(); super.onCleared() }
 
-    fun run(block: suspend () -> Unit) {
-        if (busy) return
-        refreshGeneration++; refreshJob?.cancel(); refreshing = false
-        busy = true; error = null; notice = null
-        viewModelScope.launch {
+    fun run(area: String = screen.name, block: suspend () -> Unit) {
+        if (operations.containsKey(area)) return
+        val account = token
+        if (area == screen.name) { refreshGeneration++; refreshJob?.cancel(); refreshing = false }
+        val ticket = java.util.UUID.randomUUID().toString()
+        operations[area] = ticket; error = null; notice = null
+        val job = viewModelScope.launch(start = CoroutineStart.LAZY) {
             try { block() }
             catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
                 if (BuildConfig.DEBUG) android.util.Log.w("fitTODOay", "Operation failed: ${e.javaClass.simpleName}", e)
+                if (account.isNotEmpty() && account != token) return@launch
                 if (e is ApiException && e.status == 401) logout()
                 error = when (e) {
                     is ApiException -> e.message
@@ -193,8 +246,10 @@ class AppModel @JvmOverloads constructor(application: Application, private val b
                     is IOException -> "Не удалось подключиться к серверу. Проверьте интернет и повторите."
                     else -> e.message ?: "Не удалось выполнить действие"
                 }
-            } finally { busy = false; if (token.isNotEmpty()) synchronizeLocalData() }
+            } finally { operationJobs.remove(ticket); if (operations[area] == ticket) operations.remove(area); if (token.isNotEmpty()) synchronizeLocalData() }
         }
+        operationJobs[ticket] = job
+        job.start()
     }
 
     fun auth(email: String, password: String, registration: JSONObject? = null) = run {
@@ -209,11 +264,13 @@ class AppModel @JvmOverloads constructor(application: Application, private val b
         load()
     }
     fun logout() {
+        operationJobs.values.toList().forEach { it.cancel() }; operationJobs.clear()
+        operations.clear()
         refreshGeneration++; refreshJob?.cancel(); refreshing = false
         repositoryJob?.cancel(); workoutSyncJob?.cancel(); workoutSync = WorkoutSyncState()
         focusBodyWeight = false
         authPasswordDraft = ""
-        pauseLocalSync(); localSyncResult = JSONObject(); localSyncAttempt = 0
+        flushDrafts(); pauseLocalSync(); draftJob?.cancel(); archiveJob?.cancel(); draftLoading = false; usingLocalData = false; localSyncResult = JSONObject()
         timerGeneration++; timerChanging = false
         timerWrite({ it.clear("rest", dismissSignal = true); it.clear("execution", dismissSignal = true) })
         audio.stop(); pendingCount = 0
@@ -231,7 +288,7 @@ class AppModel @JvmOverloads constructor(application: Application, private val b
         val generation = ++refreshGeneration
         val target = screen; val requestedDate = date; val account = token
         refreshJob?.cancel()
-        refreshing = true
+        refreshing = true; usingLocalData = false
         refreshJob = viewModelScope.launch {
             try { restoreLocalData(); load(target, requestedDate, generation) }
             catch (e: CancellationException) { throw e }
@@ -273,48 +330,18 @@ class AppModel @JvmOverloads constructor(application: Application, private val b
         (cache["trends"] as? JSONObject)?.let { trends = it }; cache["reviews"]?.let { reviews = it.rows() }
         repo.initialize()
     }
-    fun pauseLocalSync() { localSyncGeneration++; localSyncJob?.cancel(); localSyncJob = null; localSyncing = false; localSyncMessage = "Сохранение локальной копии приостановлено" }
+    fun pauseLocalSync() {
+        if (token.isNotEmpty() && baseUrl == BuildConfig.SERVER_URL) ArchiveSync.cancel(getApplication(), token)
+        localSyncing = false; localSyncMessage = "Сохранение локальной копии приостановлено"
+    }
     fun synchronizeLocalData(force: Boolean = false) {
+        if (force && !isOnline()) localSyncMessage = "Локальная копия ожидает подключения"
         if (token.isEmpty() || baseUrl != BuildConfig.SERVER_URL) return
-        if (!isOnline()) { if (force) localSyncMessage = "Нет подключения. Сохранённые данные доступны без интернета."; return }
-        if (localSyncJob?.isActive == true) { if (force) pauseLocalSync() else return }
-        if (!force && System.currentTimeMillis() - localSyncAttempt < 15 * 60_000L) return
-        val accountToken = token
-        val generation = ++localSyncGeneration
-        localSyncAttempt = System.currentTimeMillis()
-        localSyncJob = viewModelScope.launch {
-            if (!force) kotlinx.coroutines.delay(5000)
-            while (busy) kotlinx.coroutines.delay(500)
-            if (token != accountToken || !isOnline()) return@launch
-            localSyncing = true
-            for (attempt in 0..4) {
-            var retry = false
-            try {
-                val result = LocalMirror(getApplication(), accountToken).synchronize { stage ->
-                    viewModelScope.launch { if (token == accountToken && localSyncGeneration == generation) localSyncMessage = stage }
-                }
-                if (token == accountToken && localSyncGeneration == generation) {
-                    localSyncResult = result
-                    localSyncMessage = if (result.optBoolean("complete")) "Локальная копия обновлена" else "Сохранены доступные данные. Не удалось загрузить файлов или разделов: ${result.array("failures").size}"
-                }
-            } catch (e: Exception) {
-                if (e is kotlinx.coroutines.CancellationException) throw e
-                if (token == accountToken && localSyncGeneration == generation) {
-                    retry = isTransientLocalFailure(e)
-                    localSyncMessage = if (e is LocalStorageException) e.message.orEmpty() else "Не удалось завершить локальную копию. Сохранённые данные доступны без сети."
-                    localSyncResult = obj("finished_at" to System.currentTimeMillis(), "complete" to false,
-                        "failures" to JSONArray().put(obj("error" to (e.message ?: "Ошибка синхронизации"))))
-                    runCatching { localData().write("local:sync", localSyncResult) }
-                }
-            }
-            if (!retry || token != accountToken || localSyncGeneration != generation) break
-            localSyncAttempt = 0
-            if (!isOnline() || attempt == 4) break
-            localSyncMessage = "Соединение прервалось. Продолжим сохранение автоматически; уже загруженные файлы останутся."
-            kotlinx.coroutines.delay((5000L shl attempt).coerceAtMost(60_000))
-            while (busy) kotlinx.coroutines.delay(500)
-            }
-            if (token == accountToken && localSyncGeneration == generation) localSyncing = false
+        val account = token
+        viewModelScope.launch {
+            try { ArchiveSync.schedule(getApplication(), account, force) }
+            catch (e: CancellationException) { throw e }
+            catch (_: Exception) { if (token == account) localSyncMessage = "Не удалось запланировать локальную копию. Повторите действие." }
         }
     }
     suspend fun imageOnDevice(url: String): Any? {
@@ -346,7 +373,7 @@ class AppModel @JvmOverloads constructor(application: Application, private val b
                 } catch (e: IOException) {
                     if (e is ApiException) throw e
                     val stored = repo.read(requestedDate) ?: throw e
-                    if (applies()) { plan = stored; notice = "Нет соединения. Сохранённые результаты будут отправлены автоматически." }
+                    if (applies()) { plan = stored; usingLocalData = true }
                 }
                 if (applies()) recommendations = emptyList()
                 try { val received = api.call("/api/workouts/music/tracks/").rows(); if (applies()) tracks = received }
@@ -390,7 +417,7 @@ class AppModel @JvmOverloads constructor(application: Application, private val b
         preferences = api.call("/api/profile/preferences/", "PUT", data) as JSONObject
         notice = "Настройки сохранены"
     }
-    fun loadCatalog(query: String = "") = run {
+    fun loadCatalog(query: String = "") = run("catalog") {
         catalog = api.call("/api/exercises/?q=${java.net.URLEncoder.encode(query, "UTF-8")}").rows()
     }
     fun loadCustomExercises() = run { customExercises = api.call("/api/exercises/custom/").rows() }
@@ -508,45 +535,45 @@ class AppModel @JvmOverloads constructor(application: Application, private val b
         check(repo.state.value.pending == 0) { "Не удалось отправить результаты для анализа. Они сохранены на устройстве." }
     }
     fun generate(data: JSONObject) = run {
-        localData().write("local:assistant-answers", data)
+        saveAssistantAnswers(data); drafts().flush()
         require(isOnline()) { "Ответы сохранены на устройстве. Для генерации программы подключитесь к интернету." }
         preferences = api.call("/api/profile/preferences/", "PUT", data) as JSONObject
         preview = api.call("/api/llm-agent/programs/preview/", "POST", data) as JSONObject
-        localData().write("local:preview", requireNotNull(preview))
+        writeLocal("local:preview", requireNotNull(preview))
     }
     fun applyPreview() = run {
         val draft = requireNotNull(preview).getString("draft_id")
         api.call("/api/llm-agent/programs/drafts/$draft/apply/", "POST")
-        localData().remove("local:preview")
+        removeLocal("local:preview")
         preview = null; screen = Screen.Programs; load(); notice = "Программы созданы"
     }
-    fun discardPreview() { preview = null; if (token.isNotEmpty()) localData().remove("local:preview") }
+    fun discardPreview() = run("preview") { removeLocal("local:preview"); preview = null }
     fun openChat(programId: Int, mode: String = "program_edit", initialMessage: String? = null) {
-        if (busy) return
+        if (chatBusy) return
         val changed = chatProgram != programId
         chatProgram = programId
         if (changed) { threadId = null; messages = emptyList() }
-        run {
+        run("chat") {
         chatReferences = api.call("/api/programs/templates/?folder=$programId").rows().flatMap { it.array("template_exercises") }
-        var archive = localData().read("local:threads")?.rows().orEmpty()
+        var archive = readLocal("local:threads")?.rows().orEmpty()
         try {
             archive = api.all("/api/llm-agent/threads/").rows()
-            localData().write("local:threads", JSONArray(archive))
+            writeLocal("local:threads", JSONArray(archive))
         } catch (error: Exception) {
             if (error is kotlinx.coroutines.CancellationException) throw error
             if (!(error is ApiException && error.status in listOf(404, 405)) &&
                 error !is LocalDataUnavailableException && !isTransientLocalFailure(error)) throw error
         }
         chatThreads = archive.filter { it.optInt("program") == programId }
-        val known = localData().read("local:chat:$programId") as? JSONObject
+        val known = readLocal("local:chat:$programId") as? JSONObject
         if (threadId == null) threadId = known?.getInt("id") ?: chatThreads.firstOrNull()?.getInt("id")
         if (threadId == null) {
             require(isOnline()) { "На устройстве пока нет переписки этой программы. Первый запуск чата требует подключения." }
             val result = api.call("/api/llm-agent/threads/", "POST", obj("program_id" to programId)) as JSONObject
             threadId = result.getInt("id"); chatProgram = programId
-            localData().write("local:chat:$programId", result)
+            writeLocal("local:chat:$programId", result)
             chatThreads = listOf(result) + chatThreads
-            localData().write("local:threads", JSONArray(listOf(result) + archive.filterNot { it.optInt("id") == result.optInt("id") }))
+            writeLocal("local:threads", JSONArray(listOf(result) + archive.filterNot { it.optInt("id") == result.optInt("id") }))
         }
         chatMode = mode
         if (initialMessage != null && mode.startsWith("post_workout")) syncBeforeAnalysis()
@@ -555,28 +582,30 @@ class AppModel @JvmOverloads constructor(application: Application, private val b
         if (mode == "post_workout_review" && initialMessage != null) chatMode = "post_workout_chat"
         }
     }
-    fun selectChat(thread: JSONObject) = run {
+    fun selectChat(thread: JSONObject) = run("chat") {
         require(thread.optInt("program") == chatProgram && chatThreads.any { it.optInt("id") == thread.optInt("id") })
         val history = api.call("/api/llm-agent/threads/${thread.getInt("id")}/messages/").rows()
         threadId = thread.getInt("id"); messages = history
-        localData().write("local:chat:$chatProgram", thread)
+        writeLocal("local:chat:$chatProgram", thread)
     }
     fun localReviewVideo(reviewId: Int) = if (token.isEmpty()) null else LocalMediaStore(getApplication(), token).reviewVideo(reviewId)
     suspend fun reviewVideo(review: JSONObject): java.io.File = LocalMediaStore(getApplication(), token).downloadReviewVideo(review)
-    fun chatDraft(): String = if (token.isEmpty() || chatProgram == null) "" else (localData().read("local:chat-draft:$chatProgram") as? JSONObject)?.text("text").orEmpty()
-    fun saveChatDraft(text: String) { if (token.isNotEmpty() && chatProgram != null) localData().write("local:chat-draft:$chatProgram", obj("text" to text)) }
-    fun assistantAnswers(): JSONObject = if (token.isEmpty()) JSONObject() else (localData().read("local:assistant-answers") as? JSONObject) ?: preferences
-    fun saveAssistantAnswers(data: JSONObject) { if (token.isNotEmpty()) localData().write("local:assistant-answers", data) }
-    fun send(message: String, onSent: (() -> Unit)? = null) = run {
+    fun chatDraft(): String = if (token.isEmpty() || chatProgram == null) "" else drafts().read("local:chat-draft:$chatProgram")?.text("text").orEmpty()
+    fun saveChatDraft(text: String) { if (token.isNotEmpty() && chatProgram != null) drafts().write("local:chat-draft:$chatProgram", obj("text" to text)) }
+    fun assistantAnswers(): JSONObject = if (token.isEmpty()) JSONObject() else drafts().read("local:assistant-answers") ?: preferences
+    fun saveAssistantAnswers(data: JSONObject) { if (token.isNotEmpty()) drafts().write("local:assistant-answers", data) }
+    fun send(message: String, onSent: (() -> Unit)? = null) = run("chat") {
         require(message.isNotBlank()) { "Напишите сообщение" }
         val id = requireNotNull(threadId)
+        val draftBeforeSend = chatDraft(); val program = chatProgram
+        drafts().flush()
         if (chatMode.startsWith("post_workout")) syncBeforeAnalysis()
         api.call("/api/llm-agent/threads/$id/messages/", "POST", obj("message" to message, "mode" to chatMode, "workout_date" to date))
-        saveChatDraft("")
+        if (chatProgram == program && chatDraft() == draftBeforeSend) saveChatDraft("")
         onSent?.invoke()
         messages = api.call("/api/llm-agent/threads/$id/messages/").rows()
     }
-    fun proposal(messageId: Int, apply: Boolean) = run {
+    fun proposal(messageId: Int, apply: Boolean) = run("chat") {
         val result = api.call("/api/llm-agent/threads/$threadId/${if (apply) "apply" else "cancel"}/", "POST", obj("message_id" to messageId))
         messages = api.call("/api/llm-agent/threads/$threadId/messages/").rows()
         load()
@@ -606,10 +635,10 @@ class AppModel @JvmOverloads constructor(application: Application, private val b
                 LocalMediaStore(getApplication(), token).preserveVideo(videoKey, file,
                     if (mime == "application/octet-stream") "video/*" else mime)
             } else null
-            video?.let { localData().write("local:video-upload:${it.name}", obj("name" to name, "file" to it.name, "status" to "stored")) }
+            video?.let { writeLocal("local:video-upload:${it.name}", obj("name" to name, "file" to it.name, "status" to "stored")) }
             val result = api.upload(path, field, name, mime, file)
             if (video != null && result is JSONObject) {
-                localData().write("local:video:${result.getInt("id")}", obj("name" to name, "file" to video.name, "review" to result.getInt("id"), "media_key" to videoKey))
+                writeLocal("local:video:${result.getInt("id")}", obj("name" to name, "file" to video.name, "review" to result.getInt("id"), "media_key" to videoKey))
                 localData().remove("local:video-upload:${video.name}")
             }
             acceptUpload(path, result)

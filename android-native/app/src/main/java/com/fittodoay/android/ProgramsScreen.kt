@@ -191,7 +191,8 @@ fun scheduleLabel(day: JSONObject): String {
             model.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             if (source == null) {
                 Field("Поиск в каталоге", query, { query = it })
-                TextButton(onClick = { model.loadCatalog(query) }, enabled = !model.busy) { Text("Найти") }
+                TextButton(onClick = { model.loadCatalog(query) }, enabled = !model.catalogLoading) { Text("Найти") }
+                Box(Modifier.fillMaxWidth().height(3.dp)) { if (model.catalogLoading) LinearProgressIndicator(Modifier.fillMaxWidth()) }
                 Choices("Каталог", if (custom) "custom" else "system", listOf("system" to "Общие", "custom" to "Мои")) { custom = it == "custom"; if (custom) model.loadCustomExercises() }
                 TextButton(onClick = { makeCustom = true }) { Text("Создать своё упражнение") }
                 if (!custom && model.catalog.size > 50) Text("Показаны первые 50 упражнений. Уточните поиск, чтобы найти нужное.")

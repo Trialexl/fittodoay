@@ -12,8 +12,8 @@ android {
         applicationId = "com.fittodoay.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 10
-        versionName = "0.4.4-dev"
+        versionCode = 11
+        versionName = "0.4.5-dev"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "SERVER_URL", "\"https://trialexl4.freemyip.com\"")
     }
@@ -39,6 +39,7 @@ android {
     }
     kotlinOptions { jvmTarget = "17" }
     testOptions { unitTests.isReturnDefaultValues = true }
+    sourceSets.getByName("androidTest").assets.srcDir("$projectDir/schemas")
 }
 dependencies {
     implementation(platform("androidx.compose:compose-bom:2025.05.01"))

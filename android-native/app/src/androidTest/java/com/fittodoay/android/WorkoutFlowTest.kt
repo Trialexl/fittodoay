@@ -30,7 +30,7 @@ class WorkoutFlowTest {
         compose.onNodeWithTag("workout-timer-screen").assertIsDisplayed()
     }
     private fun row(id: Int, index: Int) = compose.onNodeWithTag("set-row-$id-$index")
-    private fun clickSet(id: Int, index: Int) { compose.onNode(hasText(if (id == 91012) "▷ Начать" else "+ Отметить", substring = false) and hasAnyAncestor(hasTestTag("set-row-$id-$index"))).performScrollTo().performClick(); qa.waitRequest(allowError = true) }
+    private fun clickSet(id: Int, index: Int) { qa.visible(hasText(if (id == 91012) "▷ Начать" else "+ Отметить", substring = false) and hasAnyAncestor(hasTestTag("set-row-$id-$index")), "set $id-$index").performScrollTo().performClick(); qa.waitRequest(allowError = true) }
     private fun recreate() {
         compose.runOnIdle { compose.activity.viewModelStore.clear() }
         compose.activityRule.scenario.recreate()
@@ -165,7 +165,7 @@ class WorkoutFlowTest {
         clickSet(91001, 2)
         compose.onNodeWithText("Пропустить отдых", substring = false).performScrollTo().performClick(); qa.waitRequest()
         row(91001, 1).assertDoesNotExist()
-        compose.onNodeWithTag("workout-exercise-toggle-91001").performScrollTo().performClick()
+        qa.scrollTag("workout-exercise-toggle-91001").performClick()
         row(91001, 1).assertExists(); row(91001, 2).assertExists()
         qa.capture("flow-completed-exercise-reopened")
     }
@@ -207,10 +207,10 @@ class WorkoutFlowTest {
         compose.onNodeWithText("Свернуть", substring = false).performClick()
         qa.waitRequest(allowError = true)
         val deadline = qa.model.restUntil
-        compose.onNodeWithTag("workout-day-toggle-9192").performScrollTo().performClick()
+        qa.scrollTag("workout-day-toggle-9192").performClick()
         compose.onNodeWithTag("workout-exercise-toggle-91001").assertDoesNotExist()
         qa.dismissNotice()
-        compose.onNodeWithTag("workout-day-toggle-9192").performScrollTo().performClick()
+        qa.scrollTag("workout-day-toggle-9192").performClick()
         qa.waitRequest(allowError = true)
         if (compose.onAllNodesWithTag("set-row-91001-1").fetchSemanticsNodes().isEmpty()) {
             qa.capture("fluid-flow-disclosure-failure")
@@ -237,7 +237,7 @@ class WorkoutFlowTest {
         compose.runOnIdle { qa.model.advanceWorkoutTimer(Long.MAX_VALUE) }
         assertEquals(2, offline.queue().size)
         row(91001, 1).performScrollTo(); qa.capture("flow-checklist-saved-result")
-        compose.onNodeWithTag("workout-exercise-toggle-91001").performScrollTo().performClick()
+        qa.scrollTag("workout-exercise-toggle-91001").performClick()
         row(91001, 1).assertDoesNotExist()
         compose.onNodeWithTag("workout-exercise-toggle-91001").performClick()
         row(91001, 1).assertExists()

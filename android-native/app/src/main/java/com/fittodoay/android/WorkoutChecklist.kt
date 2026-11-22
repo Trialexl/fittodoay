@@ -40,7 +40,7 @@ private fun completedSets(exercise: JSONObject, logs: List<JSONObject>) = exerci
     }
 }
 
-@Composable fun WorkoutChecklist(model: AppModel, info: (JSONObject) -> Unit, chat: (JSONObject) -> Unit, delete: (JSONObject) -> Unit, edit: (String, Int, Int) -> Unit) {
+@Composable fun WorkoutChecklist(model: AppModel, info: (JSONObject) -> Unit, chat: (JSONObject) -> Unit, delete: (JSONObject) -> Unit, edit: (String, Int, Int) -> Unit, folderId: Int? = null) {
     // Keep nested disclosure choices outside the conditionally composed children.
     // Closing a program/day must not reset the exercises when it is reopened.
     var expansion by rememberSaveable(model.date) { mutableStateOf<Map<String, Boolean>>(emptyMap()) }
@@ -51,7 +51,7 @@ private fun completedSets(exercise: JSONObject, logs: List<JSONObject>) = exerci
     val pendingUnlogged = pendingExercise != null && logs.none {
         it.optInt("template_exercise") == pendingExercise && it.optInt("set_index") == pendingIndex
     }
-    model.plan.array("folders").forEach { folder ->
+    model.plan.array("folders").filter { folderId == null || it.optInt("id") == folderId }.forEach { folder ->
         key(model.date, folder.optInt("id")) {
             var open by rememberSaveable { mutableStateOf(true) }
             val folderExercises = folder.array("templates").flatMap { it.array("exercises") }.filter { it.optBoolean("is_active", true) }
@@ -63,7 +63,7 @@ private fun completedSets(exercise: JSONObject, logs: List<JSONObject>) = exerci
             Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.weight(1f)) { Disclosure(folder.text("name"), "", open, "workout-folder-toggle-${folder.optInt("id")}", program = true) { open = !open } }
-                    OutlinedButton(onClick = { chat(folder) }, enabled = !model.busy, shape = RoundedCornerShape(9.dp), contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp), modifier = Modifier.heightIn(min = 36.dp)) { Text("✧ AI", style = MaterialTheme.typography.labelSmall) }
+                    OutlinedButton(onClick = { chat(folder) }, enabled = !model.chatBusy, shape = RoundedCornerShape(9.dp), contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp), modifier = Modifier.heightIn(min = 36.dp)) { Text("✧ AI", style = MaterialTheme.typography.labelSmall) }
                     IconButton(onClick = { edit("folders", folder.getInt("id"), 0) }, Modifier.size(40.dp), enabled = !model.busy) { Icon(Icons.Outlined.Edit, "Редактировать программу", Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary) }
                 }
                 if (open) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)

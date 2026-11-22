@@ -2,9 +2,17 @@ package com.fittodoay.android
 
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.*
+import androidx.compose.ui.platform.testTag
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.window.DialogWindowProvider
+import androidx.core.view.WindowCompat
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.input.key.*
@@ -13,7 +21,11 @@ import androidx.compose.ui.window.DialogProperties
 import org.json.JSONObject
 
 @Composable fun AssistantScreen(model: AppModel) {
-    val saved = remember(model.preferences) { model.assistantAnswers() }
+    if (model.draftLoading) {
+        Page { ScreenHeading("", "Создать программу с помощником", ""); LinearProgressIndicator(Modifier.fillMaxWidth()) }
+        return
+    }
+    val saved = remember(model.token) { model.assistantAnswers() }
     var gender by remember(saved) { mutableStateOf(saved.text("gender", "male")) }
     var goal by remember(saved) { mutableStateOf(saved.text("goal", "strength")) }
     var age by remember(saved) { mutableStateOf(saved.text("age", "30")) }
@@ -92,25 +104,62 @@ import org.json.JSONObject
 @Composable fun ChatDialog(model: AppModel, dismiss: () -> Unit) {
     var exerciseInfo by remember { mutableStateOf<JSONObject?>(null) }
     var history by remember { mutableStateOf(false) }
+    if (model.draftLoading) {
+        Dialog(onDismissRequest = dismiss) { Surface(shape = MaterialTheme.shapes.large) {
+            Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text("Открываем диалог…"); LinearProgressIndicator(Modifier.fillMaxWidth()); TextButton(onClick = dismiss) { Text("Закрыть") }
+            }
+        } }
+        return
+    }
     var input by rememberSaveable(model.chatProgram, stateSaver = androidx.compose.ui.text.input.TextFieldValue.Saver) {
         mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(model.chatDraft()))
     }
     LaunchedEffect(input.text, model.chatProgram) { model.saveChatDraft(input.text) }
+    var followLatest by remember { mutableStateOf(true) }
+    var autoScrolling by remember { mutableStateOf(false) }
     fun submitMessage() {
+        followLatest = true
         val draft = input.text.trim()
         model.send(draft) { if (input.text.trim() == draft) input = androidx.compose.ui.text.input.TextFieldValue("") }
     }
-    val scroll = rememberScrollState()
-    LaunchedEffect(model.messages.size, model.busy) { scroll.animateScrollTo(scroll.maxValue) }
-    Dialog(onDismissRequest = dismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+    val scroll = rememberLazyListState()
+    LaunchedEffect(scroll) {
+        snapshotFlow { Triple(scroll.isScrollInProgress, scroll.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0, scroll.layoutInfo.totalItemsCount) }
+            .collect { (scrolling, last, count) -> if (scrolling && !autoScrolling) followLatest = last >= count - 2 }
+    }
+    var visibleThread by remember { mutableStateOf<Int?>(null) }
+    LaunchedEffect(model.threadId, model.messages.size) {
+        val changedThread = visibleThread != model.threadId
+        if (changedThread) { visibleThread = model.threadId; followLatest = true }
+        if (followLatest && model.messages.isNotEmpty()) {
+            autoScrolling = true
+            try {
+                if (changedThread) scroll.scrollToItem(model.messages.lastIndex)
+                else scroll.animateScrollToItem(model.messages.lastIndex)
+            } finally { autoScrolling = false }
+        }
+    }
+    Dialog(onDismissRequest = dismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        val imeVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+        val dialogView = LocalView.current
+        val lightBars = MaterialTheme.colorScheme.surface.luminance() > .5f
+        SideEffect {
+            (dialogView.parent as? DialogWindowProvider)?.window?.let { window ->
+                WindowCompat.getInsetsController(window, dialogView).apply {
+                    isAppearanceLightStatusBars = lightBars; isAppearanceLightNavigationBars = lightBars
+                }
+            }
+        }
         Surface(Modifier.fillMaxSize()) {
-            Column(Modifier.fillMaxSize().imePadding().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Box(Modifier.fillMaxSize().systemBarsPadding().imePadding(), contentAlignment = Alignment.TopCenter) {
+            Column(Modifier.widthIn(max = 840.dp).fillMaxSize().padding(horizontal = 16.dp, vertical = if (imeVisible) 8.dp else 20.dp), verticalArrangement = Arrangement.spacedBy(if (imeVisible) 6.dp else 12.dp)) {
                 Row { Text("AI-помощник", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge); TextButton(onClick = dismiss) { Text("Закрыть") } }
                 if (model.chatThreads.size > 1) {
-                    TextButton(onClick = { history = !history }, enabled = !model.busy) { Text("История диалогов (${model.chatThreads.size})") }
-                    if (history) Column(Modifier.heightIn(max = 180.dp).verticalScroll(rememberScrollState())) {
-                        model.chatThreads.forEach { thread ->
-                            TextButton(onClick = { model.selectChat(thread); history = false }, enabled = !model.busy) {
+                    TextButton(onClick = { history = !history }, enabled = !model.chatBusy) { Text("История диалогов (${model.chatThreads.size})") }
+                    if (history) LazyColumn(Modifier.heightIn(max = 180.dp)) {
+                        items(model.chatThreads, key = { it.getInt("id") }) { thread ->
+                            TextButton(onClick = { model.selectChat(thread); history = false }, enabled = !model.chatBusy) {
                                 Text("${thread.text("title")} · ${thread.text("created_at").take(10)} · #${thread.getInt("id")}" + if (model.threadId == thread.getInt("id")) " ✓" else "")
                             }
                         }
@@ -118,13 +167,16 @@ import org.json.JSONObject
                 }
                 model.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 model.notice?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
-                Column(Modifier.weight(1f).verticalScroll(scroll), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    if (model.messages.isEmpty()) Text("Задайте вопрос или опишите, что хотите изменить в программе.")
-                    model.messages.forEach { message ->
-                        Card(colors = CardDefaults.cardColors(containerColor = if (message.text("role") == "user") MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant)) {
-                            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text(if (message.text("role") == "user") "Вы" else "Помощник", style = MaterialTheme.typography.labelLarge)
-                                Text(message.text("content"))
+                LazyColumn(Modifier.weight(1f).fillMaxWidth().testTag("chat-messages"), state = scroll,
+                    verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(vertical = 8.dp)) {
+                    if (model.messages.isEmpty()) item { Text("Задайте вопрос или опишите, что хотите изменить в программе.") }
+                    itemsIndexed(model.messages, key = { index, message -> message.text("id").ifBlank { "message-$index" } }, contentType = { _, _ -> "message" }) { _, message ->
+                        val userMessage = message.text("role") == "user"
+                        Column(Modifier.fillMaxWidth(), horizontalAlignment = if (userMessage) Alignment.End else Alignment.Start) {
+                        Card(modifier = Modifier.fillMaxWidth(if (userMessage) .92f else 1f), colors = CardDefaults.cardColors(containerColor = if (message.text("role") == "user") MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant, contentColor = MaterialTheme.colorScheme.onSurface)) {
+                            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text(if (userMessage) "Вы" else "Помощник", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(message.text("content"), style = MaterialTheme.typography.bodyMedium)
                                 val actions = message.array("actions")
                                 val mentioned = model.chatReferences.mapNotNull { reference ->
                                     val source = reference.optJSONObject("exercise") ?: reference.optJSONObject("custom_exercise")
@@ -148,28 +200,32 @@ import org.json.JSONObject
                                         Text("$title: ${action.text("exercise_name", action.text("day_name"))}", style = MaterialTheme.typography.bodyMedium)
                                         listOf("sets" to "Подходы", "reps" to "Повторы", "weight" to "Вес", "time" to "Время", "rest" to "Отдых").filter { !action.isNull(it.first) }.forEach { (key, label) -> Text("$label: ${action.text(key)}") }
                                     }
-                                    Action("Применить изменения", !model.busy) { model.proposal(message.getInt("id"), true) }
-                                    TextButton(onClick = { model.proposal(message.getInt("id"), false) }, enabled = !model.busy) { Text("Отклонить") }
+                                    Action("Применить изменения", !model.chatBusy) { model.proposal(message.getInt("id"), true) }
+                                    TextButton(onClick = { model.proposal(message.getInt("id"), false) }, enabled = !model.chatBusy) { Text("Отклонить") }
                                 } else if (message.text("proposal_status") in listOf("applied", "cancelled")) Text(if (message.text("proposal_status") == "applied") "Изменения применены" else "Предложение отклонено")
                             }
                         }
+                        }
                     }
                 }
-                if (model.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-                OutlinedTextField(input, { input = it }, Modifier.fillMaxWidth().onPreviewKeyEvent { event ->
+                Box(Modifier.fillMaxWidth().height(3.dp)) { if (model.chatBusy) LinearProgressIndicator(Modifier.fillMaxWidth()) }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Bottom) {
+                OutlinedTextField(input, { input = it }, Modifier.weight(1f).onPreviewKeyEvent { event ->
                     if (event.type == KeyEventType.KeyDown && event.key == Key.Enter) {
                         if (event.isShiftPressed) {
                             val start = input.selection.min; val end = input.selection.max
                             input = androidx.compose.ui.text.input.TextFieldValue(input.text.replaceRange(start, end, "\n"), androidx.compose.ui.text.TextRange(start + 1))
-                        } else if (!model.busy && model.threadId != null && input.text.isNotBlank()) submitMessage()
+                        } else if (!model.chatBusy && model.threadId != null && input.text.isNotBlank()) submitMessage()
                         true
                     } else false
-                }, label = { Text("Сообщение") }, maxLines = 5,
+                }, label = { Text("Сообщение") }, textStyle = MaterialTheme.typography.bodyMedium, maxLines = if (imeVisible) 3 else 5,
                     keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Send),
-                    keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSend = { if (!model.busy && model.threadId != null && input.text.isNotBlank()) submitMessage() }))
-                Action("Отправить", !model.busy && model.threadId != null && input.text.isNotBlank(), ::submitMessage)
+                    keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSend = { if (!model.chatBusy && model.threadId != null && input.text.isNotBlank()) submitMessage() }))
+                Button(onClick = ::submitMessage, enabled = !model.chatBusy && model.threadId != null && input.text.isNotBlank(), modifier = Modifier.heightIn(min = 56.dp), contentPadding = PaddingValues(horizontal = 12.dp)) { Text("Отправить", style = MaterialTheme.typography.labelMedium) }
+                }
             }
         }
+    }
     }
     exerciseInfo?.let { ExerciseInfo(it, model) { exerciseInfo = null } }
 }

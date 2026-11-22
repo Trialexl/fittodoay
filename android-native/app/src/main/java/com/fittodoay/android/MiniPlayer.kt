@@ -22,9 +22,10 @@ import androidx.compose.ui.unit.dp
 @Composable fun MiniPlayer(model: AppModel) {
     val audio = model.audio
     var playlist by remember { mutableStateOf(false) }
-    Surface(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp).testTag("mini-player"), shape = RoundedCornerShape(18.dp),
+    val compact = audio.trackId == null || model.workoutTimerActive
+    Surface(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = if (compact) 4.dp else 8.dp).testTag("mini-player"), shape = RoundedCornerShape(18.dp),
         color = MaterialTheme.colorScheme.surface, border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), shadowElevation = 0.dp) {
-        Column(Modifier.padding(horizontal = 10.dp, vertical = 4.dp)) {
+        Column(Modifier.padding(horizontal = 10.dp, vertical = if (compact) 0.dp else 4.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 FilledTonalIconButton(onClick = {
                     if (audio.trackId == null) model.tracks.firstOrNull()?.let { audio.play(it, model.tracks, model.token) } else audio.toggle()
@@ -40,8 +41,9 @@ import androidx.compose.ui.unit.dp
                 }
                 IconButton(onClick = { playlist = true }, modifier = Modifier.size(40.dp)) { Icon(Icons.Outlined.QueueMusic, "Плейлист", Modifier.size(20.dp)) }
             }
-            if (audio.durationMs > 0) MusicSeekBar(audio, Modifier.testTag("mini-music-seek"))
-            if (audio.durationMs > 0) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            if (audio.durationMs > 0 && compact) LinearProgressIndicator(progress = { (audio.positionMs.toFloat() / audio.durationMs).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth().height(2.dp))
+            if (audio.durationMs > 0 && !compact) MusicSeekBar(audio, Modifier.testTag("mini-music-seek"))
+            if (audio.durationMs > 0 && !compact) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(playbackTime(audio.positionMs), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(playbackTime(audio.durationMs), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }

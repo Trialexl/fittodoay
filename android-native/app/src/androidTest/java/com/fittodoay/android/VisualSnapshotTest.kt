@@ -76,10 +76,10 @@ class VisualSnapshotTest {
             reviewCalendar("light")
             qa.visible("Группы мышц").assertExists()
             qa.capture("design-muscle-widget$suffix")
-            compose.onNodeWithTag("body-weight-panel").performScrollTo()
+            qa.scrollTag("body-weight-panel")
             qa.capture("design-body-weight$suffix")
             val firstProgram = qa.model.plan.array("folders").first()
-            compose.onNodeWithTag("workout-program-${firstProgram.getInt("id")}").performScrollTo()
+            qa.scrollTag("workout-program-${firstProgram.getInt("id")}")
             qa.capture("density-main-checklist$suffix")
             compose.waitForIdle()
             qa.dismissNotice()
@@ -229,7 +229,8 @@ class VisualSnapshotTest {
             val template = qa.model.templates.first { it.array("template_exercises").isNotEmpty() }
             val folderId = template.getInt("folder")
             compose.onNodeWithTag("program-library").performScrollTo()
-            compose.onNodeWithTag("select-program-$folderId").performScrollTo().performClick()
+            compose.onNodeWithTag("program-library-list").performScrollToNode(hasTestTag("select-program-$folderId"))
+            compose.onNodeWithTag("select-program-$folderId").performClick()
             compose.waitForIdle()
             val programDay = compose.onNodeWithTag("program-day-${template.getInt("id")}")
             programDay.assertExists()
@@ -258,7 +259,7 @@ class VisualSnapshotTest {
             assertEquals(before, qa.model.plan.toString())
             qa.capture("compact-set-editor")
             compose.onNodeWithText("Отмена", substring = false).performClick()
-            compose.onNodeWithContentDescription("Открыть календарь тренировок").performScrollTo().performClick()
+            qa.visible(hasContentDescription("Открыть календарь тренировок"), "calendar button").performScrollTo().performClick()
             compose.onNodeWithTag("workout-calendar").assertIsDisplayed()
             qa.capture("calendar-dialog")
             compose.onNodeWithText("Закрыть", substring = false).performClick()
@@ -279,7 +280,7 @@ class VisualSnapshotTest {
             reviewCalendar("dark")
             qa.visible("Группы мышц").performScrollTo()
             qa.capture("design-dark-muscle-widget$suffix")
-            compose.onNodeWithTag("body-weight-panel").performScrollTo()
+            qa.scrollTag("body-weight-panel")
             qa.capture("design-dark-body-weight$suffix")
             qa.visible(hasContentDescription("Техника и описание"), "dark exercise information").performClick()
             qa.capture("design-dark-exercise-description$suffix")
@@ -300,7 +301,7 @@ class VisualSnapshotTest {
             // Keep deterministic clock control at the end: the remaining UI flow
             // uses actual touch events and the normal advancing animation clock.
             compose.runOnIdle { qa.model.screen = Screen.Workout; qa.model.preferences = JSONObject(qa.model.preferences.toString()).put("theme", "light") }
-            compose.onNodeWithTag("workout-program-${firstProgram.getInt("id")}").performScrollTo()
+            qa.scrollTag("workout-program-${firstProgram.getInt("id")}")
             compose.mainClock.autoAdvance = false
             try {
                 val panel = compose.onNodeWithTag("workout-program-${firstProgram.getInt("id")}")

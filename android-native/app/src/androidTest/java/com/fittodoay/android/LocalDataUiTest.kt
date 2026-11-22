@@ -86,7 +86,7 @@ class LocalDataUiTest {
                 Screen.Settings -> assertTrue(qa.model.profile.length() > 0)
                 Screen.Assistant -> {
                     compose.onNodeWithText("Проверьте программу", substring = false).assertExists()
-                    qa.visible("Изменить ответы").performClick()
+                    qa.visible("Изменить ответы").performClick(); qa.waitRequest()
                     assertNull(LocalDataStore(context, SessionStore(context).read()).read("local:preview"))
                 }
                 else -> Unit
@@ -94,7 +94,7 @@ class LocalDataUiTest {
         }
         qa.visible("Данные на устройстве").assertIsDisplayed()
         qa.visible("Обновить локальную копию").performClick()
-        compose.onNodeWithText("Нет подключения. Сохранённые данные доступны без интернета.", substring = false).assertExists()
+        compose.onNodeWithText("Локальная копия ожидает подключения", substring = false).assertExists()
         qa.capture("local-data-offline-storage-status")
         qa.navigate(Screen.Programs); qa.selectProgram(marker.getInt("program"))
         qa.visible(hasText("AI", substring = false) and hasAnyAncestor(hasTestTag("program-${marker.getInt("program")}")), "offline chat").performClick(); qa.waitRequest()

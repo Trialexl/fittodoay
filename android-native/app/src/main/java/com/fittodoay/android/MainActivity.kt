@@ -8,6 +8,7 @@ import androidx.compose.foundation.*
 import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
@@ -31,6 +32,7 @@ import org.json.JSONObject
 
 class MainActivity : ComponentActivity() {
     val model: AppModel by lazy(LazyThreadSafetyMode.NONE) { androidx.lifecycle.ViewModelProvider(this)[AppModel::class.java] }
+    override fun onStop() { model.flushDrafts(); super.onStop() }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent { FitApp(model) }
@@ -63,7 +65,7 @@ class MainActivity : ComponentActivity() {
     val accent = runCatching { Color(android.graphics.Color.parseColor(model.preferences.text("accent_color", "#a855f7"))) }
         .getOrDefault(Color(0xffa855f7))
     val scheme = fitColors(dark, accent, modern)
-    MaterialTheme(colorScheme = scheme, typography = FitTypography, shapes = Shapes(small = RoundedCornerShape(12.dp), medium = RoundedCornerShape(18.dp), large = RoundedCornerShape(24.dp), extraLarge = RoundedCornerShape(24.dp))) {
+    MaterialTheme(colorScheme = scheme, typography = FitTypography, shapes = FitShapes) {
         BoxWithConstraints {
         val wide = maxWidth >= 840.dp
         Scaffold(snackbarHost = { SnackbarHost(snackbar) },
@@ -76,19 +78,19 @@ class MainActivity : ComponentActivity() {
                     }
                 },
                     actions = { if (model.token.isNotEmpty()) {
-                        IconButton(onClick = { syncInfo = true }, enabled = model.pendingCount > 0) {
-                            Icon(if (model.workoutSync.error != null) Icons.Outlined.CloudOff else if (model.pendingCount > 0) Icons.Outlined.CloudUpload else Icons.Outlined.CloudDone,
-                                if (model.pendingCount > 0) "Сохранено на устройстве, ожидает отправки: ${model.pendingCount}" else "Все изменения отправлены", Modifier.size(18.dp))
+                        IconButton(onClick = { syncInfo = true }, enabled = model.pendingCount > 0 || model.usingLocalData) {
+                            Icon(if (model.workoutSync.error != null || model.usingLocalData) Icons.Outlined.CloudOff else if (model.pendingCount > 0) Icons.Outlined.CloudUpload else Icons.Outlined.CloudDone,
+                                if (model.pendingCount > 0) "Сохранено на устройстве, ожидает отправки: ${model.pendingCount}" else if (model.usingLocalData) "Показаны сохранённые данные" else "Все изменения отправлены", Modifier.size(18.dp))
                         }
                         Box {
-                            OutlinedButton(onClick = { menu = true }, enabled = !model.busy, shape = RoundedCornerShape(10.dp), contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp), modifier = Modifier.heightIn(min = 48.dp)) { Text("Ещё⌄", style = MaterialTheme.typography.bodySmall) }
+                            OutlinedButton(onClick = { menu = true }, shape = RoundedCornerShape(10.dp), contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp), modifier = Modifier.heightIn(min = 48.dp)) { Text("Ещё⌄", style = MaterialTheme.typography.bodySmall) }
                             DropdownMenu(menu, { menu = false }) {
                                 DropdownMenuItem(text = { Text("Профиль") }, onClick = { menu = false; model.navigate(Screen.Settings) }, modifier = Modifier.semantics { contentDescription = "Профиль" })
                                 DropdownMenuItem(text = { Text("Обновить") }, onClick = { menu = false; model.refresh() })
                             }
                         }
                         Spacer(Modifier.width(8.dp))
-                        OutlinedIconButton(onClick = { appearance = true }, enabled = !model.busy, shape = RoundedCornerShape(12.dp), modifier = Modifier.padding(end = 12.dp).size(48.dp)) { Icon(Icons.Outlined.Tune, "Настройки оформления", Modifier.size(18.dp)) }
+                        OutlinedIconButton(onClick = { appearance = true }, shape = RoundedCornerShape(12.dp), modifier = Modifier.padding(end = 12.dp).size(48.dp)) { Icon(Icons.Outlined.Tune, "Настройки оформления", Modifier.size(18.dp)) }
                         if (!modern) {
                             IconButton(onClick = { menu = true }, enabled = !model.busy) { Icon(Icons.Outlined.Menu, "Меню") }
                             DropdownMenu(menu, { menu = false }) {
@@ -120,7 +122,7 @@ class MainActivity : ComponentActivity() {
                     val icons = listOf(Icons.Outlined.Checklist, Icons.Outlined.FolderOpen, Icons.Outlined.Insights, Icons.Outlined.SmartDisplay, Icons.Outlined.AutoAwesome, Icons.Outlined.Person)
                     Screen.entries.forEachIndexed { index, screen ->
                         NavigationRailItem(selected = model.screen == screen, onClick = { model.navigate(screen) },
-                            enabled = !model.busy, modifier = Modifier.semantics { contentDescription = screen.title },
+                            modifier = Modifier.semantics { contentDescription = screen.title },
                             icon = { Icon(icons[index], null) }, label = { Text(screen.title, style = MaterialTheme.typography.labelMedium) })
                     }
                 }
@@ -149,14 +151,21 @@ class MainActivity : ComponentActivity() {
         }
         }
         if (syncInfo) AlertDialog(onDismissRequest = { syncInfo = false }, title = { Text("Синхронизация") },
-            text = { Text(model.workoutSync.error ?: "Результаты сохранены на устройстве. Ожидает отправки: ${model.pendingCount}.") },
-            confirmButton = { TextButton(onClick = { model.retryWorkoutSync(); syncInfo = false }) { Text("Повторить") } },
+            text = { Text(model.workoutSync.error ?: if (model.pendingCount > 0) "Результаты сохранены на устройстве. Ожидает отправки: ${model.pendingCount}." else "Показаны данные с устройства. После подключения обновите экран, чтобы получить изменения сервера.") },
+            confirmButton = { TextButton(onClick = { model.retryWorkoutSync(); model.refresh(); syncInfo = false }) { Text("Повторить") } },
             dismissButton = { TextButton(onClick = { syncInfo = false }) { Text("Закрыть") } })
         if (appearance) AppearanceDialog(model) { appearance = false }
         TimerDialogs(model)
     }
 }
 
+@Composable fun LazyPage(content: LazyListScope.() -> Unit) {
+    Box(Modifier.fillMaxSize(), contentAlignment = androidx.compose.ui.Alignment.TopCenter) {
+        LazyColumn(Modifier.widthIn(max = 960.dp).fillMaxSize().testTag("page-scroll"),
+            state = rememberLazyListState(), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp), content = content)
+    }
+}
 @Composable fun Page(content: @Composable ColumnScope.() -> Unit) {
     Box(Modifier.fillMaxSize(), contentAlignment = androidx.compose.ui.Alignment.TopCenter) {
         Column(Modifier.widthIn(max = 960.dp).fillMaxSize().testTag("page-scroll").verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 24.dp), verticalArrangement = Arrangement.spacedBy(20.dp), content = content)

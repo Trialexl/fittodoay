@@ -41,7 +41,7 @@ class QaHarness(val compose: AndroidComposeTestRule<ActivityScenarioRule<MainAct
         check(model.preferences.text("design_version") == "v2") { "Only V2 is in the active QA scope" }
     }
     fun waitRequest(allowError: Boolean = false) {
-        compose.waitForIdle(); compose.waitUntil(240_000) { !model.busy && !model.refreshing && model.workoutSaving == 0 }; compose.waitForIdle()
+        compose.waitForIdle(); compose.waitUntil(240_000) { !model.anyBusy && !model.draftLoading && !model.refreshing && model.workoutSaving == 0 }; compose.waitForIdle()
         if (!allowError) check(model.error == null) { model.error ?: "Request failed" }
     }
     fun dismissNotice() {
@@ -67,9 +67,11 @@ class QaHarness(val compose: AndroidComposeTestRule<ActivityScenarioRule<MainAct
         check(model.screen == Screen.Programs) { "Program picker requires the Programs screen" }
         check(model.folders.any { it.optInt("id") == id }) { "Requested QA program is absent from the loaded server response" }
         compose.onNodeWithTag("program-library").performScrollTo()
-        compose.onNodeWithTag("select-program-$id").performScrollTo().performClick()
+        compose.onNodeWithTag("program-library-list").performScrollToNode(hasTestTag("select-program-$id"))
+        compose.onNodeWithTag("select-program-$id").performClick()
         compose.waitForIdle()
     }
+    fun scrollTag(tag: String) = visible(hasTestTag(tag), tag).also { runCatching { it.performScrollTo() } }
     fun visible(text: String) = visible(hasText(text, substring = false), text)
     fun visible(matcher: SemanticsMatcher, label: String): SemanticsNodeInteraction {
         fun candidate(): SemanticsNodeInteraction? {
@@ -78,6 +80,10 @@ class QaHarness(val compose: AndroidComposeTestRule<ActivityScenarioRule<MainAct
             return null
         }
         candidate()?.let { return it }
+        if (compose.onAllNodesWithTag("page-scroll").fetchSemanticsNodes().any { it.config.contains(SemanticsActions.ScrollToIndex) }) {
+            runCatching { compose.onNodeWithTag("page-scroll").performScrollToNode(matcher) }
+            candidate()?.let { return it }
+        }
         // Settings now embeds the same virtualized playlist as the full panel.
         if (compose.onAllNodesWithTag("playlist-list").fetchSemanticsNodes().isNotEmpty()) {
             runCatching { compose.onNodeWithTag("playlist-list").performScrollToNode(matcher) }

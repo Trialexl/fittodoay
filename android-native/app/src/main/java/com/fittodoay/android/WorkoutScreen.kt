@@ -10,6 +10,7 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material.icons.outlined.Check
@@ -44,8 +45,8 @@ import kotlin.math.roundToInt
     val total = model.plan.array("folders").sumOf { f -> f.array("templates").sumOf { t -> t.array("exercises").filter { it.optBoolean("is_active", true) }.sumOf { e -> e.array("sets").size } } }
     val modern = true
     val exercises = model.plan.array("folders").flatMap { it.array("templates") }.flatMap { it.array("exercises") }.filter { it.optBoolean("is_active", true) }
-    Page {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+    LazyPage {
+        item("workout-heading", "heading") { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(if (modern) "ТВОЙ ПЛАН НА ДЕНЬ" else "ДНЕВНОЙ ЧЕКЛИСТ", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (modern) Text("Тренировка", style = MaterialTheme.typography.headlineLarge)
@@ -55,29 +56,35 @@ import kotlin.math.roundToInt
                 Text(LocalDate.parse(model.date).format(java.time.format.DateTimeFormatter.ofPattern("d MMM", java.util.Locale.forLanguageTag("ru"))), style = MaterialTheme.typography.bodySmall)
             }
         }
-        if (modern && model.plan.optInt("id") > 0) WorkoutOverview(model, exercises, logs, total)
-        if (exercises.isNotEmpty() && (!modern || model.preferences.text("muscle_summary_view", "chips") != "chips")) FitCard {
+        }
+        if (modern && model.plan.optInt("id") > 0) item("overview", "overview") { WorkoutOverview(model, exercises, logs, total) }
+        if (exercises.isNotEmpty() && (!modern || model.preferences.text("muscle_summary_view", "chips") != "chips")) item("muscles", "muscles") { FitCard {
             MuscleSummary(exercises, logs, model.preferences.text("muscle_summary_view", "chips"))
         }
-        if (model.plan.optInt("id") > 0) BodyWeightCard(model, weight) { weight = it }
-        else Panel("Данные тренировки") {
+        }
+        if (model.plan.optInt("id") > 0) item("body-weight", "body-weight") { BodyWeightCard(model, weight) { weight = it } }
+        else item("workout-loading", "loading") { Panel("Данные тренировки") {
             if (model.refreshing) LinearProgressIndicator(Modifier.fillMaxWidth())
             Text(if (model.refreshing) "Загружаем тренировку…" else "Эта дата ещё не сохранена на устройстве.")
             if (!model.refreshing) TextButton(onClick = model::refresh) { Text("Повторить") }
         }
 
-        if (model.plan.optInt("id") > 0 && model.plan.array("folders").isEmpty() && !model.busy && !model.refreshing) Panel("День без тренировок") {
+        }
+        if (model.plan.optInt("id") > 0 && model.plan.array("folders").isEmpty() && !model.busy && !model.refreshing) item("empty-day", "empty") { Panel("День без тренировок") {
             Text("На эту дату нет активных тренировок. Выберите другую дату или настройте расписание программы.")
             Action("К программам") { model.navigate(Screen.Programs) }
         }
+        }
+        items(model.plan.array("folders"), key = { "${model.date}:program:${it.optInt("id")}" }, contentType = { "program" }) { folder ->
         WorkoutChecklist(model, info = { info = it }, chat = { folder ->
             chat = true; model.openChat(folder.getInt("id"), "post_workout_review", "Разбери тренировку за ${model.date}: оцени фактические результаты и предложи обоснованные изменения, если они доступны.")
         }, delete = { log -> if (log.optBoolean("queued")) model.cancelQueued(log) else deletePath = "/api/workouts/logs/${log.getInt("id")}/" },
             edit = { kind, id, template -> model.run {
                 val data = model.api.call("/api/programs/$kind/$id/") as JSONObject
                 editKind = kind; editTemplate = template; editData = data
-            } })
-        if (model.recommendations.isNotEmpty()) {
+            } }, folderId = folder.optInt("id"))
+        }
+        if (model.recommendations.isNotEmpty()) item("recommendations", "recommendations") { Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
             OutlinedButton(onClick = model::recommendations, Modifier.fillMaxWidth(), enabled = !model.busy) { Text("Рекомендации по прогрессии") }
             model.recommendations.forEach { folder ->
                 Panel(folder.text("folder_name")) {
@@ -97,6 +104,7 @@ import kotlin.math.roundToInt
                 }
             }
         }
+    }
     }
     info?.let { ExerciseInfo(it, model) { info = null } }
     if (calendar) WorkoutCalendar(model) { calendar = false }

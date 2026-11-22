@@ -242,9 +242,9 @@ switch ($Action) {
             if (-not (Test-Path -LiteralPath $QaCredentialsFile)) { throw "Cross-client QA credentials file is required: $QaCredentialsFile" }
             $qaCredentials = Get-Content -LiteralPath $QaCredentialsFile -Raw | ConvertFrom-Json
             if (-not $qaCredentials.email -or -not $qaCredentials.password) { throw 'QA credentials must contain email and password' }
-            $classes = @('OfflineStoreTest','LiveServerSmokeTest','NativeParityTest','AiParityTest','MediaParityTest','MediaComponentsTest','FluidWorkoutTest','ProgramCrudParityTest','RegistrationParityTest','CrossClientParityTest','AnalyticsParityTest','CalendarParityTest','CustomExerciseParityTest','TimedWorkoutParityTest','ArchiveLiveTest')
+            $classes = @('OfflineStoreTest','LiveServerSmokeTest','NativeParityTest','AiParityTest','MediaParityTest','MediaComponentsTest','FluidWorkoutTest','RefinementTest','ArchiveWorkerLiveTest','ProgramCrudParityTest','RegistrationParityTest','CrossClientParityTest','AnalyticsParityTest','CalendarParityTest','CustomExerciseParityTest','TimedWorkoutParityTest','ArchiveLiveTest')
             $instrumentArgs += @('-e','class',(($classes | ForEach-Object { "com.fittodoay.android.$_" }) -join ','))
-            foreach ($flag in @('liveServer','parity','aiParity','mediaParity','componentParity','fluidWorkout','programParity','registrationParity','crossClient','analyticsParity','calendarParity','customParity','crossRecord','timedParity','archiveLive')) { $instrumentArgs += @('-e',$flag,'true') }
+            foreach ($flag in @('liveServer','parity','aiParity','mediaParity','componentParity','fluidWorkout','refinement','archiveWorker','programParity','registrationParity','crossClient','analyticsParity','calendarParity','customParity','crossRecord','timedParity','archiveLive')) { $instrumentArgs += @('-e',$flag,'true') }
             $instrumentArgs += @('-e','qaEmail',$qaCredentials.email,'-e','qaPassword',$qaCredentials.password,'-e','qaExpectedWeight',[string]$qaCredentials.expectedWeight)
         }
         $instrumentArgs += 'com.fittodoay.android.test/androidx.test.runner.AndroidJUnitRunner'

@@ -15,7 +15,7 @@ import org.junit.Test
 
 class ApiTest {
     @Test fun cancelledNavigationDoesNotWaitForDelayedHttpHeaders() = runBlocking {
-        server.enqueue(MockResponse().setHeadersDelay(5, java.util.concurrent.TimeUnit.SECONDS).setBody("[]"))
+        server.enqueue(MockResponse().setSocketPolicy(okhttp3.mockwebserver.SocketPolicy.NO_RESPONSE))
         val request = launch { api.call("/api/programs/folders/") }
         assertNotNull(withContext(Dispatchers.IO) { server.takeRequest(3, java.util.concurrent.TimeUnit.SECONDS) })
         val start = System.nanoTime()

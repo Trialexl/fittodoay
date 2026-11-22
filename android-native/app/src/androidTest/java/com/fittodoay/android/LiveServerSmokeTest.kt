@@ -42,7 +42,7 @@ class LiveServerSmokeTest {
     }
     private fun waitForRequest() {
         compose.waitForIdle()
-        compose.waitUntil(200_000) { !model.busy && !model.refreshing && model.workoutSaving == 0 }
+        compose.waitUntil(200_000) { !model.anyBusy && !model.draftLoading && !model.refreshing && model.workoutSaving == 0 }
         compose.waitForIdle()
         assertNull("Native request failed: ${model.error}", model.error)
     }
@@ -85,7 +85,7 @@ class LiveServerSmokeTest {
             compose.onNodeWithText("Email").performTextInput(email)
             compose.onNodeWithText("Пароль").performTextInput(password)
             compose.onNodeWithText("Войти").performScrollTo().performClick()
-            compose.waitUntil(200_000) { model.token.isNotEmpty() && !model.busy && !model.refreshing && model.workoutSaving == 0 }
+            compose.waitUntil(200_000) { model.token.isNotEmpty() && !model.anyBusy && !model.draftLoading && !model.refreshing && model.workoutSaving == 0 }
             waitForRequest()
         } else {
             check(markerFile.exists()) { "An existing non-QA session is present; refusing to modify its data" }
@@ -177,7 +177,7 @@ class LiveServerSmokeTest {
         visibleNode(hasText("AI", substring = false) and hasAnyAncestor(hasTestTag("program-${folder.getInt("id")}")), "AI for QA program").performClick(); waitForRequest()
         compose.onNodeWithText("Сообщение", substring = false).performTextInput("Это проверка Android-клиента. Кратко перечисли упражнения программы. Не предлагай и не применяй изменения.")
         compose.onNodeWithText("Отправить").performClick()
-        compose.waitUntil(200_000) { !model.busy && !model.refreshing && model.workoutSaving == 0 }
+        compose.waitUntil(200_000) { !model.anyBusy && !model.draftLoading && !model.refreshing && model.workoutSaving == 0 }
         compose.waitForIdle()
         if (model.error == null) {
             assertTrue(model.messages.any { it.text("role") == "assistant" && it.text("content").isNotBlank() })

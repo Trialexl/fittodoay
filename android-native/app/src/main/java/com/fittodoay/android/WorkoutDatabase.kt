@@ -13,6 +13,14 @@ data class StoredWorkoutWrite(val account: String, val key: String, val position
 @Entity(tableName = "workout_imports")
 data class ImportedWorkoutAccount(@PrimaryKey val account: String)
 
+@Entity(tableName = "local_drafts", primaryKeys = ["account", "key"])
+data class StoredLocalDraft(val account: String, val key: String, val json: String)
+
+@Dao interface LocalDraftDao {
+    @Query("SELECT * FROM local_drafts WHERE account=:account") fun all(account: String): List<StoredLocalDraft>
+    @Upsert fun put(drafts: List<StoredLocalDraft>)
+}
+
 @Dao interface WorkoutDao {
     @Query("SELECT json FROM workout_plans WHERE account=:account AND date=:date") fun plan(account: String, date: String): String?
     @Upsert fun cache(plan: StoredWorkoutPlan)
@@ -24,9 +32,11 @@ data class ImportedWorkoutAccount(@PrimaryKey val account: String)
     @Insert fun imported(account: ImportedWorkoutAccount)
 }
 
-@Database(entities = [StoredWorkoutPlan::class, StoredWorkoutWrite::class, ImportedWorkoutAccount::class], version = 1, exportSchema = true)
+@Database(entities = [StoredWorkoutPlan::class, StoredWorkoutWrite::class, ImportedWorkoutAccount::class, StoredLocalDraft::class], version = 2,
+    autoMigrations = [AutoMigration(from = 1, to = 2)], exportSchema = true)
 abstract class WorkoutDatabase : RoomDatabase() {
     abstract fun workouts(): WorkoutDao
+    abstract fun drafts(): LocalDraftDao
     companion object {
         @Volatile private var instance: WorkoutDatabase? = null
         fun get(context: Context): WorkoutDatabase = instance ?: synchronized(this) {

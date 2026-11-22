@@ -15,11 +15,11 @@ class LocalMirror(context: Context, token: String) {
     private val data = LocalDataStore(context, token)
     private val media = LocalMediaStore(context, token)
     private val remote = Api { token }
-    suspend fun synchronize(progress: (String) -> Unit): JSONObject = withContext(Dispatchers.IO) {
+    suspend fun synchronize(accountActive: () -> Boolean = { true }, progress: suspend (String) -> Unit): JSONObject = withContext(Dispatchers.IO) {
         val failures = JSONArray()
         suspend fun fetch(path: String): Any? {
             coroutineContext.ensureActive()
-            for (attempt in 0..2) {
+            check(accountActive()) { "Аккаунт изменён" }
             return try {
                 val first = remote.all(path)
                 first.also { data.write(path, it) }
@@ -27,13 +27,10 @@ class LocalMirror(context: Context, token: String) {
             catch (error: Exception) {
                 if (error is kotlinx.coroutines.CancellationException) throw error
                 if (error is ApiException && error.status == 401) throw error
-                if (isTransientLocalFailure(error) && attempt < 2) { kotlinx.coroutines.delay(500L * (attempt + 1)); continue }
                 failures.put(obj("path" to path, "error" to (error.message ?: error.javaClass.simpleName)))
                 if (isTransientLocalFailure(error) || error is LocalStorageException) throw error
                 null
             }
-            }
-            error("Unreachable")
         }
         progress("Профиль, программы и каталог")
         for (path in listOf("/api/profile/", "/api/profile/preferences/", "/api/programs/folders/", "/api/programs/templates/",
@@ -61,6 +58,7 @@ class LocalMirror(context: Context, token: String) {
         for (thread in allThreads) fetch("/api/llm-agent/threads/${thread.getInt("id")}/messages/")
         for (review in data.read("/api/technique-reviews/")?.rows().orEmpty()) {
             coroutineContext.ensureActive()
+            check(accountActive()) { "Аккаунт изменён" }
             try { media.downloadReviewVideo(review) } catch (error: Exception) {
                 if (error is kotlinx.coroutines.CancellationException) throw error
                 failures.put(obj("resource" to "technique-video:${review.getInt("id")}", "error" to (error.message ?: "Ошибка загрузки видео")))
@@ -76,7 +74,8 @@ class LocalMirror(context: Context, token: String) {
         val images = catalog.flatMap { it.array("images") }.map { exerciseImageUrl(it.text("path")) }.distinct()
         for ((index, image) in images.withIndex()) {
             coroutineContext.ensureActive()
-            progress("Изображения упражнений: ${index + 1}/${images.size}")
+            check(accountActive()) { "Аккаунт изменён" }
+            if (index % 25 == 0 || index == images.lastIndex) progress("Изображения упражнений: ${index + 1}/${images.size}")
             try { media.image(image) } catch (error: Exception) {
                 if (error is kotlinx.coroutines.CancellationException) throw error
                 failures.put(obj("resource" to URI(image).path, "error" to (error.message ?: "Ошибка загрузки")))

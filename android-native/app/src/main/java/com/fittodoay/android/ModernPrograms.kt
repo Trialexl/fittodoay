@@ -2,6 +2,7 @@ package com.fittodoay.android
 
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
@@ -26,10 +27,15 @@ import org.json.JSONObject
             Text(model.folders.size.toString(), style = MaterialTheme.typography.bodySmall)
         }
         val largeFont = androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.2f
-        val entries: @Composable () -> Unit = {
-            model.folders.forEach { folder ->
+        val libraryState = rememberLazyListState()
+        LaunchedEffect(selectedId) {
+            val index = model.folders.indexOfFirst { it.optInt("id") == selectedId }
+            if (index >= 0 && libraryState.layoutInfo.visibleItemsInfo.none { it.index == index }) libraryState.animateScrollToItem(index)
+        }
+        LazyRow(state = libraryState, modifier = Modifier.fillMaxWidth().testTag("program-library-list"), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            items(model.folders, key = { it.getInt("id") }) { folder ->
                 val selected = selectedId == folder.optInt("id")
-                Surface(onClick = { select(folder.getInt("id")) }, modifier = (if (largeFont) Modifier.fillMaxWidth() else Modifier.width(166.dp)).heightIn(min = 78.dp).testTag("select-program-${folder.getInt("id")}"),
+                Surface(onClick = { select(folder.getInt("id")) }, modifier = Modifier.width(if (largeFont) 240.dp else 166.dp).heightIn(min = 78.dp).testTag("select-program-${folder.getInt("id")}"),
                     shape = RoundedCornerShape(11.dp), color = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = .06f) else MaterialTheme.colorScheme.surface,
                     border = BorderStroke(1.dp, if (selected) MaterialTheme.colorScheme.primary.copy(alpha = .2f) else Color.Transparent)) {
                     Row(Modifier.padding(horizontal = 10.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -46,8 +52,6 @@ import org.json.JSONObject
                 }
             }
         }
-        if (largeFont) Column(verticalArrangement = Arrangement.spacedBy(6.dp)) { entries() }
-        else Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) { entries() }
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         TextButton(onClick = create, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -63,7 +67,7 @@ import org.json.JSONObject
     Column(Modifier.fillMaxWidth().testTag("program-${folder.getInt("id")}"), verticalArrangement = Arrangement.spacedBy(18.dp)) {
         Text(folder.text("name"), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.clickable(onClick = editFolder))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
-            OutlinedButton(onClick = chat, enabled = !model.busy, shape = RoundedCornerShape(10.dp)) {
+            OutlinedButton(onClick = chat, enabled = !model.chatBusy, shape = RoundedCornerShape(10.dp)) {
                 Icon(Icons.Outlined.AutoAwesome, null, Modifier.size(14.dp)); Spacer(Modifier.width(6.dp)); Text("AI")
             }
             IconButton(onClick = addDay, modifier = Modifier.semantics { contentDescription = "Добавить день" }) { Icon(Icons.Outlined.Add, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary) }

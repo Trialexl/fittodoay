@@ -31,7 +31,7 @@ class NativeParityTest {
         QaHarness(compose).also { it.model = model; it.ensureV2() }
         compose.runOnIdle { model.restUntil = 0; model.executionUntil = 0 }
     }
-    private fun waitRequest() { compose.waitForIdle(); compose.waitUntil(200_000) { !model.busy && !model.refreshing && model.workoutSaving == 0 }; compose.waitForIdle(); assertNull(model.error, model.error) }
+    private fun waitRequest() { compose.waitForIdle(); compose.waitUntil(200_000) { !model.anyBusy && !model.draftLoading && !model.refreshing && model.workoutSaving == 0 }; compose.waitForIdle(); assertNull(model.error, model.error) }
     private fun navigate(screen: Screen) {
         check(model.preferences.text("design_version") == "v2")
         if (screen == Screen.Settings) compose.onNodeWithText("Ещё⌄").performClick()
@@ -180,7 +180,7 @@ class NativeParityTest {
         val previous = model.plan.getJSONObject("weigh_in").getDouble("weight_kg")
         try {
             network(false)
-            compose.onNode(hasContentDescription("Вес, кг") and hasAnyAncestor(hasTestTag("body-weight-panel"))).performScrollTo().performTextReplacement("81,1")
+            QaHarness(compose).visible(hasContentDescription("Вес, кг") and hasAnyAncestor(hasTestTag("body-weight-panel")), "body weight").performScrollTo().performTextReplacement("81,1")
             QaHarness(compose).visible(hasContentDescription("Сохранить вес"), "save weight").performClick(); waitRequest()
             assertTrue(model.pendingCount > 0)
             compose.runOnIdle { compose.activity.viewModelStore.clear() }; compose.activityRule.scenario.recreate()
@@ -190,7 +190,7 @@ class NativeParityTest {
             if (model.date != date) { compose.runOnIdle { model.date = date; model.refresh() }; waitRequest() }
             assertEquals(81.1, model.plan.getJSONObject("weigh_in").getDouble("weight_kg"), .001)
             network(true); compose.runOnIdle { model.refresh() }; waitRequest()
-            compose.waitUntil(180_000) { model.pendingCount == 0 && !model.busy && !model.refreshing && model.workoutSaving == 0 }
+            compose.waitUntil(180_000) { model.pendingCount == 0 && !model.anyBusy && !model.draftLoading && !model.refreshing && model.workoutSaving == 0 }
             val saved = normalizePlan(api.call("/api/workouts/plan/?date=$date") as JSONObject)
             assertEquals(81.1, saved.getJSONObject("weigh_in").getDouble("weight_kg"), .001)
             val rows = api.call("/api/analytics/body-weight/?start=$date&end=$date").rows().filter { it.text("date") == date && !it.isNull("weight_kg") }
@@ -219,7 +219,7 @@ class NativeParityTest {
             compose.runOnIdle { model = compose.activity.model }; waitRequest()
             assertTrue(model.pendingCount > 0); capture("offline-restored")
             network(true); compose.runOnIdle { model.refresh() }; waitRequest()
-            compose.waitUntil(180_000) { model.pendingCount == 0 && !model.busy && !model.refreshing && model.workoutSaving == 0 }
+            compose.waitUntil(180_000) { model.pendingCount == 0 && !model.anyBusy && !model.draftLoading && !model.refreshing && model.workoutSaving == 0 }
             val after = normalizePlan(api.call("/api/workouts/plan/?date=${model.date}") as JSONObject)
             assertEquals(initial.array("logs").size, after.array("logs").size)
             assertEquals(11, after.array("logs").first { it.optInt("id") == existing.optInt("id") }.getInt("actual_reps"))
