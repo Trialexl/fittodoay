@@ -32,5 +32,15 @@ fun stackedTrendValues(values: List<List<Double>>): List<List<Double>> = values.
 val trendStyles = listOf("line" to "Линия", "area" to "Площадь", "stacked" to "Сложение", "columns" to "Столбцы", "heatmap" to "Тепло", "pie" to "Круг", "radar" to "Радар")
 
 @Composable fun TrendChart(lines: List<TrendLine>, style: String) {
-    MetricPlot(lines, style, "trend-chart-$style", zero = style != "line")
+    val monthlyRadar = usesMonthlyRadar(lines, style)
+    MetricPlot(if (monthlyRadar) monthlyRadarLines(lines) else lines, style, "trend-chart-$style",
+        label = if (monthlyRadar) "Средняя нагрузка по месяцам" else "Нагрузка", zero = style != "line", monthLabels = monthlyRadar)
+}
+fun usesMonthlyRadar(lines: List<TrendLine>, style: String) = style == "radar" && lines.flatMap { it.points.keys }.distinct().size > 31
+
+/** A 365-spoke radar is unreadable. Preserve raw daily data for other charts. */
+fun monthlyRadarLines(lines: List<TrendLine>) = lines.map { line ->
+    line.copy(points = line.points.entries.groupBy { java.time.LocalDate.parse(it.key).withDayOfMonth(1).toString() }.toSortedMap().mapValues { (_, entries) ->
+        entries.mapNotNull { it.value?.takeIf(Double::isFinite) }.let { values -> if (values.isEmpty()) null else values.average() }
+    })
 }

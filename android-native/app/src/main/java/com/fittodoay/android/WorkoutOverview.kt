@@ -62,7 +62,7 @@ import kotlin.math.roundToInt
 
 @Composable private fun OverviewMetric(value: String, label: String) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        Text(value, style = MaterialTheme.typography.titleLarge)
         Text(label, style = MaterialTheme.typography.labelSmall, color = Color(0xffb6bfce))
     }
 }

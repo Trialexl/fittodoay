@@ -13,6 +13,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.*
+import androidx.compose.ui.Alignment
+import androidx.compose.runtime.saveable.rememberSaveable
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -214,10 +218,11 @@ private suspend fun prepareUpload(context: Context, uri: Uri, maxMb: Int): Pair<
     var health by remember(model.profile) { mutableStateOf(model.profile.text("health_limitations")) }
     var schedule by remember(model.profile) { mutableStateOf(model.profile.text("preferred_schedule_notes")) }
     var feedback by remember { mutableStateOf("") }
-    var customAccent by remember(model.preferences.text("accent_color")) { mutableStateOf(model.preferences.text("accent_color", "#a855f7")) }
+    var playlist by remember { mutableStateOf(false) }
     Page {
-        Panel("Оформление") { AppearanceControls(model) }
-        Panel("Ваш профиль") {
+        ScreenHeading("", "Настройки")
+        SettingsSection("Оформление", "Тема, акцентный цвет и сводка мышц") { AppearanceControls(model) }
+        SettingsSection("Ваш профиль", "Цель, параметры и расписание") {
             Choices("Цель", goal, goals) { goal = it }; Choices("Пол", gender, genders) { gender = it }; Choices("Опыт", level, levels) { level = it }
             Field("Возраст", age, { age = it }); Field("Вес, кг", weight, { weight = it }); Field("Рост, см", height, { height = it })
             Field("Оборудование", equipment, { equipment = it }); Field("Ограничения здоровья", health, { health = it }); Field("Пожелания к расписанию", schedule, { schedule = it })
@@ -226,24 +231,32 @@ private suspend fun prepareUpload(context: Context, uri: Uri, maxMb: Int): Pair<
                 model.notice = "Профиль сохранён"
             } }
         }
-        LocalDataStatus(model)
-        MusicPanel(model)
-        TimerPermissionsPanel()
-        McpPanel()
-        Panel("Обратная связь") {
+        SettingsSection("Данные и синхронизация", "Локальная копия и состояние загрузки") { LocalDataStatus(model) }
+        SettingsSection("Музыка", "Треки, папки и очередь воспроизведения") {
+            TextButton(onClick = { playlist = true }) { Icon(Icons.Outlined.QueueMusic, null); Spacer(Modifier.width(8.dp)); Text("Открыть плейлист") }
+        }
+        SettingsSection("Таймеры", "Сигналы и разрешения Android") { TimerPermissionsPanel() }
+        SettingsSection("Подключения", "Доступ через MCP") { McpPanel() }
+        SettingsSection("Обратная связь", "Отправить сообщение о приложении") {
             OutlinedTextField(feedback, { feedback = it }, Modifier.fillMaxWidth(), label = { Text("Сообщение") }, minLines = 3)
             Action("Отправить", !model.busy && feedback.isNotBlank()) { model.run { model.api.call("/api/feedback/", "POST", obj("message" to feedback)); feedback = ""; model.notice = "Сообщение отправлено" } }
         }
-        Text("Сервер: ${BuildConfig.SERVER_URL}", style = MaterialTheme.typography.labelSmall)
+        Text("fitTODOay ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         OutlinedButton(onClick = model::logout, Modifier.fillMaxWidth(), enabled = !model.busy) { Text("Выйти") }
     }
+    if (playlist) PlaylistSheet(model) { playlist = false }
 }
 
-@Composable private fun MusicPanel(model: AppModel) {
-    Panel("Музыка") {
-        UploadButton(model, "Загрузить MP3", "audio/*", "/api/workouts/music/tracks/upload/", "file", 130)
-        MusicBatchUploadButton(model)
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-        PlaylistContent(model, scroll = true, modifier = Modifier.height(520.dp))
+@Composable private fun SettingsSection(title: String, subtitle: String, content: @Composable ColumnScope.() -> Unit) {
+    var expanded by rememberSaveable(title) { mutableStateOf(false) }
+    FitCard(padding = 14.dp) {
+        Row(Modifier.fillMaxWidth().clickable { expanded = !expanded }.heightIn(min = 48.dp).testTag("settings-$title"), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(title, style = MaterialTheme.typography.titleSmall)
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Icon(if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        MotionDisclosure(expanded) { Column(verticalArrangement = Arrangement.spacedBy(12.dp), content = content) }
     }
 }

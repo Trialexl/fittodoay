@@ -35,6 +35,7 @@ class LocalDataUiTest {
         store.write("/api/profile/preferences/", JSONObject(fixture.getJSONObject("preferences").toString()).put("design_version", "v2"))
         for ((path, key) in listOf("/api/profile/" to "profile", "/api/programs/folders/" to "folders", "/api/programs/templates/" to "templates",
             "/api/analytics/days/" to "days", "/api/analytics/body-weight/" to "weights", "/api/analytics/exercises/" to "exerciseStats")) store.write(path, fixture.get(key))
+        for ((route, key) in listOf("days" to "days", "body-weight" to "weights", "exercises" to "exerciseStats")) store.write("/api/analytics/$route/?${analyticsRangeQuery("month")}", fixture.get(key))
         store.write("/api/workouts/plan/?date=$date", JSONObject(fixture.getJSONObject("plan").toString()).put("date", date))
         store.write("/api/analytics/program-trends/?range=month&granularity=day", fixture.getJSONObject("trends"))
         store.write("/api/technique-reviews/", JSONArray().put(obj("id" to 98765, "status" to "completed", "video_filename" to "qa-local.mp4", "summary" to "Локальный разбор QA", "result_json" to JSONObject())))
@@ -92,6 +93,7 @@ class LocalDataUiTest {
                 else -> Unit
             }
         }
+        qa.visible("Данные и синхронизация").performClick()
         qa.visible("Данные на устройстве").assertIsDisplayed()
         qa.visible("Обновить локальную копию").performClick()
         compose.onNodeWithText("Локальная копия ожидает подключения", substring = false).assertExists()

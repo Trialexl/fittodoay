@@ -3,6 +3,8 @@ package com.fittodoay.android
 import android.os.Bundle
 import androidx.activity.compose.BackHandler
 import androidx.activity.ComponentActivity
+import androidx.activity.enableEdgeToEdge
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.*
 import androidx.compose.animation.*
@@ -17,10 +19,18 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.hazeSource
+import androidx.compose.foundation.gestures.BringIntoViewSpec
+import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
-import androidx.core.view.WindowCompat
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -35,6 +45,7 @@ class MainActivity : ComponentActivity() {
     override fun onStop() { model.flushDrafts(); super.onStop() }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
         setContent { FitApp(model) }
     }
 }
@@ -43,8 +54,6 @@ class MainActivity : ComponentActivity() {
 @Composable fun FitApp(model: AppModel = viewModel()) {
     val dark = model.preferences.text("theme") == "dark"
     val modern = true
-    var menu by remember { mutableStateOf(false) }
-    var appearance by remember { mutableStateOf(false) }
     var syncInfo by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(model.notice) {
@@ -53,18 +62,24 @@ class MainActivity : ComponentActivity() {
         else snackbar.showSnackbar(message, withDismissAction = true)
     }
     val screenState = key(model.token) { rememberSaveableStateHolder() }
-    BackHandler(enabled = model.token.isNotEmpty() && model.screen != Screen.Workout && !appearance && !menu) { model.navigate(Screen.Workout) }
+    BackHandler(enabled = model.token.isNotEmpty() && model.screen != Screen.Workout) { model.navigate(Screen.Workout) }
     val view = LocalView.current
-    SideEffect {
-        val activity = view.context as? android.app.Activity
-        if (activity != null) WindowCompat.getInsetsController(activity.window, view).apply {
-            isAppearanceLightStatusBars = !dark
-            isAppearanceLightNavigationBars = !dark
-        }
-    }
     val accent = runCatching { Color(android.graphics.Color.parseColor(model.preferences.text("accent_color", "#a855f7"))) }
         .getOrDefault(Color(0xffa855f7))
     val scheme = fitColors(dark, accent, modern)
+    DisposableEffect(view, dark, scheme.background) {
+        (view.context as? ComponentActivity)?.apply {
+            // Compose's custom dark theme also needs to color the underlying window.
+            window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(scheme.background.toArgb()))
+            enableEdgeToEdge(
+                statusBarStyle = SystemBarStyle.auto(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT) { dark },
+                navigationBarStyle = SystemBarStyle.auto(scheme.surface.toArgb(), scheme.surface.toArgb()) { dark })
+        }
+        onDispose {}
+    }
+    val backdrop = remember { HazeState() }
+    var playerHeight by remember { mutableIntStateOf(0) }
+    val playerInset = with(LocalDensity.current) { playerHeight.toDp() }
     MaterialTheme(colorScheme = scheme, typography = FitTypography, shapes = FitShapes) {
         BoxWithConstraints {
         val wide = maxWidth >= 840.dp
@@ -82,20 +97,8 @@ class MainActivity : ComponentActivity() {
                             Icon(if (model.workoutSync.error != null || model.usingLocalData) Icons.Outlined.CloudOff else if (model.pendingCount > 0) Icons.Outlined.CloudUpload else Icons.Outlined.CloudDone,
                                 if (model.pendingCount > 0) "Сохранено на устройстве, ожидает отправки: ${model.pendingCount}" else if (model.usingLocalData) "Показаны сохранённые данные" else "Все изменения отправлены", Modifier.size(18.dp))
                         }
-                        Box {
-                            OutlinedButton(onClick = { menu = true }, shape = RoundedCornerShape(10.dp), contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp), modifier = Modifier.heightIn(min = 48.dp)) { Text("Ещё⌄", style = MaterialTheme.typography.bodySmall) }
-                            DropdownMenu(menu, { menu = false }) {
-                                DropdownMenuItem(text = { Text("Профиль") }, onClick = { menu = false; model.navigate(Screen.Settings) }, modifier = Modifier.semantics { contentDescription = "Профиль" })
-                                DropdownMenuItem(text = { Text("Обновить") }, onClick = { menu = false; model.refresh() })
-                            }
-                        }
-                        Spacer(Modifier.width(8.dp))
-                        OutlinedIconButton(onClick = { appearance = true }, shape = RoundedCornerShape(12.dp), modifier = Modifier.padding(end = 12.dp).size(48.dp)) { Icon(Icons.Outlined.Tune, "Настройки оформления", Modifier.size(18.dp)) }
-                        if (!modern) {
-                            IconButton(onClick = { menu = true }, enabled = !model.busy) { Icon(Icons.Outlined.Menu, "Меню") }
-                            DropdownMenu(menu, { menu = false }) {
-                                Screen.entries.forEach { target -> DropdownMenuItem(text = { Text(target.title) }, onClick = { menu = false; model.navigate(target) }, modifier = Modifier.semantics { contentDescription = target.title }) }
-                            }
+                        IconButton(onClick = { model.navigate(Screen.Settings) }, modifier = Modifier.padding(end = 8.dp).testTag("open-settings")) {
+                            Icon(Icons.Outlined.Settings, "Настройки", Modifier.size(22.dp))
                         }
                     } })
             },
@@ -103,8 +106,6 @@ class MainActivity : ComponentActivity() {
                 if (model.token.isNotEmpty()) {
                     val icons = listOf(Icons.Outlined.Checklist, Icons.Outlined.FolderOpen, Icons.Outlined.Insights, Icons.Outlined.SmartDisplay, Icons.Outlined.AutoAwesome, Icons.Outlined.Person)
                     Column(Modifier.navigationBarsPadding()) {
-                    MinimizedWorkoutTimer(model)
-                    MiniPlayer(model)
                     if (!wide) NavigationBar(containerColor = scheme.surface, tonalElevation = 0.dp, modifier = Modifier.heightIn(min = if (androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.2f) 96.dp else 72.dp).testTag("bottom-navigation"), windowInsets = WindowInsets(0, 0, 0, 0)) { Screen.entries.filter { it != Screen.Settings }.forEachIndexed { i, screen ->
                         NavigationBarItem(selected = screen == model.screen,
                             modifier = Modifier.semantics { contentDescription = screen.title },
@@ -120,14 +121,14 @@ class MainActivity : ComponentActivity() {
                 if (wide && model.token.isNotEmpty()) NavigationRail(
                     modifier = Modifier.fillMaxHeight().testTag("side-navigation"), containerColor = scheme.surface) {
                     val icons = listOf(Icons.Outlined.Checklist, Icons.Outlined.FolderOpen, Icons.Outlined.Insights, Icons.Outlined.SmartDisplay, Icons.Outlined.AutoAwesome, Icons.Outlined.Person)
-                    Screen.entries.forEachIndexed { index, screen ->
+                    Screen.entries.filter { it != Screen.Settings }.forEachIndexed { index, screen ->
                         NavigationRailItem(selected = model.screen == screen, onClick = { model.navigate(screen) },
                             modifier = Modifier.semantics { contentDescription = screen.title },
                             icon = { Icon(icons[index], null) }, label = { Text(screen.title, style = MaterialTheme.typography.labelMedium) })
                     }
                 }
             Column(Modifier.weight(1f).fillMaxHeight().imePadding()) {
-                Box(Modifier.fillMaxWidth().height(3.dp)) { if (model.busy || model.refreshing) LinearProgressIndicator(Modifier.fillMaxWidth()) }
+                Box(Modifier.fillMaxWidth().height(3.dp)) { if (model.busy) LinearProgressIndicator(Modifier.fillMaxWidth()) }
                 model.error?.let { message ->
                     Surface(color = MaterialTheme.colorScheme.errorContainer) {
                         Row(Modifier.fillMaxWidth().padding(12.dp)) {
@@ -136,7 +137,11 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                if (model.token.isEmpty()) AuthScreen(model) else AnimatedContent(targetState = model.screen, modifier = Modifier.weight(1f),
+                if (model.token.isEmpty()) AuthScreen(model) else Box(Modifier.weight(1f).fillMaxWidth()) {
+                CompositionLocalProvider(LocalPageBottomInset provides playerInset) {
+                PullToRefreshBox(isRefreshing = model.refreshing, onRefresh = { if (!model.refreshing) model.refresh() },
+                    modifier = Modifier.fillMaxSize().hazeSource(backdrop).testTag("pull-to-refresh")) {
+                AnimatedContent(targetState = model.screen, modifier = Modifier.fillMaxSize(),
                     transitionSpec = { (fadeIn(tween(180)) + slideInHorizontally(tween(180)) { it / 30 }) togetherWith fadeOut(tween(100)) }, label = "navigation") { destination ->
                     screenState.SaveableStateProvider(destination.name) { when (destination) {
                     Screen.Workout -> WorkoutScreen(model)
@@ -146,6 +151,14 @@ class MainActivity : ComponentActivity() {
                     Screen.Assistant -> AssistantScreen(model)
                     Screen.Settings -> SettingsScreen(model)
                 } } }
+                }
+                }
+                Column(Modifier.align(Alignment.BottomCenter).widthIn(max = 960.dp).fillMaxWidth()
+                    .onSizeChanged { playerHeight = it.height }.testTag("floating-player-dock")) {
+                    MinimizedWorkoutTimer(model)
+                    MiniPlayer(model, backdrop)
+                }
+                }
             }
         }
         }
@@ -154,26 +167,50 @@ class MainActivity : ComponentActivity() {
             text = { Text(model.workoutSync.error ?: if (model.pendingCount > 0) "Результаты сохранены на устройстве. Ожидает отправки: ${model.pendingCount}." else "Показаны данные с устройства. После подключения обновите экран, чтобы получить изменения сервера.") },
             confirmButton = { TextButton(onClick = { model.retryWorkoutSync(); model.refresh(); syncInfo = false }) { Text("Повторить") } },
             dismissButton = { TextButton(onClick = { syncInfo = false }) { Text("Закрыть") } })
-        if (appearance) AppearanceDialog(model) { appearance = false }
         TimerDialogs(model)
     }
 }
 
+val LocalPageBottomInset = compositionLocalOf { 0.dp }
+
+/** Foundation still owns scrolling; focus requests account for the floating dock. */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable private fun rememberPageFocusSpec(): BringIntoViewSpec {
+    val base = LocalBringIntoViewSpec.current
+    val bottom = with(LocalDensity.current) { LocalPageBottomInset.current.toPx() }
+    return remember(base, bottom) { object : BringIntoViewSpec {
+        override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float) =
+            base.calculateScrollDistance(offset, size, (containerSize - bottom).coerceAtLeast(1f))
+    } }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
 @Composable fun LazyPage(content: LazyListScope.() -> Unit) {
+    val focusSpec = rememberPageFocusSpec()
+    CompositionLocalProvider(LocalBringIntoViewSpec provides focusSpec) {
     Box(Modifier.fillMaxSize(), contentAlignment = androidx.compose.ui.Alignment.TopCenter) {
         LazyColumn(Modifier.widthIn(max = 960.dp).fillMaxSize().testTag("page-scroll"),
-            state = rememberLazyListState(), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 24.dp),
+            state = rememberLazyListState(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 24.dp + LocalPageBottomInset.current),
             verticalArrangement = Arrangement.spacedBy(20.dp), content = content)
     }
+    }
 }
+@OptIn(ExperimentalFoundationApi::class)
 @Composable fun Page(content: @Composable ColumnScope.() -> Unit) {
+    val base = LocalBringIntoViewSpec.current
+    val focusSpec = rememberPageFocusSpec()
+    CompositionLocalProvider(LocalBringIntoViewSpec provides focusSpec) {
     Box(Modifier.fillMaxSize(), contentAlignment = androidx.compose.ui.Alignment.TopCenter) {
-        Column(Modifier.widthIn(max = 960.dp).fillMaxSize().testTag("page-scroll").verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 24.dp), verticalArrangement = Arrangement.spacedBy(20.dp), content = content)
+        Column(Modifier.widthIn(max = 960.dp).fillMaxSize().testTag("page-scroll").verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 24.dp + LocalPageBottomInset.current), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+            // Nested horizontal lists use their own complete viewport.
+            CompositionLocalProvider(LocalBringIntoViewSpec provides base) { content() }
+        }
+    }
     }
 }
 @Composable fun Panel(title: String, modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
     FitCard(modifier) {
-            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(title, style = MaterialTheme.typography.titleMedium)
             content()
     }
 }

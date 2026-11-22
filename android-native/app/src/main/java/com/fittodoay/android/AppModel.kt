@@ -14,7 +14,7 @@ import java.time.LocalDate
 
 enum class Screen(val title: String) {
     Workout("Чеклист"), Programs("Программы"), Analytics("Аналитика"),
-    Technique("Техника"), Assistant("Помощник"), Settings("Профиль")
+    Technique("Техника"), Assistant("Помощник"), Settings("Настройки")
 }
 
 class AppModel @JvmOverloads constructor(application: Application, private val baseUrl: String = BuildConfig.SERVER_URL, private val networkOverride: (() -> Boolean)? = null, private val transportOverride: okhttp3.OkHttpClient? = null) : AndroidViewModel(application) {
@@ -94,6 +94,8 @@ class AppModel @JvmOverloads constructor(application: Application, private val b
     var workoutSync by mutableStateOf(WorkoutSyncState()); private set
     private var refreshJob: Job? = null
     private var refreshGeneration = 0L
+    private var analyticsShownRange = ""
+    private var analyticsShownGranularity = ""
     private var repositoryJob: Job? = null
     private var workoutSyncJob: Job? = null
     private val savingKeys = mutableSetOf<String>()
@@ -284,11 +286,19 @@ class AppModel @JvmOverloads constructor(application: Application, private val b
     fun navigate(to: Screen) { screen = to; refresh() }
     fun refresh() {
         if (token.isEmpty()) return
+        if (screen == Screen.Analytics) {
+            val periodKey = "$range:${LocalDate.now()}"
+            if (analyticsShownRange != periodKey) {
+                days = emptyList(); weights = emptyList(); exerciseStats = emptyList(); trends = JSONObject()
+                analyticsShownRange = periodKey
+            }
+            if (analyticsShownGranularity != granularity) { trends = JSONObject(); analyticsShownGranularity = granularity }
+        }
         if (screen == Screen.Workout && plan.text("date") != date) plan = JSONObject()
         val generation = ++refreshGeneration
         val target = screen; val requestedDate = date; val account = token
         refreshJob?.cancel()
-        refreshing = true; usingLocalData = false
+        refreshing = true; usingLocalData = false; error = null
         refreshJob = viewModelScope.launch {
             try { restoreLocalData(); load(target, requestedDate, generation) }
             catch (e: CancellationException) { throw e }
@@ -314,8 +324,9 @@ class AppModel @JvmOverloads constructor(application: Application, private val b
                     repo.acceptRemote(requestedDate, repo.revision(requestedDate), it)?.plan
                 })
                 Screen.Analytics -> {
-                    put("days", store.read("/api/analytics/days/")); put("weights", store.read("/api/analytics/body-weight/"))
-                    put("stats", store.read("/api/analytics/exercises/")); put("trends", store.read("/api/analytics/program-trends/?range=$range&granularity=$granularity"))
+                    val period = analyticsRangeQuery(range)
+                    put("days", store.read("/api/analytics/days/?$period")); put("weights", store.read("/api/analytics/body-weight/?$period"))
+                    put("stats", store.read("/api/analytics/exercises/?$period")); put("trends", store.read("/api/analytics/program-trends/?range=$range&granularity=$granularity"))
                 }
                 Screen.Technique -> put("reviews", store.read("/api/technique-reviews/"))
                 else -> Unit
@@ -380,8 +391,9 @@ class AppModel @JvmOverloads constructor(application: Application, private val b
                 catch (e: IOException) { if (e is ApiException && e.status == 401) throw e }
             }
             Screen.Analytics -> coroutineScope {
-                val d = async { api.call("/api/analytics/days/").rows() }; val w = async { api.call("/api/analytics/body-weight/").rows() }
-                val e = async { api.call("/api/analytics/exercises/").rows() }; val t = async { api.call("/api/analytics/program-trends/?range=$range&granularity=$granularity") as JSONObject }
+                val period = analyticsRangeQuery(range)
+                val d = async { api.call("/api/analytics/days/?$period").rows() }; val w = async { api.call("/api/analytics/body-weight/?$period").rows() }
+                val e = async { api.call("/api/analytics/exercises/?$period").rows() }; val t = async { api.call("/api/analytics/program-trends/?range=$range&granularity=$granularity") as JSONObject }
                 val f = async { api.call("/api/programs/folders/").rows() }
                 val rd = d.await(); val rw = w.await(); val re = e.await(); val rt = t.await(); val rf = f.await()
                 val queue = withContext(Dispatchers.IO) { offline().queue() }
@@ -625,6 +637,14 @@ class AppModel @JvmOverloads constructor(application: Application, private val b
         order.add(to, order.removeAt(from))
         api.call("/api/programs/template-exercises/reorder/", "POST", obj("template" to template.getInt("id"), "order" to JSONArray(order)))
         load()
+    }
+    fun saveDay(day: JSONObject, fields: JSONObject, order: List<Int>, saved: () -> Unit) = run {
+        val id = day.optInt("id").takeIf { it > 0 }
+        val originalOrder = day.array("template_exercises").map { it.getInt("id") }
+        require(order.size == originalOrder.size && order.toSet() == originalOrder.toSet()) { "Состав упражнений изменился. Откройте день заново." }
+        api.call("/api/programs/templates/" + (id?.let { "$it/" } ?: ""), if (id == null) "POST" else "PATCH", fields)
+        if (id != null && order != originalOrder) api.call("/api/programs/template-exercises/reorder/", "POST", obj("template" to id, "order" to JSONArray(order)))
+        saved(); load(); notice = "День сохранён"
     }
     private companion object { val timerLocks = java.util.concurrent.ConcurrentHashMap<String, Mutex>() }
 

@@ -46,6 +46,10 @@ import io.github.koalaplot.core.style.LineStyle
 import io.github.koalaplot.core.util.ExperimentalKoalaPlotApi
 import java.util.Locale
 import kotlin.math.*
+import androidx.compose.animation.animateContentSize
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 
 data class ChartDomain(val minimum: Double, val maximum: Double, val intervals: Int = 4)
 fun chartDomain(values: List<Double>, zero: Boolean): ChartDomain {
@@ -72,9 +76,10 @@ fun plotPointNumber(value: Double): String = String.format(Locale.forLanguageTag
 fun plotDate(date: String): String = runCatching { java.time.LocalDate.parse(date).format(java.time.format.DateTimeFormatter.ofPattern("dd.MM")) }.getOrDefault(date)
 
 /** Charts share data, colors and selection details; libraries own drawing and hit testing. */
-@OptIn(ExperimentalLayoutApi::class)
-@Composable fun MetricPlot(lines: List<TrendLine>, style: String, tag: String, label: String = "Нагрузка", zero: Boolean = true) {
+@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
+@Composable fun MetricPlot(lines: List<TrendLine>, style: String, tag: String, label: String = "Нагрузка", zero: Boolean = true, monthLabels: Boolean = false) {
     var focus by remember(lines) { mutableStateOf<String?>(null) }
+    var allSeries by remember { mutableStateOf(false) }
     val shown = lines.filter { focus == null || it.key == focus }
     val dates = shown.flatMap { it.points.keys }.distinct().sorted()
     if (dates.isEmpty() || shown.none { it.points.values.any { v -> v != null && v.isFinite() } }) {
@@ -102,7 +107,7 @@ fun plotDate(date: String): String = runCatching { java.time.LocalDate.parse(dat
             }
             when (style) {
                 "pie" -> DonutPlot(totals, colors, modifier) { selectedSeries = it; selected = 0 }
-                "radar" -> RadarPlot(dates, values, colors, modifier) { d, s -> selected = d; selectedSeries = s }
+                "radar" -> RadarPlot(dates, values, colors, modifier, monthLabels) { d, s -> selected = d; selectedSeries = s }
                 "heatmap" -> HeatmapPlot(shown, dates, colors, modifier) { d, s -> selected = d; selectedSeries = s }
                 else -> CartesianPlot(shown, dates, values, totals, colors, style, zero, modifier) { x ->
                     selected = if (period) 0 else x.coerceIn(dates.indices)
@@ -111,25 +116,45 @@ fun plotDate(date: String): String = runCatching { java.time.LocalDate.parse(dat
             }
         }
         // A stable detail area keeps text readable and accessible without obscuring the plot.
-        Column(Modifier.fillMaxWidth().heightIn(min = 58.dp).then(if (selected != null) Modifier.testTag("$tag-tooltip") else Modifier)
+        Column(Modifier.fillMaxWidth().animateContentSize(tween(180)).then(if (selected != null) Modifier.testTag("$tag-tooltip") else Modifier)
             .semantics { liveRegion = LiveRegionMode.Polite }, verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(description, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (selectedDate != null) {
                 val entries = if (style in listOf("columns", "pie", "heatmap", "radar")) listOf(selectedSeries) else shown.indices.toList()
-                entries.forEach { i ->
+                entries.take(4).forEach { i ->
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Box(Modifier.size(6.dp).background(colors[i], CircleShape))
                         Text(shown[i].label, Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         Text((if (period) totals[i] else shown[i].points[dates[selectedDate]])?.let(::plotPointNumber) ?: "Нет записи", style = MaterialTheme.typography.labelMedium)
                     }
                 }
+                if (entries.size > 4) TextButton(onClick = { allSeries = true }, contentPadding = PaddingValues(0.dp)) { Text("Все значения · ${entries.size}", style = MaterialTheme.typography.bodySmall) }
             }
         }
-        if (lines.size > 1) FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            lines.forEachIndexed { i, line ->
-                FilterChip(selected = focus == line.key, onClick = { focus = if (focus == line.key) null else line.key },
-                    label = { Text(line.label, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 230.dp), style = MaterialTheme.typography.labelSmall) },
-                    leadingIcon = { Box(Modifier.size(7.dp).background(palette[i % palette.size], CircleShape)) })
+        if (lines.size > 1) Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            FlowRow(Modifier.testTag("$tag-legend"), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                lines.take(3).forEachIndexed { i, line ->
+                    Row(Modifier.widthIn(max = 180.dp).clip(RoundedCornerShape(6.dp)).clickable { focus = if (focus == line.key) null else line.key }
+                        .semantics { this.selected = focus == line.key }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Box(Modifier.size(7.dp).background(palette[i % palette.size], CircleShape))
+                        Text(line.label, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall,
+                            color = if (focus == null || focus == line.key) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .5f))
+                    }
+                }
+            }
+            if (lines.size > 3) TextButton(onClick = { allSeries = true }, contentPadding = PaddingValues(0.dp)) { Text("Все серии · ${lines.size}", style = MaterialTheme.typography.bodySmall) }
+        }
+    }
+    if (allSeries) ModalBottomSheet(onDismissRequest = { allSeries = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        Text("Серии графика", Modifier.padding(horizontal = 20.dp, vertical = 8.dp), style = MaterialTheme.typography.titleMedium)
+        LazyColumn(Modifier.fillMaxWidth().heightIn(max = 480.dp).navigationBarsPadding()) {
+            item { TextButton(onClick = { focus = null; allSeries = false }, Modifier.padding(horizontal = 12.dp)) { Text("Показать все") } }
+            itemsIndexed(lines, key = { _, line -> line.key }) { index, line ->
+                ListItem(modifier = Modifier.clickable { focus = if (focus == line.key) null else line.key; allSeries = false },
+                    leadingContent = { Box(Modifier.size(8.dp).background(palette[index % palette.size], CircleShape)) },
+                    headlineContent = { Text(line.label, style = MaterialTheme.typography.bodyMedium) },
+                    supportingContent = { if (selectedDate != null) Text((if (period) line.points.values.filterNotNull().sum() else line.points[dates[selectedDate]])?.let(::plotPointNumber) ?: "Нет записи", style = MaterialTheme.typography.bodySmall) },
+                    trailingContent = { RadioButton(focus == line.key, null) })
             }
         }
     }
@@ -183,7 +208,9 @@ fun plotDate(date: String): String = runCatching { java.time.LocalDate.parse(dat
         valueFormatter = DefaultCartesianMarker.ValueFormatter { _, targets ->
             val x = targets.first().x.roundToInt()
             if (columns) lines.getOrNull(x)?.let { "${it.label}: ${plotPointNumber(totals[x])}" }.orEmpty()
-            else dates.getOrNull(x)?.let { date -> date + "\n" + lines.take(4).joinToString("\n") { line -> "${line.label}: ${line.points[date]?.let(::plotPointNumber) ?: "Нет записи"}" } }.orEmpty()
+            // Multi-series values have a dedicated readable area below the chart.
+            // Keep the library marker small enough to leave the plotted lines visible.
+            else dates.getOrNull(x)?.let { date -> if (lines.size > 1) date else date + "\n" + lines.joinToString("\n") { line -> "${line.label}: ${line.points[date]?.let(::plotPointNumber) ?: "Нет записи"}" } }.orEmpty()
         }, guideline = rememberAxisGuidelineComponent(fill = fill(MaterialTheme.colorScheme.primary)),
     )
     CartesianChartHost(
@@ -216,7 +243,7 @@ fun plotDate(date: String): String = runCatching { java.time.LocalDate.parse(dat
 }
 
 @OptIn(ExperimentalKoalaPlotApi::class)
-@Composable private fun RadarPlot(dates: List<String>, values: List<List<Double>>, colors: List<Color>, modifier: Modifier, select: (Int, Int) -> Unit) {
+@Composable private fun RadarPlot(dates: List<String>, values: List<List<Double>>, colors: List<Color>, modifier: Modifier, monthLabels: Boolean, select: (Int, Int) -> Unit) {
     val domain = chartDomain(values.flatten(), true)
     val grid = MaterialTheme.colorScheme.outlineVariant
     val centers = remember(dates, values) { mutableMapOf<Pair<Int, Int>, Offset>() }
@@ -230,7 +257,7 @@ fun plotDate(date: String): String = runCatching { java.time.LocalDate.parse(dat
     PolarGraph(radialAxisModel = rememberFloatRadialAxisModel((0..4).map { (domain.maximum * it / 4).toFloat() }),
         angularAxisModel = rememberCategoryAngularAxisModel(dates), modifier = interactions,
         radialAxisLabels = { Text(plotNumber(it.toDouble()), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) },
-        angularAxisLabels = { d -> if (dates.indexOf(d) % ceil(dates.size / 6.0).toInt().coerceAtLeast(1) == 0) Text(plotDate(d), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) },
+        angularAxisLabels = { d -> if (dates.indexOf(d) % ceil(dates.size / 6.0).toInt().coerceAtLeast(1) == 0) Text(if (monthLabels) java.time.LocalDate.parse(d).format(java.time.format.DateTimeFormatter.ofPattern("MM.yy")) else plotDate(d), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) },
         polarGraphProperties = PolarGraphDefaults.PolarGraphPropertyDefaults().copy(radialGridType = RadialGridType.LINES, radialAxisGridLineStyle = LineStyle(SolidColor(grid), strokeWidth = 1.dp), angularAxisGridLineStyle = LineStyle(SolidColor(grid.copy(alpha = .5f)), strokeWidth = 1.dp))) {
         values.forEachIndexed { s, series ->
             PolarPlotSeries(data = dates.indices.map { PolarPoint(series[it].toFloat(), dates[it]) },

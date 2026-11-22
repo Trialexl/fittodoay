@@ -30,7 +30,7 @@ class WorkoutFlowTest {
         compose.onNodeWithTag("workout-timer-screen").assertIsDisplayed()
     }
     private fun row(id: Int, index: Int) = compose.onNodeWithTag("set-row-$id-$index")
-    private fun clickSet(id: Int, index: Int) { qa.visible(hasText(if (id == 91012) "▷ Начать" else "+ Отметить", substring = false) and hasAnyAncestor(hasTestTag("set-row-$id-$index")), "set $id-$index").performScrollTo().performClick(); qa.waitRequest(allowError = true) }
+    private fun clickSet(id: Int, index: Int) { qa.visible(hasText(if (id == 91012) "▷ Начать" else "+ Отметить", substring = false) and hasAnyAncestor(hasTestTag("set-row-$id-$index")), "set $id-$index").performClick(); qa.waitRequest(allowError = true) }
     private fun recreate() {
         compose.runOnIdle { compose.activity.viewModelStore.clear() }
         compose.activityRule.scenario.recreate()
@@ -74,7 +74,7 @@ class WorkoutFlowTest {
     @Test fun nestedChecklistChoicesSurviveParentCollapseAndRecreation() {
         val folder = qa.model.plan.array("folders").first()
         val day = folder.array("templates").first()
-        fun toggle(tag: String) { compose.onNodeWithTag(tag).performScrollTo().performClick() }
+        fun toggle(tag: String) { qa.visible(hasTestTag(tag), tag).performClick() }
         val folderTag = "workout-folder-toggle-${folder.getInt("id") }"
         val dayTag = "workout-day-toggle-${day.getInt("id") }"
         toggle("workout-exercise-toggle-91001")
@@ -96,7 +96,7 @@ class WorkoutFlowTest {
     @Test fun completedSetUsesModalWithCancelSaveAndUndo() {
         clickSet(91001, 1)
         compose.onNodeWithText("Пропустить отдых", substring = false).performScrollTo().performClick(); qa.waitRequest()
-        fun edit() { compose.onNode(hasContentDescription("Изменить подход 1") and hasAnyAncestor(hasTestTag("set-row-91001-1"))).performScrollTo().performClick() }
+        fun edit() { qa.visible(hasContentDescription("Изменить подход 1") and hasAnyAncestor(hasTestTag("set-row-91001-1")), "edit completed set").performClick() }
         fun modalField(label: String) = compose.onNode(hasContentDescription(label) and hasAnyAncestor(hasTestTag("completed-set-dialog")))
         val before = qa.model.plan.toString()
         edit()
@@ -241,7 +241,7 @@ class WorkoutFlowTest {
         row(91001, 1).assertDoesNotExist()
         compose.onNodeWithTag("workout-exercise-toggle-91001").performClick()
         row(91001, 1).assertExists()
-        compose.onNodeWithTag("workout-folder-toggle-9191").performScrollTo().performClick()
+        qa.visible(hasTestTag("workout-folder-toggle-9191"), "workout folder").performClick()
         compose.onNodeWithTag("workout-day-toggle-9192").assertDoesNotExist()
         qa.capture("flow-checklist-folder-collapsed")
         qa.report("workout-flow", obj("result" to "passed", "sets" to 24, "synthetic_local_only" to true,

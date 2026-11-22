@@ -109,7 +109,7 @@ private fun completedSets(exercise: JSONObject, logs: List<JSONObject>) = exerci
                                             }
                                         }
                                         Column {
-                                            IconButton(onClick = { info(exerciseInfoSource(source, folder)) }, Modifier.size(32.dp)) { Icon(Icons.Outlined.Info, "Техника и описание", Modifier.size(15.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+                                            IconButton(onClick = { info(exerciseInfoSource(source, folder)) }, Modifier.size(32.dp)) { Icon(Icons.Outlined.Info, "Техника и описание", Modifier.size(15.dp), tint = MaterialTheme.colorScheme.primary) }
                                             IconButton(onClick = { edit("template-exercises", exercise.getInt("template_exercise_id"), template.getInt("id")) }, Modifier.size(32.dp), enabled = !model.busy) { Icon(Icons.Outlined.Edit, "Редактировать упражнение", Modifier.size(15.dp), tint = MaterialTheme.colorScheme.primary) }
                                         }
                                     }

@@ -10,7 +10,7 @@
 | Круговая диаграмма, радар | KoalaPlot 0.8.0 | Данные, цвета, обработка выбора готового сегмента/символа |
 | Тепловая карта | Compose Foundation LazyHorizontalGrid + Material 3 Surface | Матрица записей, насыщенность ячеек, выбор и пропуски; горизонтальная прокрутка библиотеки |
 | Изображения техники | Foundation HorizontalPager + Coil | URL, кеш изображений, счётчик и доступные кнопки перехода |
-| Плейлист и очередь | Foundation LazyColumn + Material 3 ListItem, DockedSearchBar, SecondaryTabRow, DropdownMenu | Порядок, поиск, действия API, выбранный трек |
+| Плейлист и очередь | Foundation LazyColumn + Material 3 ListItem, DockedSearchBar, DropdownMenu | Папки, поиск по запросу, очередь, прокрутка к текущему треку после загрузки |
 | Аудио | Media3 ExoPlayer / MediaSession | Сессия, авторизация, очередь и восстановление |
 | Сигналы таймеров | Android NotificationChannel / SystemUI audio focus; AudioFocusRequest + MediaPlayer при запрете уведомлений | Короткий ресурс из двух сигналов, восстановление громкости и очистка состояния |
 | Перемотка | Material 3 Slider / SliderDefaults.Track / SliderDefaults.Thumb | Общий MusicSeekBar для плейлиста и мини-плеера, позиция Media3 |
@@ -27,6 +27,9 @@
 | Черновики чата и анкеты | Room / Flow.debounce | Однократный перенос, немедленное состояние ввода, сохранение на IO |
 | Полная локальная копия | WorkManager / WorkInfo Flow | Прогресс существующего архива, ограничение по сети, отмена и привязка аккаунта |
 | История чата и библиотека программ | Foundation LazyColumn / LazyRow | Стабильные ключи, следование новым сообщениям при чтении конца диалога |
+| Обновление жестом | Material 3 PullToRefreshBox | Повтор существующих запросов текущего раздела |
+| Плавающий плеер | Haze 1.5.4 / Foundation basicMarquee / BringIntoViewSpec | Область источника, tint темы, скругление и учёт перекрытия при переносе фокуса |
+| Перетаскивание упражнений дня | Reorderable 2.5.1 / LazyColumn | Локальный черновик порядка и сохранение через существующий reorder API |
 
 Vico отвечает за раскладку осей, кривые, координаты маркеров, их отрисовку и анимацию.
 В адаптере стандартные `detectTapGestures` / `detectHorizontalDragGestures` Compose
@@ -49,7 +52,7 @@ Vico отвечает за раскладку осей, кривые, коорд
 
 Версии закреплены под текущую связку Kotlin 2.1 / Compose BOM 2025.05.01 / SDK 35.
 Это совместимые версии, а не заявление об использовании последних выпусков.
-Vico распространяется по Apache 2.0, KoalaPlot и Kizitonwose — MIT. Тексты лицензий включены
+Vico, Haze и Reorderable распространяются по Apache 2.0, KoalaPlot и Kizitonwose — MIT. Тексты лицензий включены
 в APK в `assets/licenses/`.
 
 ## Проверка оставшейся отрисовки

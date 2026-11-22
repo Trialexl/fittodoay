@@ -117,7 +117,7 @@ class RefinementTest {
             assertFalse(model.busy)
             compose.runOnUiThread { model.run { second.await() } }
             assertTrue(model.busy)
-            compose.onNodeWithContentDescription("Настройки оформления").assertIsEnabled()
+            compose.onNodeWithTag("open-settings").assertIsEnabled()
             second.complete(Unit); compose.waitUntil(5000) { !model.busy }
             compose.onNodeWithContentDescription(Screen.Workout.title).performClick()
             compose.waitUntil(5000) { model.screen == Screen.Workout && !model.refreshing }

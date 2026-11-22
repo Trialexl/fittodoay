@@ -46,7 +46,7 @@ import kotlinx.coroutines.delay
         onChange(if (next % 1.0 == 0.0) next.toLong().toString() else next.toString())
     }
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(label, lineHeight = if (dark) 14.sp else 20.sp, fontSize = if (dark) 10.sp else 14.sp, fontWeight = if (dark) FontWeight.Normal else FontWeight.SemiBold,
+        Text(label, lineHeight = if (dark) 14.sp else 20.sp, fontSize = if (dark) 10.sp else 14.sp, fontWeight = FontWeight.Normal,
             color = if (dark) Color(0xff8895aa) else MaterialTheme.colorScheme.onSurfaceVariant)
         Row(Modifier.widthIn(max = if (dark) if (compact) 118.dp else 134.dp else 192.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(if (dark) 4.dp else 8.dp)) {
             WorkoutAdjustButton("−", "Уменьшить ${label.lowercase()}", dark, enabled, step, compact) { adjust(-it) }

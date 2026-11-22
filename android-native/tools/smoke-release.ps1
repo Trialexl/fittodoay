@@ -24,7 +24,7 @@ function Wait-Boot([string]$name) {
 function Stop-TestAvd([string]$name) {
     $actual = (& $adb -s $serial shell getprop ro.boot.qemu.avd_name 2>$null | Out-String).Trim()
     if ($actual -ne $name) { throw "Refusing to stop unexpected AVD: $actual" }
-    $qemuIds = @(Get-CimInstance Win32_Process -Filter "Name='qemu-system-x86_64.exe'" | Where-Object { $_.CommandLine -and $_.CommandLine.Contains($name) } | Select-Object -ExpandProperty ProcessId)
+    $qemuIds = @(Get-CimInstance Win32_Process -Filter "Name='qemu-system-x86_64.exe' OR Name='qemu-system-x86_64-headless.exe'" | Where-Object { $_.CommandLine -and $_.CommandLine.Contains($name) } | Select-Object -ExpandProperty ProcessId)
     & $adb -s $serial emu kill | Out-Null
     for ($attempt = 0; $attempt -lt 30; $attempt++) {
         if ((& $adb devices | Out-String) -notmatch $serial) {
@@ -76,7 +76,7 @@ try {
     $running = (& $adb -s $serial shell getprop ro.boot.qemu.avd_name 2>$null | Out-String).Trim()
     if ($running -eq 'fitTODOay_Release_API_35') { Stop-TestAvd 'fitTODOay_Release_API_35' }
     if ((& $adb devices | Out-String) -notmatch $serial) {
-        Start-Process -FilePath $emulator -ArgumentList '-avd',$original,'-port','5554','-memory','2048','-cores','4','-gpu','host','-no-snapshot','-no-audio','-no-window','-timezone','Europe/Moscow' -WindowStyle Hidden | Out-Null
+        Start-Process -FilePath $emulator -ArgumentList '-avd',$original,'-port','5554','-memory','2048','-cores','4','-gpu','software','-no-snapshot','-no-audio','-no-window','-timezone','Europe/Moscow' -WindowStyle Hidden | Out-Null
         Wait-Boot $original
         & $adb -s $serial shell am start -n com.fittodoay.android/.MainActivity | Out-Null
     }

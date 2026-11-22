@@ -78,7 +78,10 @@ class AudioController(context: Context) {
     }
     fun toggle() = ready { if (it.playWhenReady && it.playerError == null && it.playbackState != Player.STATE_IDLE) it.pause() else { error = null; it.prepare(); it.play() } }
     fun next(direction: Int = 1) = ready { if (direction < 0) it.seekToPreviousMediaItem() else it.seekToNextMediaItem() }
-    fun seek(position: Long) = ready { it.seekTo(position.coerceIn(0, durationMs.coerceAtLeast(0))) }
+    fun seek(position: Long) = ready {
+        val target = position.coerceIn(0, durationMs.coerceAtLeast(0))
+        it.seekTo(target); positionMs = target
+    }
     fun move(from: Int, to: Int) = ready { if (from in 0 until it.mediaItemCount && to in 0 until it.mediaItemCount) it.moveMediaItem(from, to) }
     fun remove(index: Int) = ready { if (index in 0 until it.mediaItemCount) it.removeMediaItem(index) }
     fun playQueued(index: Int) = ready { if (index in 0 until it.mediaItemCount) { error = null; it.seekTo(index, 0); it.prepare(); it.play() } }

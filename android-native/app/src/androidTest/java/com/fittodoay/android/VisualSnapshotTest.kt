@@ -44,10 +44,10 @@ class VisualSnapshotTest {
                     val heading = when (screen) {
                         Screen.Workout -> "Тренировка"
                         Screen.Programs -> "Мои программы"
-                        Screen.Analytics -> "Прогресс и рекомендации"
+                        Screen.Analytics -> "Прогресс"
                         Screen.Technique -> "Проверка техники"
                         Screen.Assistant -> "Создать программу с помощником"
-                        Screen.Settings -> "Оформление"
+                        Screen.Settings -> "Настройки"
                     }
                     compose.onAllNodesWithText(heading, substring = false).onFirst().assertIsDisplayed()
                     compose.onNodeWithTag("page-scroll").assertIsDisplayed()
@@ -113,10 +113,12 @@ class VisualSnapshotTest {
             qa.capture("components-music-filters$suffix")
             androidx.test.uiautomator.UiDevice.getInstance(InstrumentationRegistry.getInstrumentation()).pressBack()
             compose.onNodeWithTag("playlist-sheet").assertIsDisplayed()
+            compose.onNodeWithTag("playlist-list").performScrollToNode(hasTestTag("playlist-add-music"))
             compose.onNodeWithText("Добавить музыку", substring = false).assertIsDisplayed().performClick()
             compose.onNodeWithText("Загрузить MP3", substring = false).assertIsDisplayed()
             qa.capture("design-playlist-upload$suffix")
-            compose.onNodeWithText("Скрыть загрузку", substring = false).performClick()
+            compose.onNodeWithText("К трекам", substring = false).performClick()
+            compose.onNodeWithContentDescription("Открыть поиск музыки").performClick()
             val search = compose.onNode(hasSetTextAction() and hasAnyAncestor(hasTestTag("playlist-sheet")))
             search.performTextReplacement("qa-no-matching-track-999")
             compose.onNodeWithText("Ничего не найдено", substring = false).assertExists()
@@ -132,6 +134,15 @@ class VisualSnapshotTest {
             val expectedWeight = plotPointNumber(qa.model.weights.minBy { it.text("date") }.optDouble("weight_kg"))
             compose.onNode(hasText(expectedWeight) and hasAnyAncestor(hasTestTag("chart-weight_kg-tooltip")), useUnmergedTree = true).assertExists()
             qa.capture("library-body-weight-selected$suffix")
+            fun styleAction(title: String): () -> Boolean {
+                qa.visible(hasContentDescription("Параметры графика"), "chart options").performClick()
+                compose.onNodeWithContentDescription("Вид графика").performClick()
+                val action = compose.onNode(hasText(title, substring = false) and hasAnyAncestor(isPopup())).fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsActions.OnClick].action!!
+                androidx.test.uiautomator.UiDevice.getInstance(InstrumentationRegistry.getInstrumentation()).pressBack()
+                compose.onNodeWithText("Готово", substring = false).performClick()
+                return action
+            }
+            fun selectStyle(title: String) { val action = styleAction(title); compose.runOnUiThread { action() }; compose.waitForIdle() }
             fun reviewPlots(prefix: String) {
             val originalTrends = qa.model.trends
             // Clearly separate synthetic dense-series stress views from recorded-server screenshots.
@@ -149,9 +160,10 @@ class VisualSnapshotTest {
                 compose.runOnIdle { qa.model.trends = stress }
                 for ((style, title) in trendStyles) {
                     if (style == "line") {
-                        compose.onNodeWithText("Площадь", substring = false).performScrollTo().performClick()
+                        selectStyle("Площадь")
                         compose.onNodeWithTag("trend-chart-area").performScrollTo()
-                        val action = compose.onNodeWithText(title, substring = false).fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsActions.OnClick].action!!
+                        val action = styleAction(title)
+                        compose.onNodeWithTag("trend-chart-area").performScrollTo()
                         fun framePixels(name: String): IntArray {
                             val latch = java.util.concurrent.CountDownLatch(1)
                             compose.runOnUiThread { compose.activity.window.decorView.postOnAnimation { latch.countDown() } }
@@ -184,7 +196,7 @@ class VisualSnapshotTest {
                             qa.report("chart-animation$suffix", obj("changed_pixels" to changed, "duration_ms" to 700))
                         } finally { compose.mainClock.autoAdvance = true }
                     }
-                    compose.onNodeWithText(title, substring = false).performScrollTo().performClick()
+                    selectStyle(title)
                     val chart = compose.onNodeWithTag("trend-chart-$style").performScrollTo()
                     compose.waitUntil(10_000) { compose.onAllNodesWithTag("metric-chart-loading").fetchSemanticsNodes().isEmpty() }
                     compose.waitForIdle()
@@ -294,10 +306,10 @@ class VisualSnapshotTest {
             compose.onNodeWithContentDescription("Закрыть").performClick()
             compose.runOnIdle { qa.model.screen = Screen.Analytics }
             reviewPlots("stress-dark")
-            compose.onNodeWithContentDescription("Настройки оформления").performClick()
-            compose.onNodeWithText("Готово", substring = false).assertIsDisplayed()
-            qa.capture("appearance-dialog$suffix")
-            compose.onNodeWithText("Готово", substring = false).performClick()
+            compose.runOnIdle { qa.model.screen = Screen.Settings }
+            compose.onNodeWithTag("settings-Оформление").performScrollTo().performClick()
+            qa.visible("Тема").assertIsDisplayed()
+            qa.capture("appearance-settings$suffix")
             // Keep deterministic clock control at the end: the remaining UI flow
             // uses actual touch events and the normal advancing animation clock.
             compose.runOnIdle { qa.model.screen = Screen.Workout; qa.model.preferences = JSONObject(qa.model.preferences.toString()).put("theme", "light") }

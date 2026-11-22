@@ -173,7 +173,7 @@ import org.json.JSONObject
                     itemsIndexed(model.messages, key = { index, message -> message.text("id").ifBlank { "message-$index" } }, contentType = { _, _ -> "message" }) { _, message ->
                         val userMessage = message.text("role") == "user"
                         Column(Modifier.fillMaxWidth(), horizontalAlignment = if (userMessage) Alignment.End else Alignment.Start) {
-                        Card(modifier = Modifier.fillMaxWidth(if (userMessage) .92f else 1f), colors = CardDefaults.cardColors(containerColor = if (message.text("role") == "user") MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant, contentColor = MaterialTheme.colorScheme.onSurface)) {
+                        Card(modifier = Modifier.fillMaxWidth(if (userMessage) .92f else 1f), colors = CardDefaults.cardColors(containerColor = if (userMessage) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface, contentColor = MaterialTheme.colorScheme.onSurface)) {
                             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 Text(if (userMessage) "Вы" else "Помощник", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 Text(message.text("content"), style = MaterialTheme.typography.bodyMedium)

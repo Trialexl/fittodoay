@@ -41,8 +41,10 @@ class LocalMirror(context: Context, token: String) {
             fetch("$path?start=1970-01-01&end=$end")?.let { data.write("local:all:$path", it) }
             fetch(path)
         }
-        for (range in listOf("week", "month", "half-year", "year")) for (granularity in listOf("day", "week")) {
-            fetch("/api/analytics/program-trends/?range=$range&granularity=$granularity")
+        for (range in listOf("week", "month", "half-year", "year")) {
+            // Exercise aggregates cannot be sliced from the all-time aggregate.
+            fetch("/api/analytics/exercises/?${analyticsRangeQuery(range)}")
+            for (granularity in listOf("day", "week")) fetch("/api/analytics/program-trends/?range=$range&granularity=$granularity")
         }
         val dates = (data.read("local:all:/api/analytics/days/")?.rows().orEmpty().filter { it.optDouble("load") > 0 }.map { it.text("date") } +
             LocalDate.now().toString()).distinct()

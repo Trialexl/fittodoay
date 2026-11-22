@@ -20,7 +20,6 @@ import androidx.compose.ui.window.Dialog
         label = { Text(label) }, placeholder = { Text(placeholder) }, shape = RoundedCornerShape(12.dp),
         visualTransformation = visualTransformation, keyboardOptions = KeyboardOptions(keyboardType = keyboard))
 }
-
 @Composable fun AppearanceControls(model: AppModel) {
     var customAccent by remember(model.preferences.text("accent_color")) { mutableStateOf(model.preferences.text("accent_color", "#a855f7")) }
     Text("Группы мышц на тренировке", style = MaterialTheme.typography.titleMedium)
@@ -44,19 +43,4 @@ import androidx.compose.ui.window.Dialog
     AccentPicker(model.preferences.text("accent_color", "#a855f7")) { model.preferences(obj("accent_color" to it)) }
     Field("Свой цвет #RRGGBB", customAccent, { customAccent = it })
     TextButton(onClick = { model.preferences(obj("accent_color" to customAccent)) }, enabled = !model.busy && customAccent.matches(Regex("#[0-9a-fA-F]{6}"))) { Text("Применить цвет") }
-}
-
-@Composable fun AppearanceDialog(model: AppModel, dismiss: () -> Unit) {
-    Dialog(onDismissRequest = dismiss) {
-        Surface(shape = RoundedCornerShape(18.dp)) {
-            Column(Modifier.heightIn(max = 700.dp).padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                Text("Оформление", style = MaterialTheme.typography.titleLarge)
-                Text("Выберите тему и акцентный цвет.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    AppearanceControls(model)
-                }
-                TextButton(onClick = dismiss, modifier = Modifier.fillMaxWidth()) { Text("Готово") }
-            }
-        }
-    }
 }

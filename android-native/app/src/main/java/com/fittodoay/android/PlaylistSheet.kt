@@ -11,22 +11,25 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.json.JSONObject
+import kotlinx.coroutines.flow.first
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable fun PlaylistSheet(model: AppModel, dismiss: () -> Unit) {
-    var adding by remember { mutableStateOf(false) }
-    DetailSurface("Плейлист", tag = "playlist-sheet", dismiss = dismiss, compact = true) {
-        if (!adding) PlaylistContent(model, scroll = true, modifier = Modifier.weight(1f))
+    var adding by rememberSaveable { mutableStateOf(false) }
+    DetailSurface("Добавить музыку", tag = "playlist-sheet", dismiss = dismiss, compact = true, showHeader = adding) {
+        if (!adding) PlaylistContent(model, scroll = true, modifier = Modifier.weight(1f), addMusic = { adding = true }, close = dismiss)
         if (adding) {
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("Один или несколько MP3", style = MaterialTheme.typography.titleSmall)
@@ -38,92 +41,102 @@ import org.json.JSONObject
                 MusicBatchUploadButton(model)
             }
         }
-        if (adding || !WindowInsets.isImeVisible) TextButton(onClick = { adding = !adding }, modifier = Modifier.fillMaxWidth().heightIn(min = 40.dp), contentPadding = PaddingValues(4.dp)) {
-            Icon(if (adding) Icons.Outlined.ExpandLess else Icons.Outlined.FileUpload, null, Modifier.size(16.dp))
-            Spacer(Modifier.width(6.dp)); Text(if (adding) "Скрыть загрузку" else "Добавить музыку", style = MaterialTheme.typography.labelMedium)
+        if (adding) TextButton(onClick = { adding = false }, modifier = Modifier.fillMaxWidth().heightIn(min = 40.dp), contentPadding = PaddingValues(4.dp)) {
+            Icon(Icons.Outlined.ArrowBack, null, Modifier.size(16.dp))
+            Spacer(Modifier.width(6.dp)); Text("К трекам", style = MaterialTheme.typography.labelMedium)
         }
     }
 }
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
-@Composable fun PlaylistContent(model: AppModel, modifier: Modifier = Modifier, scroll: Boolean = false) {
-    var query by remember { mutableStateOf("") }
-    var group by remember { mutableStateOf(model.preferences.text("music_group_by", "folder")) }
-    var section by remember { mutableStateOf("tracks") }
-    var source by remember { mutableStateOf("all") }
+@Composable fun PlaylistContent(model: AppModel, modifier: Modifier = Modifier, scroll: Boolean = false, addMusic: (() -> Unit)? = null, close: (() -> Unit)? = null) {
+    var query by rememberSaveable { mutableStateOf("") }
+    var searchOpen by rememberSaveable { mutableStateOf(false) }
+    // Preferences and tracks can arrive after this sheet's first composition.
+    var groupChoice by rememberSaveable { mutableStateOf<String?>(null) }
+    val group = groupChoice ?: musicGrouping(model.preferences.text("music_group_by"))
+    var section by rememberSaveable { mutableStateOf("tracks") }
+    var source by rememberSaveable { mutableStateOf("all") }
     var deleting by remember { mutableStateOf<Int?>(null) }
-    var volumeOpen by remember { mutableStateOf(false) }
     var filtersOpen by remember { mutableStateOf(false) }
     val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    val searchFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+    LaunchedEffect(searchOpen) { if (searchOpen) { searchFocus.requestFocus(); keyboard?.show() } }
     val audio = model.audio
     val searching = WindowInsets.isImeVisible
     val listState = rememberLazyListState()
-    val initialHeaderSpace = with(androidx.compose.ui.platform.LocalDensity.current) { 28.dp.roundToPx() }
+    val initialHeaderSpace = with(androidx.compose.ui.platform.LocalDensity.current) { 44.dp.roundToPx() }
     var groupHeaderSpace by remember(initialHeaderSpace) { mutableIntStateOf(initialHeaderSpace) }
     val shown = model.tracks.filter { (source == "all" || it.text("source_type") == source) &&
-        listOf("title", "name", "artist", "album").any { key -> it.text(key).contains(query.trim(), ignoreCase = true) } }
+        listOf("title", "name", "artist", "album", "filename").any { key -> it.text(key).contains(query.trim(), ignoreCase = true) } }
     val groups = shown.groupBy { track -> when (group) {
-        "folder" -> if (track.text("source_type") == "stream") "Радио · ${if (track.text("stream_category") == "relax") "Релакс" else "Тренировка"}" else track.text("filename").substringBeforeLast('/', "Без папки").replace(Regex("^user_[0-9]+$"), "Мои треки").replace(Regex("^system$"), "Системные")
+        "folder" -> musicFolderLabel(track)
         "artist", "album" -> track.text(group).ifBlank { "Без группы" }
         else -> "Все треки"
     } }
-    LaunchedEffect(group, source, query, section, audio.trackId, audio.queueIndex, groupHeaderSpace) {
+    val expansion = remember(group, source, query) { mutableStateMapOf<String, Boolean>() }
+    fun expanded(title: String, tracks: List<JSONObject>) = query.isNotBlank() || group == "none" ||
+        (expansion[title] ?: (tracks.any { it.optInt("id") == audio.trackId } || audio.trackId == null && title == groups.keys.firstOrNull()))
+    val catalogKey = groups.map { (title, tracks) -> title to tracks.map { it.optInt("id") } }
+    LaunchedEffect(group, source, query, section, audio.trackId, audio.queueIndex, catalogKey) {
         if (scroll) {
             var target = 0
             if (section == "queue") target = (audio.queueIndex + 1).coerceAtLeast(0)
             else {
                 var offset = 0
-                groups.values.forEach { tracks ->
+                groups.forEach { (title, tracks) ->
                     val index = tracks.indexOfFirst { it.optInt("id") == audio.trackId }
-                    if (index >= 0) target = offset + index + 1
-                    offset += tracks.size + 1
+                    if (index >= 0) { expansion[title] = true; target = offset + index + 1 }
+                    offset += 1 + if (expanded(title, tracks)) tracks.size else 0
                 }
             }
+            // Await lazy measurement after an async catalog load or opening a folder.
+            val expected = if (section == "queue") audio.queue.size + 1 else groups.entries.sumOf { (title, tracks) -> 1 + if (expanded(title, tracks)) tracks.size else 0 }
+            if (expected > 0) snapshotFlow { listState.layoutInfo.totalItemsCount }.first { it >= expected }
             listState.scrollToItem(target, scrollOffset = if (section == "tracks" && target > 0) -groupHeaderSpace else 0)
         }
     }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        DockedSearchBar(inputField = {
-            SearchBarDefaults.InputField(query, { query = it; section = "tracks" }, onSearch = { keyboard?.hide() },
-                expanded = false, onExpandedChange = {}, modifier = Modifier.testTag("music-search").semantics { contentDescription = "Поиск музыки" },
-                placeholder = { Text("Поиск музыки", style = MaterialTheme.typography.bodyMedium) },
-                leadingIcon = { Icon(Icons.Outlined.Search, null, Modifier.size(20.dp)) },
-                trailingIcon = { if (query.isNotEmpty()) IconButton(onClick = { query = "" }) { Icon(Icons.Outlined.Close, "Очистить поиск", Modifier.size(18.dp)) } })
-        }, expanded = false, onExpandedChange = {}, modifier = Modifier.fillMaxWidth(),
-            colors = SearchBarDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh), tonalElevation = 0.dp) {}
-        if (!searching) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                SecondaryTabRow(selectedTabIndex = if (section == "tracks") 0 else 1, modifier = Modifier.weight(1f), containerColor = MaterialTheme.colorScheme.surface, divider = {}) {
-                    listOf("tracks" to "Треки", "queue" to "Очередь · ${audio.queue.size}").forEach { (id, title) ->
-                        Tab(selected = section == id, onClick = { section = id }, modifier = Modifier.heightIn(min = 48.dp)) {
-                            Text(title, Modifier.padding(horizontal = 4.dp), style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        }
-                    }
+        Row(Modifier.fillMaxWidth().testTag("playlist-toolbar"), verticalAlignment = Alignment.CenterVertically) {
+            if (searchOpen) {
+                IconButton(onClick = { searchOpen = false; query = ""; keyboard?.hide() }, Modifier.size(44.dp)) {
+                    Icon(Icons.Outlined.ArrowBack, "Закрыть поиск музыки", Modifier.size(20.dp))
+                }
+                DockedSearchBar(inputField = {
+                    SearchBarDefaults.InputField(query, { query = it; section = "tracks" }, onSearch = { keyboard?.hide() },
+                        expanded = false, onExpandedChange = {}, modifier = Modifier.focusRequester(searchFocus).testTag("music-search").semantics { contentDescription = "Поиск музыки" },
+                        placeholder = { Text("Поиск музыки", style = MaterialTheme.typography.bodyMedium) },
+                        trailingIcon = { if (query.isNotEmpty()) IconButton(onClick = { query = "" }) { Icon(Icons.Outlined.Close, "Очистить поиск", Modifier.size(18.dp)) } })
+                }, expanded = false, onExpandedChange = {}, modifier = Modifier.weight(1f),
+                    colors = SearchBarDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh), tonalElevation = 0.dp) {}
+            } else {
+                Text(if (section == "tracks") "Плейлист" else "Очередь · ${audio.queue.size}", Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                IconButton(onClick = { section = "tracks"; searchOpen = true }, Modifier.size(44.dp)) {
+                    Icon(Icons.Outlined.Search, "Открыть поиск музыки", Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                IconButton(onClick = { section = if (section == "tracks") "queue" else "tracks"; keyboard?.hide() }, Modifier.size(44.dp)) {
+                    Icon(if (section == "tracks") Icons.Outlined.QueueMusic else Icons.Outlined.LibraryMusic, if (section == "tracks") "Показать очередь" else "Показать треки", Modifier.size(20.dp))
                 }
                 Box {
-                    IconButton(onClick = { filtersOpen = true }) { Icon(Icons.Outlined.Tune, "Фильтры музыки", Modifier.size(20.dp)) }
+                    IconButton(onClick = { filtersOpen = true }, Modifier.size(44.dp)) { Icon(Icons.Outlined.Tune, "Фильтры музыки", Modifier.size(20.dp)) }
                     DropdownMenu(filtersOpen, { filtersOpen = false }) {
                         Text("Группировка", Modifier.padding(horizontal = 16.dp, vertical = 6.dp), style = MaterialTheme.typography.labelSmall)
                         listOf("none" to "Все треки", "folder" to "По папкам", "artist" to "Исполнитель", "album" to "Альбом").forEach { (id, title) ->
                             DropdownMenuItem(text = { Text(title) }, trailingIcon = { if (group == id) Icon(Icons.Outlined.Check, null) },
-                                onClick = { group = id; filtersOpen = false; model.preferences(obj("music_group_by" to id)) })
+                                onClick = { groupChoice = id; filtersOpen = false; model.preferences(obj("music_group_by" to id)) })
                         }
                         HorizontalDivider()
-                        Text("Источник", Modifier.padding(horizontal = 16.dp, vertical = 6.dp), style = MaterialTheme.typography.labelSmall)
                         listOf("all" to "Все источники", "file" to "Файлы", "stream" to "Радио").forEach { (id, title) ->
                             DropdownMenuItem(text = { Text(title) }, trailingIcon = { if (source == id) Icon(Icons.Outlined.Check, null) }, onClick = { source = id; filtersOpen = false })
                         }
-                    }
-                }
-                IconToggleButton(audio.shuffle, { audio.shuffle = it }, Modifier.testTag("music-shuffle")) { Icon(Icons.Outlined.Shuffle, "Перемешивать", Modifier.size(20.dp)) }
-                Box {
-                    IconButton(onClick = { volumeOpen = true }) { Icon(Icons.Outlined.VolumeUp, "Громкость", Modifier.size(20.dp)) }
-                    DropdownMenu(volumeOpen, { volumeOpen = false }) {
+                        HorizontalDivider()
+                        DropdownMenuItem(text = { Text("Перемешивать") }, trailingIcon = { Switch(audio.shuffle, { audio.shuffle = it }, Modifier.testTag("music-shuffle")) }, onClick = { audio.shuffle = !audio.shuffle })
                         Text("Громкость", Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.labelSmall)
-                        Slider(audio.volume, { audio.volume = it }, Modifier.width(210.dp).padding(horizontal = 12.dp).semantics { contentDescription = "Громкость музыки" })
+                        Slider(audio.volume, { audio.volume = it }, Modifier.width(240.dp).padding(horizontal = 16.dp).semantics { contentDescription = "Громкость музыки" })
                     }
                 }
             }
+            if (close != null) IconButton(onClick = close, Modifier.size(44.dp)) { Icon(Icons.Outlined.Close, "Закрыть", Modifier.size(20.dp)) }
         }
         audio.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
         model.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
@@ -138,9 +151,11 @@ import org.json.JSONObject
                 } else {
                     if (shown.isEmpty()) item { PlaylistEmpty("Ничего не найдено", "Попробуйте другое название или источник") }
                     groups.forEach { (title, tracks) ->
-                        stickyHeader(key = "group:$title") { MusicGroupHeading(title, tracks.size) { groupHeaderSpace = it } }
-                        items(tracks, key = { it.getInt("id") }) { trackRow(it) }
+                        stickyHeader(key = "group:$title") { MusicGroupHeading(title, tracks.size, expanded(title, tracks),
+                            toggle = { expansion[title] = !expanded(title, tracks) }, measured = { groupHeaderSpace = it }) }
+                        if (expanded(title, tracks)) items(tracks, key = { it.getInt("id") }) { trackRow(it) }
                     }
+                    if (addMusic != null) item(key = "add-music") { AddMusicRow(addMusic) }
                 }
             }
         } else Column(Modifier.fillMaxWidth().testTag("playlist-list"), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -150,7 +165,8 @@ import org.json.JSONObject
                 audio.queue.indices.forEach { queueRow(it) }
             } else {
                 if (shown.isEmpty()) PlaylistEmpty("Ничего не найдено", "Попробуйте другое название или источник")
-                groups.forEach { (title, tracks) -> MusicGroupHeading(title, tracks.size); tracks.forEach { trackRow(it) } }
+                groups.forEach { (title, tracks) -> MusicGroupHeading(title, tracks.size, expanded(title, tracks), { expansion[title] = !expanded(title, tracks) }); if (expanded(title, tracks)) tracks.forEach { trackRow(it) } }
+                if (addMusic != null) AddMusicRow(addMusic)
             }
         }
         if (audio.trackId != null) PlaylistTransport(audio, compact = searching)
@@ -158,10 +174,17 @@ import org.json.JSONObject
     deleting?.let { id -> ConfirmDelete("трек", { deleting = null }) { deleting = null; model.delete("/api/workouts/music/tracks/$id/") } }
 }
 
-@Composable private fun MusicGroupHeading(title: String, count: Int, measured: (Int) -> Unit = {}) {
+@Composable private fun AddMusicRow(add: () -> Unit) {
+    TextButton(onClick = add, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp).testTag("playlist-add-music")) {
+        Icon(Icons.Outlined.FileUpload, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("Добавить музыку")
+    }
+}
+
+@Composable private fun MusicGroupHeading(title: String, count: Int, expanded: Boolean, toggle: () -> Unit, measured: (Int) -> Unit = {}) {
     Surface(modifier = Modifier.onSizeChanged { measured(it.height) }, color = MaterialTheme.colorScheme.surface) {
-        Row(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 5.dp, start = 2.dp, end = 2.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(title.uppercase(), Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Row(Modifier.fillMaxWidth().testTag("playlist-group-$title").semantics { stateDescription = if (expanded) "Развёрнуто" else "Свёрнуто" }.clickable(onClick = toggle).heightIn(min = 44.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Icon(if (expanded) Icons.Outlined.ExpandMore else Icons.Outlined.ChevronRight, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(title, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(count.toString(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
@@ -226,7 +249,7 @@ import org.json.JSONObject
     Column(Modifier.fillMaxWidth().testTag("playlist-transport"), verticalArrangement = Arrangement.spacedBy(0.dp)) {
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(audio.title, Modifier.weight(1f).padding(end = 6.dp), style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Box(Modifier.weight(1f).padding(end = 6.dp).clip(RoundedCornerShape(4.dp))) { Text(audio.title, Modifier.basicMarquee(iterations = Int.MAX_VALUE), style = MaterialTheme.typography.bodySmall, maxLines = 1) }
             IconButton(onClick = { audio.next(-1) }, Modifier.size(40.dp)) { Icon(Icons.Outlined.SkipPrevious, "Предыдущий трек", Modifier.size(20.dp)) }
             FilledTonalIconButton(onClick = audio::toggle, Modifier.size(44.dp).semantics { contentDescription = "Пауза или воспроизведение в плейлисте"; stateDescription = if (audio.buffering && audio.playRequested) "Загрузка трека" else if (audio.playRequested) "Воспроизведение" else "Пауза" }) {
                 if (audio.buffering && audio.playRequested) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
@@ -235,15 +258,10 @@ import org.json.JSONObject
             IconButton(onClick = { audio.next() }, Modifier.size(40.dp)) { Icon(Icons.Outlined.SkipNext, "Следующий трек в плейлисте", Modifier.size(20.dp)) }
         }
         if (audio.durationMs > 0 && !compact) {
-            MusicSeekBar(audio, Modifier.testTag("music-seek"))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(musicTime(audio.positionMs), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(musicTime(audio.durationMs), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
+            MusicSeekBar(audio, Modifier.testTag("music-seek"), showTimes = true)
         }
     }
 }
-private fun musicTime(ms: Long) = "${ms / 60000}:${((ms / 1000) % 60).toString().padStart(2, '0')}"
 
 @Composable private fun PlaylistEmpty(title: String, subtitle: String) {
     Column(Modifier.fillMaxWidth().padding(vertical = 24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {

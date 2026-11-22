@@ -144,35 +144,6 @@ fun scheduleLabel(day: JSONObject): String {
     }
 }
 
-@Composable fun DayDialog(day: JSONObject, model: AppModel, dismiss: () -> Unit) {
-    var name by remember { mutableStateOf(day.text("name")) }
-    var comment by remember { mutableStateOf(day.text("comment")) }
-    var type by remember { mutableStateOf(day.text("schedule_type", "weekly")) }
-    val config = day.optJSONObject("schedule_config") ?: JSONObject()
-    var selected by remember { mutableStateOf((config.optJSONArray("days_of_week") ?: JSONArray().put(LocalDate.now().dayOfWeek.value - 1)).let { a -> (0 until a.length()).map { a.getInt(it) }.toSet() }) }
-    var start by remember { mutableStateOf(config.text("start_date", LocalDate.now().toString())) }
-    var interval by remember { mutableStateOf(config.text(if (type == "biweekly") "week_interval" else "every_x_days", "2")) }
-    var dates by remember { mutableStateOf(config.optJSONArray("specific_dates")?.join(", ")?.replace("\"", "").orEmpty()) }
-    AlertDialog(onDismissRequest = dismiss, title = { Text("День тренировки") }, text = {
-        Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            model.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-            Field("Название", name, { name = it }); Field("Комментарий", comment, { comment = it })
-            Choices("Расписание", type, listOf("weekly" to "По неделям", "biweekly" to "Раз в N недель", "interval" to "Через X дней", "custom" to "Даты")) { type = it }
-            if (type == "weekly" || type == "biweekly") {
-                Row(Modifier.horizontalScroll(rememberScrollState())) { listOf("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс").forEachIndexed { i, label ->
-                    FilterChip(i in selected, { selected = if (i in selected) selected - i else selected + i }, label = { Text(label) })
-                } }
-            }
-            if (type == "biweekly" || type == "interval") { Field("Дата старта ГГГГ-ММ-ДД", start, { start = it }); Field("Интервал", interval, { interval = it }) }
-            if (type == "custom") Field("Даты через запятую ГГГГ-ММ-ДД", dates, { dates = it })
-        }
-    }, confirmButton = { TextButton(onClick = {
-        val schedule = try { scheduleConfig(type, selected, start, interval, dates) } catch (e: IllegalArgumentException) { model.error = e.message; return@TextButton }
-        model.save("/api/programs/templates/", obj("folder" to day.getInt("folder"), "name" to name.trim(), "comment" to comment,
-            "schedule_type" to type, "schedule_config" to schedule), day.opt("id"), dismiss)
-    }, enabled = !model.busy && name.isNotBlank() && (type !in listOf("weekly", "biweekly") || selected.isNotEmpty())) { Text("Сохранить") } }, dismissButton = { TextButton(onClick = dismiss) { Text("Отмена") } })
-}
-
 @Composable fun ExerciseDialog(exercise: JSONObject, template: Int, model: AppModel, dismiss: () -> Unit) {
     val initial = exercise.optJSONObject("exercise") ?: exercise.optJSONObject("custom_exercise")
     var source by remember { mutableStateOf(initial) }

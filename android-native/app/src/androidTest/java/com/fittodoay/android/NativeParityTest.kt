@@ -34,7 +34,6 @@ class NativeParityTest {
     private fun waitRequest() { compose.waitForIdle(); compose.waitUntil(200_000) { !model.anyBusy && !model.draftLoading && !model.refreshing && model.workoutSaving == 0 }; compose.waitForIdle(); assertNull(model.error, model.error) }
     private fun navigate(screen: Screen) {
         check(model.preferences.text("design_version") == "v2")
-        if (screen == Screen.Settings) compose.onNodeWithText("Ещё⌄").performClick()
         compose.onNodeWithContentDescription(screen.title).performClick(); waitRequest()
     }
     private fun visible(text: String): SemanticsNodeInteraction {
@@ -109,6 +108,7 @@ class NativeParityTest {
         try {
             for (design in listOf("v2")) {
                 navigate(Screen.Settings)
+                visible("Оформление").performClick()
                 // V2 is enrolled by guardAccount; its settings expose muscle views directly.
                 assertEquals(design, (api.call("/api/profile/preferences/") as JSONObject).text("design_version"))
                 capture("appearance-$design")
@@ -122,6 +122,7 @@ class NativeParityTest {
                     capture("workout-$design-$mode"); navigate(Screen.Settings)
                 }
             }
+            visible("Подключения").performClick()
             visible("Скопировать адрес").performClick()
             compose.onNodeWithText("Скопировано").assertExists(); capture("mcp")
             navigate(Screen.Workout)

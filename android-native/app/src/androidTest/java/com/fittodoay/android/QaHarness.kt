@@ -55,7 +55,6 @@ class QaHarness(val compose: AndroidComposeTestRule<ActivityScenarioRule<MainAct
         check(model.preferences.text("design_version") == "v2") { "V1 navigation is outside the active QA scope" }
         repeat(3) {
             waitRequest()
-            if (screen == Screen.Settings) compose.onNodeWithText("Ещё⌄").performClick()
             compose.onNodeWithContentDescription(screen.title).assertIsEnabled().performClick()
             waitRequest()
             if (model.screen == screen) return
@@ -74,17 +73,37 @@ class QaHarness(val compose: AndroidComposeTestRule<ActivityScenarioRule<MainAct
     fun scrollTag(tag: String) = visible(hasTestTag(tag), tag).also { runCatching { it.performScrollTo() } }
     fun visible(text: String) = visible(hasText(text, substring = false), text)
     fun visible(matcher: SemanticsMatcher, label: String): SemanticsNodeInteraction {
+        fun clearDock(node: SemanticsNodeInteraction): SemanticsNodeInteraction {
+            if (hasAnyAncestor(hasTestTag("page-scroll")).matches(node.fetchSemanticsNode())) {
+                val dock = compose.onAllNodesWithTag("floating-player-dock").fetchSemanticsNodes().firstOrNull()
+                if (dock != null) {
+                    val covered = node.fetchSemanticsNode().boundsInRoot.bottom - dock.boundsInRoot.top + 12
+                    if (covered > 0) {
+                        compose.onNodeWithTag("page-scroll").performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, covered) }
+                        compose.waitForIdle()
+                    }
+                }
+            }
+            return node
+        }
         fun candidate(): SemanticsNodeInteraction? {
             val nodes = compose.onAllNodes(matcher)
-            for (i in nodes.fetchSemanticsNodes().indices) if (nodes[i].isDisplayed()) return nodes[i]
+            for (i in nodes.fetchSemanticsNodes().indices) if (nodes[i].isDisplayed()) return clearDock(nodes[i])
             return null
         }
         candidate()?.let { return it }
+        // Standard bring-into-view is exact for an already composed item. A
+        // fixed-size swipe can skip a short control or a complete chart panel.
+        val composed = compose.onAllNodes(matcher)
+        if (composed.fetchSemanticsNodes().size == 1) {
+            runCatching { composed[0].performScrollTo() }
+            candidate()?.let { return it }
+        }
         if (compose.onAllNodesWithTag("page-scroll").fetchSemanticsNodes().any { it.config.contains(SemanticsActions.ScrollToIndex) }) {
             runCatching { compose.onNodeWithTag("page-scroll").performScrollToNode(matcher) }
             candidate()?.let { return it }
         }
-        // Settings now embeds the same virtualized playlist as the full panel.
+        // The full playlist is virtualized independently from the page.
         if (compose.onAllNodesWithTag("playlist-list").fetchSemanticsNodes().isNotEmpty()) {
             runCatching { compose.onNodeWithTag("playlist-list").performScrollToNode(matcher) }
             candidate()?.let { return it }

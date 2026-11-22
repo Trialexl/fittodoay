@@ -22,6 +22,8 @@ import androidx.media3.ui.PlayerView
 import java.io.File
 
 /** Ready Media3 controls, sizing, seek, lifecycle and local offline media. */
+// AndroidView owns measurement; XML LayoutParams have no parent to resolve here.
+@android.annotation.SuppressLint("InflateParams")
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @Composable fun LocalTechniqueVideo(file: File) {
     val context = LocalContext.current
@@ -60,7 +62,12 @@ import java.io.File
         if (lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) start()
         onDispose { lifecycle.removeObserver(observer); stop() }
     }
-    AndroidView(factory = { PlayerView(it).apply { useController = true; setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING); setErrorMessageProvider { android.util.Pair(0, "Не удалось воспроизвести видео") } } },
+    // TextureView follows window attachment. The default SurfaceView can lose
+    // its paused frame across Compose/lifecycle transitions on API 35.
+    AndroidView(factory = { (android.view.LayoutInflater.from(it).inflate(R.layout.technique_player, null, false) as PlayerView).apply {
+        setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
+        setErrorMessageProvider { android.util.Pair(0, "Не удалось воспроизвести видео") }
+    } },
         update = { it.player = player },
         onRelease = { it.player = null }, modifier = Modifier.fillMaxWidth().height(300.dp).testTag("technique-video-player").semantics { stateDescription = if (failed) "Ошибка воспроизведения" else if (playing) "Воспроизведение" else "Пауза" })
 }

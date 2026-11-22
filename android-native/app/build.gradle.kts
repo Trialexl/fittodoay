@@ -12,8 +12,8 @@ android {
         applicationId = "com.fittodoay.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 11
-        versionName = "0.4.5-dev"
+        versionCode = 12
+        versionName = "0.4.6-dev"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "SERVER_URL", "\"https://trialexl4.freemyip.com\"")
     }
@@ -62,6 +62,8 @@ dependencies {
     implementation("androidx.media3:media3-session:1.6.1")
     implementation("androidx.media3:media3-ui:1.6.1")
     implementation("com.kizitonwose.calendar:compose:2.7.0")
+    implementation("dev.chrisbanes.haze:haze:1.5.4")
+    implementation("sh.calvin.reorderable:reorderable:2.5.1")
     implementation("androidx.media3:media3-datasource-okhttp:1.6.1")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
