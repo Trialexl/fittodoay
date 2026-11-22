@@ -14,17 +14,32 @@ class LocalDataStore(context: Context, token: String) : ResponseStorage {
     val account = localAccountKey(token)
     private val db = database(context.applicationContext)
     override fun read(path: String): Any? {
+        return snapshot(path)?.value
+    }
+    fun snapshot(path: String): StoredResponse? {
         if (!path.startsWith("local:") && !isLocalDataPath(path)) return null
-        return exact(path) ?: localQuery(path, ::exact)
+        val cached = exactSnapshot(path)
+        val route = path.substringBefore('?')
+        val timeQuery = '?' in path && route in setOf("/api/analytics/days/", "/api/analytics/body-weight/")
+        if (cached != null && !timeQuery) return cached
+        val archiveKey = "local:all:$route"
+        val archive = if (timeQuery) exactSnapshot(archiveKey) else null
+        if (cached != null && (archive == null || cached.asOf >= archive.asOf)) return cached
+        val derived = localQuery(path) { key -> if (key == archiveKey) archive?.value else exact(key) }?.let { value ->
+            StoredResponse(value, archive?.asOf ?: 0)
+        }
+        return listOfNotNull(cached, derived).maxByOrNull { it.asOf }
     }
-    private fun exact(path: String): Any? = db.readableDatabase.query("responses", arrayOf("json"), "account=? AND path=?", arrayOf(account, path), null, null, null).use {
-        if (it.moveToFirst()) parseStoredJson(it.getString(0)) else null
+    private fun exact(path: String): Any? = exactSnapshot(path)?.value
+    private fun exactSnapshot(path: String): StoredResponse? = db.readableDatabase.query("responses", arrayOf("json", "updated"), "account=? AND path=?", arrayOf(account, path), null, null, null).use {
+        if (it.moveToFirst()) StoredResponse(parseStoredJson(it.getString(0)), it.getLong(1)) else null
     }
-    override fun write(path: String, value: Any) {
+    override fun write(path: String, value: Any) = writeSnapshot(path, value, System.currentTimeMillis())
+    override fun writeSnapshot(path: String, value: Any, asOf: Long) {
         require(path.startsWith("local:") || isLocalDataPath(path)) { "Authentication and music cannot be mirrored" }
         require(value is JSONObject || value is org.json.JSONArray)
-        db.writableDatabase.execSQL("INSERT OR REPLACE INTO responses(account,path,json,updated) VALUES(?,?,?,?)",
-            arrayOf<Any>(account, path, value.toString(), System.currentTimeMillis()))
+        db.writableDatabase.execSQL("INSERT OR REPLACE INTO responses(account,path,json,updated) SELECT ?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM responses WHERE account=? AND path=? AND updated>?)",
+            arrayOf<Any>(account, path, value.toString(), asOf, account, path, asOf))
     }
     override fun remove(path: String) { db.writableDatabase.delete("responses", "account=? AND path=?", arrayOf(account, path)) }
     override fun recordMutation(path: String, method: String, body: JSONObject?, result: Any) {

@@ -22,9 +22,15 @@ import java.time.LocalDate
 
 val analyticsRanges = listOf("week" to "Неделя", "month" to "Месяц", "half-year" to "Полгода", "year" to "Год")
 fun analyticsRangeQuery(range: String, today: LocalDate = LocalDate.now()): String {
-    val days = when (range) { "week" -> 6L; "half-year" -> 179L; "year" -> 364L; else -> 29L }
-    return "start=${today.minusDays(days)}&end=$today"
+    return "start=${analyticsRangeStart(range, today)}&end=$today"
 }
+fun analyticsRangeStart(range: String, today: LocalDate = LocalDate.now()): LocalDate {
+    val days = when (range) { "week" -> 6L; "half-year" -> 179L; "year" -> 364L; else -> 29L }
+    return today.minusDays(days)
+}
+fun analyticsWeightRows(rows: List<JSONObject>, range: String, today: LocalDate = LocalDate.now()): List<JSONObject> = rows
+    .filter { it.text("date") >= analyticsRangeStart(range, today).toString() && it.text("date") <= today.toString() }
+    .distinctBy { it.text("date") }.sortedBy { it.text("date") }
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable fun AnalyticsScreen(model: AppModel) {
@@ -42,7 +48,7 @@ fun analyticsRangeQuery(range: String, today: LocalDate = LocalDate.now()): Stri
     Page {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Прогресс", Modifier.weight(1f), style = MaterialTheme.typography.headlineLarge)
-            CompactSelector("Период", model.range, analyticsRanges) { if (!model.refreshing) { model.range = it; model.refresh() } }
+            CompactSelector("Период", model.range, analyticsRanges) { model.range = it; model.refresh() }
         }
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             val stack = maxWidth < 340.dp || androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.2f
@@ -57,7 +63,7 @@ fun analyticsRangeQuery(range: String, today: LocalDate = LocalDate.now()): Stri
         Panel("Нагрузка по дням") {
             val loaded = model.days.filter { it.optDouble("load", 0.0) > 0 }
             if (loaded.isEmpty()) Text("Нет дней с ненулевой нагрузкой за выбранный период.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            else Chart(model.days, "load")
+            else Chart(model.days, "load") { date -> model.date = date; model.navigate(Screen.Workout) }
         }
         FitCard(Modifier.testTag("top-exercises")) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -96,8 +102,8 @@ fun analyticsRangeQuery(range: String, today: LocalDate = LocalDate.now()): Stri
     if (settings) ModalBottomSheet(onDismissRequest = { settings = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Text("Параметры графика", style = MaterialTheme.typography.titleLarge)
-            CompactSelector("Период", model.range, analyticsRanges) { if (!model.refreshing) { model.range = it; model.refresh() } }
-            Choices("Группировка", model.granularity, listOf("day" to "Дни", "week" to "Недели")) { if (!model.refreshing) { model.granularity = it; model.refresh() } }
+            CompactSelector("Период", model.range, analyticsRanges) { model.range = it; model.refresh() }
+            Choices("Группировка", model.granularity, listOf("day" to "Дни", "week" to "Недели")) { model.granularity = it; model.refresh() }
             Choices("Детализация", detail, listOf("programs" to "Программы", "exercises" to "Упражнения")) { detail = it }
             CompactSelector("Вид графика", chartStyle, trendStyles) { chartStyle = it }
             if (detail == "exercises") CompactSelector("Программа", (folderId ?: model.trends.array("folders").firstOrNull()?.optInt("id")).toString(), model.trends.array("folders").map { it.text("id") to it.text("name") }) { folderId = it.toIntOrNull() }
@@ -118,9 +124,9 @@ fun analyticsRangeQuery(range: String, today: LocalDate = LocalDate.now()): Stri
     }
 }
 
-@Composable fun Chart(rows: List<JSONObject>, metric: String) {
+@Composable fun Chart(rows: List<JSONObject>, metric: String, onDateOpen: ((String) -> Unit)? = null) {
     val data = rows.filter { !it.isNull(metric) && it.optDouble(metric, Double.NaN).isFinite() }.sortedBy { it.text("date") }
     val label = when (metric) { "weight_kg" -> "Вес тела, кг"; "avg_weight" -> "Средний вес, кг"; else -> "Нагрузка" }
     val line = TrendLine(metric, label, data.associate { it.text("date") to it.optDouble(metric) })
-    MetricPlot(listOf(line), "line", "chart-$metric", label, zero = metric == "load")
+    MetricPlot(listOf(line), "line", "chart-$metric", label, zero = metric == "load", onDateOpen = onDateOpen)
 }

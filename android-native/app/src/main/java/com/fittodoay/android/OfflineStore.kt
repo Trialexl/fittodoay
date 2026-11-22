@@ -2,6 +2,9 @@ package com.fittodoay.android
 
 import android.content.Context
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.Dispatchers
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
@@ -27,7 +30,13 @@ class OfflineStore(context: Context, token: String) {
         }
     }
     fun plan(date: String): JSONObject? = dao.plan(account, date)?.let(::JSONObject)
-    fun cache(date: String, plan: JSONObject) = dao.cache(StoredWorkoutPlan(account, date, plan.toString()))
+    fun cache(date: String, plan: JSONObject, asOf: Long = System.currentTimeMillis()) = dao.cache(StoredWorkoutPlan(account, date, plan.toString(), asOf))
+    fun observeHistory(start: String, end: String): Flow<LocalWorkoutHistory> = dao.observePlans(account, start, end).map {
+        db.runInTransaction(java.util.concurrent.Callable {
+            LocalWorkoutHistory(dao.plans(account, start, end).associate { row -> row.date to LocalWorkoutDay(normalizePlan(JSONObject(row.json)), row.updatedAt) },
+                queue().filter { entry -> entry.text("path").startsWith("/api/workouts/logs/") }.map { entry -> entry.text("date") }.toSet())
+        })
+    }.flowOn(Dispatchers.IO)
     fun queue(): List<JSONObject> = dao.queue(account).map { JSONObject(it.json) }
     fun observePending(): Flow<Int> = dao.observePending(account)
     private fun put(entry: JSONObject) {

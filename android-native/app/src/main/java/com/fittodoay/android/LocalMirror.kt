@@ -21,8 +21,9 @@ class LocalMirror(context: Context, token: String) {
             coroutineContext.ensureActive()
             check(accountActive()) { "Аккаунт изменён" }
             return try {
+                val readStarted = System.currentTimeMillis()
                 val first = remote.all(path)
-                first.also { data.write(path, it) }
+                first.also { data.writeSnapshot(path, it, readStarted) }
             }
             catch (error: Exception) {
                 if (error is kotlinx.coroutines.CancellationException) throw error
@@ -38,7 +39,8 @@ class LocalMirror(context: Context, token: String) {
         val end = LocalDate.now().plusDays(1).toString()
         progress("История тренировок и аналитика")
         for (path in listOf("/api/analytics/days/", "/api/analytics/body-weight/", "/api/analytics/exercises/")) {
-            fetch("$path?start=1970-01-01&end=$end")?.let { data.write("local:all:$path", it) }
+            val fullPath = "$path?start=1970-01-01&end=$end"
+            fetch(fullPath)?.let { data.writeSnapshot("local:all:$path", it, data.snapshot(fullPath)?.asOf ?: 0) }
             fetch(path)
         }
         for (range in listOf("week", "month", "half-year", "year")) {

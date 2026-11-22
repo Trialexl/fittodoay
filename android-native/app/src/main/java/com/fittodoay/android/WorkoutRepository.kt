@@ -31,6 +31,7 @@ class WorkoutRepository private constructor(private val context: Context, privat
     private val mutableSnapshot = MutableStateFlow<WorkoutSnapshot?>(null)
     val snapshot = mutableSnapshot.asStateFlow()
     fun observePending() = flow { emitAll(store.observePending()) }.flowOn(Dispatchers.IO)
+    fun observeHistory(start: String, end: String) = flow { emitAll(store.observeHistory(start, end)) }.flowOn(Dispatchers.IO)
     private val remote = Api(baseUrl = baseUrl, transportOverride = transport) { token }
     fun revision(date: String) = revisions[date] ?: 0L
     suspend fun initialize() = withContext(Dispatchers.IO) { local.withLock {
@@ -41,8 +42,8 @@ class WorkoutRepository private constructor(private val context: Context, privat
         val pending = store.queue().size
         mutableState.update { it.copy(pending = pending, error = error, blocked = blocked) }
     }
-    private fun commit(date: String, plan: JSONObject, persist: Boolean = true): WorkoutSnapshot {
-        if (persist) store.cache(date, plan)
+    private fun commit(date: String, plan: JSONObject, persist: Boolean = true, asOf: Long = System.currentTimeMillis()): WorkoutSnapshot {
+        if (persist) store.cache(date, plan, asOf)
         val snapshot = WorkoutSnapshot(date, plan, revision(date) + 1)
         revisions[date] = snapshot.revision
         mutableSnapshot.value = snapshot
@@ -73,10 +74,13 @@ class WorkoutRepository private constructor(private val context: Context, privat
             }
         }
     }
-    suspend fun acceptRemote(date: String, expectedRevision: Long, plan: JSONObject): WorkoutSnapshot? = withContext(Dispatchers.IO) {
+    suspend fun acceptRemote(date: String, expectedRevision: Long, plan: JSONObject, asOf: Long = System.currentTimeMillis()): WorkoutSnapshot? = withContext(Dispatchers.IO) {
         local.withLock {
             if (revision(date) != expectedRevision) null
-            else commit(date, withQueuedChanges(plan, store.queue(), date))
+            else {
+                val queue = store.queue()
+                commit(date, withQueuedChanges(plan, queue, date), asOf = if (queue.any { it.text("date") == date }) System.currentTimeMillis() else asOf)
+            }
         }
     }
     /** No cached GET fallback when resolving an uncertain POST or DELETE. */

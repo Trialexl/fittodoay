@@ -77,7 +77,7 @@ fun plotDate(date: String): String = runCatching { java.time.LocalDate.parse(dat
 
 /** Charts share data, colors and selection details; libraries own drawing and hit testing. */
 @OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
-@Composable fun MetricPlot(lines: List<TrendLine>, style: String, tag: String, label: String = "Нагрузка", zero: Boolean = true, monthLabels: Boolean = false) {
+@Composable fun MetricPlot(lines: List<TrendLine>, style: String, tag: String, label: String = "Нагрузка", zero: Boolean = true, monthLabels: Boolean = false, onDateOpen: ((String) -> Unit)? = null) {
     var focus by remember(lines) { mutableStateOf<String?>(null) }
     var allSeries by remember { mutableStateOf(false) }
     val shown = lines.filter { focus == null || it.key == focus }
@@ -129,6 +129,7 @@ fun plotDate(date: String): String = runCatching { java.time.LocalDate.parse(dat
                     }
                 }
                 if (entries.size > 4) TextButton(onClick = { allSeries = true }, contentPadding = PaddingValues(0.dp)) { Text("Все значения · ${entries.size}", style = MaterialTheme.typography.bodySmall) }
+                if (onDateOpen != null) TextButton(onClick = { onDateOpen(dates[selectedDate]) }, Modifier.testTag("$tag-open-workout"), contentPadding = PaddingValues(0.dp)) { Text("Открыть тренировку", style = MaterialTheme.typography.bodySmall) }
             }
         }
         if (lines.size > 1) Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -169,6 +170,7 @@ fun plotDate(date: String): String = runCatching { java.time.LocalDate.parse(dat
     val isolated = if (columns) totals.size == 1 else dates.size == 1
     val range = remember(domain, isolated) { CartesianLayerRangeProvider.fixed(minX = if (isolated) -1.0 else null, maxX = if (isolated) 1.0 else null, minY = domain.minimum, maxY = domain.maximum) }
     val producer = remember { CartesianChartModelProducer() }
+    val motionEnabled = (rememberCoroutineScope().coroutineContext[androidx.compose.ui.MotionDurationScale]?.scaleFactor ?: 1f) > 0f
     LaunchedEffect(plotted, totals, style) {
         producer.runTransaction {
             if (columns) columnSeries { series(totals) }
@@ -226,7 +228,7 @@ fun plotDate(date: String): String = runCatching { java.time.LocalDate.parse(dat
             .pointerInput(layer) { detectTapGestures { selectTarget(it.x) } }
             .pointerInput(layer) { detectHorizontalDragGestures(onDragStart = { selectTarget(it.x) }) { change, _ -> change.consume(); selectTarget(change.position.x) } },
         scrollState = rememberVicoScrollState(scrollEnabled = false),
-        animationSpec = tween(700), animateIn = true,
+        animationSpec = if (motionEnabled) tween(700) else null, animateIn = motionEnabled,
         placeholder = { Box(Modifier.fillMaxSize().testTag("metric-chart-loading"), contentAlignment = Alignment.Center) { CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp) } },
     )
 }

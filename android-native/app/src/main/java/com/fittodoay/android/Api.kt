@@ -46,12 +46,13 @@ class Api(private val baseUrl: String = BuildConfig.SERVER_URL,
         val attempts = 4
         repeat(attempts) { attempt ->
             try {
+                val readStarted = System.currentTimeMillis()
                 val result = execute(path, method, if (method == "GET" || method == "DELETE") null else
                     (body ?: JSONObject()).toString().toRequestBody("application/json; charset=utf-8".toMediaType()), accountToken)
                 if (token() != accountToken) throw CancellationException("Account changed")
                 if (token() == accountToken) {
                     withContext(Dispatchers.IO) {
-                        if (method == "GET") local?.write(path, result)
+                        if (method == "GET") local?.writeSnapshot(path, result, readStarted)
                         else local?.recordMutation(path, method, body, result)
                     }
                 }
@@ -80,6 +81,7 @@ class Api(private val baseUrl: String = BuildConfig.SERVER_URL,
     suspend fun all(path: String): Any {
         require(isLocalDataPath(path))
         val accountToken = token()
+        val readStarted = System.currentTimeMillis()
         val local = storage?.invoke()
         suspend fun saved(): Any? = withContext(Dispatchers.IO) { local?.read("local:archive:$path") ?: local?.read(path) }
         if (!networkAvailable()) return saved()?.also {
@@ -105,7 +107,7 @@ class Api(private val baseUrl: String = BuildConfig.SERVER_URL,
             }
             val result = if (first is JSONObject && first.has("next")) JSONObject(first.toString()).put(if (first.has("results")) "results" else "items", JSONArray(items)).put("next", JSONObject.NULL) else first
             if (token() == accountToken) withContext(Dispatchers.IO) {
-                local?.write("local:archive:$path", result); local?.write(path, result)
+                local?.writeSnapshot("local:archive:$path", result, readStarted); local?.writeSnapshot(path, result, readStarted)
             }
             return result
         } catch (error: Exception) {

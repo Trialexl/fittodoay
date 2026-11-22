@@ -1,0 +1,149 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 3,
+    "identityHash": "38d0ad7e4bc4481d0ed9072663ea6577",
+    "entities": [
+      {
+        "tableName": "workout_plans",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`account` TEXT NOT NULL, `date` TEXT NOT NULL, `json` TEXT NOT NULL, `updatedAt` INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(`account`, `date`))",
+        "fields": [
+          {
+            "fieldPath": "account",
+            "columnName": "account",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "date",
+            "columnName": "date",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "json",
+            "columnName": "json",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "account",
+            "date"
+          ]
+        }
+      },
+      {
+        "tableName": "workout_outbox",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`account` TEXT NOT NULL, `key` TEXT NOT NULL, `position` INTEGER NOT NULL, `json` TEXT NOT NULL, PRIMARY KEY(`account`, `key`))",
+        "fields": [
+          {
+            "fieldPath": "account",
+            "columnName": "account",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "key",
+            "columnName": "key",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "position",
+            "columnName": "position",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "json",
+            "columnName": "json",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "account",
+            "key"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_workout_outbox_account_position",
+            "unique": false,
+            "columnNames": [
+              "account",
+              "position"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_workout_outbox_account_position` ON `${TABLE_NAME}` (`account`, `position`)"
+          }
+        ]
+      },
+      {
+        "tableName": "workout_imports",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`account` TEXT NOT NULL, PRIMARY KEY(`account`))",
+        "fields": [
+          {
+            "fieldPath": "account",
+            "columnName": "account",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "account"
+          ]
+        }
+      },
+      {
+        "tableName": "local_drafts",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`account` TEXT NOT NULL, `key` TEXT NOT NULL, `json` TEXT NOT NULL, PRIMARY KEY(`account`, `key`))",
+        "fields": [
+          {
+            "fieldPath": "account",
+            "columnName": "account",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "key",
+            "columnName": "key",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "json",
+            "columnName": "json",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "account",
+            "key"
+          ]
+        }
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '38d0ad7e4bc4481d0ed9072663ea6577')"
+    ]
+  }
+}

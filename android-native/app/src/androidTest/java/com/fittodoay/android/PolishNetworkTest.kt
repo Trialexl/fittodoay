@@ -33,6 +33,9 @@ class PolishNetworkTest {
     private val requests = CopyOnWriteArrayList<Pair<String, String>>()
     private val orders = CopyOnWriteArrayList<List<Int>>()
     private var reject = false
+    private val holdDays = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val daysStarted = java.util.concurrent.CountDownLatch(1)
+    private val releaseDays = java.util.concurrent.CountDownLatch(1)
     private lateinit var day: JSONObject
     @Before fun prepare() {
         assumeTrue(InstrumentationRegistry.getArguments().getString("polish") == "true")
@@ -65,6 +68,11 @@ class PolishNetworkTest {
                     if (path == "/api/programs/templates/5/" && request.method == "PATCH") return response(JSONObject(body).put("id", 5))
                     if (path.startsWith("/api/programs/templates/")) return response(JSONArray().put(day))
                     if (path.startsWith("/api/profile/preferences/")) return response(obj("theme" to "light", "design_version" to "v2"))
+                    if (path.startsWith("/api/analytics/days/")) {
+                        if (holdDays.compareAndSet(true, false)) { daysStarted.countDown(); releaseDays.await(10, java.util.concurrent.TimeUnit.SECONDS) }
+                        return response(obj("items" to JSONArray().put(obj("date" to java.time.LocalDate.now().toString(), "load" to if (path.contains("start=${analyticsRangeStart("year")}")) 200 else 100))))
+                    }
+                    if (path.startsWith("/api/workouts/logs/") && request.method in listOf("POST", "PATCH")) return response(JSONObject(body).put("id", 55))
                     if (path.startsWith("/api/workouts/plan/")) return response(obj("id" to 1, "date" to java.time.LocalDate.now().toString(), "folders" to JSONArray(), "logs" to JSONArray()))
                     if (path.startsWith("/api/analytics/program-trends/")) return response(obj("folders" to JSONArray()))
                     return response(JSONArray())
@@ -78,6 +86,7 @@ class PolishNetworkTest {
         compose.waitUntil(20_000) { !model.refreshing }
     }
     @After fun restore() {
+        releaseDays.countDown()
         if (::model.isInitialized) compose.runOnUiThread { model.audio.stop(); models.clear() }
         if (::server.isInitialized) server.shutdown()
         if (::original.isInitialized) SessionStore(context).write(original)
@@ -117,5 +126,33 @@ class PolishNetworkTest {
         val period = analyticsRangeQuery("year")
         for (route in listOf("days", "body-weight", "exercises")) assertTrue("Range missing from $route", requests.any { it == "GET" to "/api/analytics/$route/?$period" })
         assertTrue(requests.any { it == "GET" to "/api/analytics/program-trends/?range=year&granularity=day" })
+    }
+    @Test fun aLateCalendarResponseDoesNotRollBackAnAlreadyAcknowledgedEdit() {
+        val date = java.time.LocalDate.now().toString()
+        val oldLog = obj("id" to 55, "workout_day" to 77, "template_exercise" to 3, "set_index" to 1, "actual_reps" to 10, "actual_weight" to 10)
+        val plan = obj("id" to 77, "date" to date, "logs" to JSONArray().put(oldLog), "folders" to JSONArray())
+        kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) { OfflineStore(context, model.token).cache(date, plan) }
+        compose.runOnUiThread { model.plan = plan }
+        holdDays.set(true)
+        compose.setContent { MaterialTheme(typography = FitTypography) { WorkoutCalendar(model) {} } }
+        compose.waitUntil(5000) { daysStarted.count == 0L }
+        compose.runOnUiThread { model.logSet(obj("template_exercise_id" to 3, "defaults" to obj("has_weight" to true)), obj("set_index" to 1), "6", "20", "", oldLog) }
+        compose.waitUntil(10_000) { model.workoutSaving == 0 && model.pendingCount == 0 && model.plan.array("logs").singleOrNull()?.let { it.optInt("actual_reps") == 6 && !it.optBoolean("queued") } == true }
+        releaseDays.countDown()
+        compose.waitUntil(10_000) { compose.onAllNodesWithTag("calendar-loading").fetchSemanticsNodes().isEmpty() }
+        compose.onNodeWithTag("calendar-load-$date", useUnmergedTree = true).assertTextEquals("120")
+    }
+    @Test fun changingThePeriodDuringALoadCancelsTheOldSelection() {
+        holdDays.set(true)
+        compose.runOnUiThread { model.navigate(Screen.Analytics) }
+        compose.setContent { MaterialTheme(typography = FitTypography) { AnalyticsScreen(model) } }
+        compose.waitUntil(5000) { daysStarted.count == 0L }
+        compose.onNodeWithContentDescription("Период").performClick()
+        compose.onNode(hasText("Год", substring = false) and hasAnyAncestor(isPopup())).performClick()
+        compose.waitUntil(15_000) { model.range == "year" && !model.refreshing }
+        releaseDays.countDown()
+        compose.waitForIdle()
+        assertEquals("year", model.range)
+        assertEquals(200, model.days.single().getInt("load"))
     }
 }

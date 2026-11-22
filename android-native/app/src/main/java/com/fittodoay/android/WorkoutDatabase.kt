@@ -5,7 +5,8 @@ import androidx.room.*
 import kotlinx.coroutines.flow.Flow
 
 @Entity(tableName = "workout_plans", primaryKeys = ["account", "date"])
-data class StoredWorkoutPlan(val account: String, val date: String, val json: String)
+data class StoredWorkoutPlan(val account: String, val date: String, val json: String,
+    @ColumnInfo(defaultValue = "0") val updatedAt: Long = 0)
 
 @Entity(tableName = "workout_outbox", primaryKeys = ["account", "key"], indices = [Index(value = ["account", "position"])])
 data class StoredWorkoutWrite(val account: String, val key: String, val position: Long, val json: String)
@@ -23,6 +24,10 @@ data class StoredLocalDraft(val account: String, val key: String, val json: Stri
 
 @Dao interface WorkoutDao {
     @Query("SELECT json FROM workout_plans WHERE account=:account AND date=:date") fun plan(account: String, date: String): String?
+    @Query("SELECT * FROM workout_plans WHERE account=:account AND date BETWEEN :start AND :end ORDER BY date")
+    fun plans(account: String, start: String, end: String): List<StoredWorkoutPlan>
+    @Query("SELECT * FROM workout_plans WHERE account=:account AND date BETWEEN :start AND :end ORDER BY date")
+    fun observePlans(account: String, start: String, end: String): Flow<List<StoredWorkoutPlan>>
     @Upsert fun cache(plan: StoredWorkoutPlan)
     @Query("SELECT * FROM workout_outbox WHERE account=:account ORDER BY position") fun queue(account: String): List<StoredWorkoutWrite>
     @Upsert fun put(write: StoredWorkoutWrite)
@@ -32,8 +37,8 @@ data class StoredLocalDraft(val account: String, val key: String, val json: Stri
     @Insert fun imported(account: ImportedWorkoutAccount)
 }
 
-@Database(entities = [StoredWorkoutPlan::class, StoredWorkoutWrite::class, ImportedWorkoutAccount::class, StoredLocalDraft::class], version = 2,
-    autoMigrations = [AutoMigration(from = 1, to = 2)], exportSchema = true)
+@Database(entities = [StoredWorkoutPlan::class, StoredWorkoutWrite::class, ImportedWorkoutAccount::class, StoredLocalDraft::class], version = 3,
+    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3)], exportSchema = true)
 abstract class WorkoutDatabase : RoomDatabase() {
     abstract fun workouts(): WorkoutDao
     abstract fun drafts(): LocalDraftDao

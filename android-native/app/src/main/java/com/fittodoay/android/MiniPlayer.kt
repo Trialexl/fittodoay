@@ -39,7 +39,7 @@ import dev.chrisbanes.haze.*
             Row(verticalAlignment = Alignment.CenterVertically) {
                 FilledTonalIconButton(onClick = {
                     if (audio.trackId == null) model.tracks.firstOrNull()?.let { audio.play(it, model.tracks, model.token) } else audio.toggle()
-                }, enabled = audio.trackId != null || model.tracks.isNotEmpty(), modifier = Modifier.size(40.dp).semantics { contentDescription = "Пауза или воспроизведение"; stateDescription = if (audio.buffering && audio.playRequested) "Загрузка трека" else if (audio.playRequested) "Воспроизведение" else "Пауза" }) {
+                }, enabled = audio.trackId != null || model.tracks.isNotEmpty(), shape = RoundedCornerShape(50), modifier = Modifier.width(56.dp).height(40.dp).semantics { contentDescription = "Пауза или воспроизведение"; stateDescription = if (audio.buffering && audio.playRequested) "Загрузка трека" else if (audio.playRequested) "Воспроизведение" else "Пауза" }) {
                     if (audio.buffering && audio.playRequested) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                     else Icon(if (audio.playRequested) Icons.Outlined.Pause else Icons.Outlined.PlayArrow, null, Modifier.size(20.dp))
                 }

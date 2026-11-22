@@ -28,7 +28,7 @@ import kotlin.math.roundToInt
     MaterialTheme(colorScheme = fitColors(true, accent, true)) {
         Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), color = Color(0xff202633), contentColor = Color.White) {
             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                         Text("СЕГОДНЯ В ФОКУСЕ", style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.sp), color = Color(0xffb6bfce))
                         Text(focus, style = MaterialTheme.typography.titleMedium)
@@ -41,10 +41,10 @@ import kotlin.math.roundToInt
                         }
                     }
                 }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    OverviewMetric(exercises.size.toString(), "упражнений")
-                    OverviewMetric(total.toString(), "подходов в плане")
-                    OverviewMetric(workoutLoad(model.plan).roundToInt().toString(), "нагрузка за день")
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OverviewMetric(exercises.size.toString(), "упражнений", Modifier.weight(1f))
+                    OverviewMetric(total.toString(), "подходов в плане", Modifier.weight(1f))
+                    OverviewMetric(workoutLoad(model.plan).roundToInt().toString(), "нагрузка за день", Modifier.weight(1f))
                 }
                 if (exercises.isNotEmpty() && model.preferences.text("muscle_summary_view", "chips") == "chips") {
                     HorizontalDivider(color = Color(0xff343c4b))
@@ -60,8 +60,8 @@ import kotlin.math.roundToInt
     }
 }
 
-@Composable private fun OverviewMetric(value: String, label: String) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+@Composable private fun OverviewMetric(value: String, label: String, modifier: Modifier = Modifier) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(value, style = MaterialTheme.typography.titleLarge)
         Text(label, style = MaterialTheme.typography.labelSmall, color = Color(0xffb6bfce))
     }

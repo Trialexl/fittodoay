@@ -16,9 +16,12 @@ fun isTransientLocalFailure(error: Exception): Boolean = error is java.io.IOExce
 interface ResponseStorage {
     fun read(path: String): Any?
     fun write(path: String, value: Any)
+    fun writeSnapshot(path: String, value: Any, asOf: Long) { write(path, value) }
     fun remove(path: String)
     fun recordMutation(path: String, method: String, body: JSONObject?, result: Any)
 }
+
+data class StoredResponse(val value: Any, val asOf: Long)
 
 fun parseStoredJson(value: String): Any = if (value.trimStart().startsWith("[")) JSONArray(value) else JSONObject(value)
 

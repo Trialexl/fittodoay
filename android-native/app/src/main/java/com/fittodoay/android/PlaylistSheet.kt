@@ -251,7 +251,7 @@ import kotlinx.coroutines.flow.first
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.weight(1f).padding(end = 6.dp).clip(RoundedCornerShape(4.dp))) { Text(audio.title, Modifier.basicMarquee(iterations = Int.MAX_VALUE), style = MaterialTheme.typography.bodySmall, maxLines = 1) }
             IconButton(onClick = { audio.next(-1) }, Modifier.size(40.dp)) { Icon(Icons.Outlined.SkipPrevious, "Предыдущий трек", Modifier.size(20.dp)) }
-            FilledTonalIconButton(onClick = audio::toggle, Modifier.size(44.dp).semantics { contentDescription = "Пауза или воспроизведение в плейлисте"; stateDescription = if (audio.buffering && audio.playRequested) "Загрузка трека" else if (audio.playRequested) "Воспроизведение" else "Пауза" }) {
+            FilledTonalIconButton(onClick = audio::toggle, Modifier.width(64.dp).height(44.dp).semantics { contentDescription = "Пауза или воспроизведение в плейлисте"; stateDescription = if (audio.buffering && audio.playRequested) "Загрузка трека" else if (audio.playRequested) "Воспроизведение" else "Пауза" }, shape = RoundedCornerShape(50)) {
                 if (audio.buffering && audio.playRequested) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
                 else Icon(if (audio.playRequested) Icons.Outlined.Pause else Icons.Outlined.PlayArrow, null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.primary)
             }

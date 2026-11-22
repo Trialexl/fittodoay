@@ -100,6 +100,13 @@ class AppModel @JvmOverloads constructor(application: Application, private val b
     private var workoutSyncJob: Job? = null
     private val savingKeys = mutableSetOf<String>()
     private fun repository() = WorkoutRepository.get(getApplication(), token, baseUrl, transportOverride)
+    fun calendarHistory(start: String, end: String) = repository().observeHistory(start, end)
+    suspend fun savedDailyLoads(start: String, end: String): StoredResponse? {
+        val account = token
+        val saved = withContext(Dispatchers.IO) { LocalDataStore(getApplication(), account).snapshot("/api/analytics/days/?start=$start&end=$end") }
+        if (token != account) throw CancellationException("Account changed")
+        return saved
+    }
     private fun bindRepository() {
         repositoryJob?.cancel()
         bindLocalServices()
@@ -112,7 +119,7 @@ class AppModel @JvmOverloads constructor(application: Application, private val b
             launch { repo.snapshot.collect { snapshot -> if (token == account && snapshot != null) {
                 if (date == snapshot.date && repo.revision(snapshot.date) == snapshot.revision) plan = snapshot.plan
                 snapshot.plan.optJSONObject("weigh_in")?.takeUnless { it.isNull("weight_kg") }?.let { value ->
-                    weights = weights.filterNot { it.text("date") == snapshot.date } + JSONObject(value.toString()).put("date", snapshot.date)
+                    weights = analyticsWeightRows(weights.filterNot { it.text("date") == snapshot.date } + JSONObject(value.toString()).put("date", snapshot.date), range)
                 }
             } } }
             repo.initialize()
@@ -320,12 +327,13 @@ class AppModel @JvmOverloads constructor(application: Application, private val b
                 "folders" to store.read("/api/programs/folders/"), "templates" to store.read("/api/programs/templates/"),
                 "preview" to store.read("local:preview"), "sync" to store.read("local:sync")
             ).apply { when (target) {
-                Screen.Workout -> put("plan", repo.read(requestedDate) ?: (store.read("/api/workouts/plan/?date=$requestedDate") as? JSONObject)?.let(::normalizePlan)?.let {
-                    repo.acceptRemote(requestedDate, repo.revision(requestedDate), it)?.plan
+                Screen.Workout -> put("plan", repo.read(requestedDate) ?: store.snapshot("/api/workouts/plan/?date=$requestedDate")?.let { cached ->
+                    (cached.value as? JSONObject)?.let { repo.acceptRemote(requestedDate, revision, normalizePlan(it), cached.asOf)?.plan }
                 })
                 Screen.Analytics -> {
                     val period = analyticsRangeQuery(range)
                     put("days", store.read("/api/analytics/days/?$period")); put("weights", store.read("/api/analytics/body-weight/?$period"))
+                    put("queue", OfflineStore(getApplication(), account).queue())
                     put("stats", store.read("/api/analytics/exercises/?$period")); put("trends", store.read("/api/analytics/program-trends/?range=$range&granularity=$granularity"))
                 }
                 Screen.Technique -> put("reviews", store.read("/api/technique-reviews/"))
@@ -337,7 +345,11 @@ class AppModel @JvmOverloads constructor(application: Application, private val b
         cache["folders"]?.let { folders = it.rows() }; cache["templates"]?.let { templates = it.rows() }
         (cache["preview"] as? JSONObject)?.let { preview = it }; (cache["sync"] as? JSONObject)?.let { localSyncResult = it }
         if (repo.revision(requestedDate) == revision) (cache["plan"] as? JSONObject)?.let { plan = it }
-        cache["days"]?.let { days = it.rows() }; cache["weights"]?.let { weights = it.rows() }; cache["stats"]?.let { exerciseStats = it.rows() }
+        cache["days"]?.let { days = it.rows() }
+        @Suppress("UNCHECKED_CAST")
+        val cachedQueue = cache["queue"] as? List<JSONObject> ?: emptyList()
+        cache["weights"]?.let { weights = analyticsWeightRows(withQueuedWeights(it.rows(), cachedQueue), range) }
+        cache["stats"]?.let { exerciseStats = it.rows() }
         (cache["trends"] as? JSONObject)?.let { trends = it }; cache["reviews"]?.let { reviews = it.rows() }
         repo.initialize()
     }
@@ -377,9 +389,10 @@ class AppModel @JvmOverloads constructor(application: Application, private val b
             Screen.Workout -> {
                 val revision = repo.revision(requestedDate)
                 try {
+                    val readStarted = System.currentTimeMillis()
                     val response = api.call("/api/workouts/plan/?date=$requestedDate", useLocalFallback = false) as JSONObject
                     val received = withContext(Dispatchers.Default) { normalizePlan(response) }
-                    val accepted = repo.acceptRemote(requestedDate, revision, received)
+                    val accepted = repo.acceptRemote(requestedDate, revision, received, readStarted)
                     if (applies() && accepted != null && repo.revision(requestedDate) == accepted.revision) plan = accepted.plan
                 } catch (e: IOException) {
                     if (e is ApiException) throw e
@@ -397,7 +410,7 @@ class AppModel @JvmOverloads constructor(application: Application, private val b
                 val f = async { api.call("/api/programs/folders/").rows() }
                 val rd = d.await(); val rw = w.await(); val re = e.await(); val rt = t.await(); val rf = f.await()
                 val queue = withContext(Dispatchers.IO) { offline().queue() }
-                if (applies()) { days = rd; weights = withQueuedWeights(rw, queue); exerciseStats = re; trends = rt; folders = rf }
+                if (applies()) { days = rd; weights = analyticsWeightRows(withQueuedWeights(rw, queue), range); exerciseStats = re; trends = rt; folders = rf }
             }
             Screen.Technique -> { val received = api.all("/api/technique-reviews/").rows(); if (applies()) reviews = received }
             Screen.Assistant -> {
