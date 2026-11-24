@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.json.JSONObject
 import kotlinx.coroutines.flow.first
+import sh.calvin.reorderable.*
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable fun PlaylistSheet(model: AppModel, dismiss: () -> Unit) {
@@ -65,6 +66,12 @@ import kotlinx.coroutines.flow.first
     val audio = model.audio
     val searching = WindowInsets.isImeVisible
     val listState = rememberLazyListState()
+    var queueDragging by remember { mutableStateOf(false) }
+    val queueKeys = audio.queue.mapIndexed { index, item -> "queue:${item.first}:${audio.queue.take(index).count { it.first == item.first }}" }
+    val reorder = rememberReorderableLazyListState(listState) { from, to ->
+        val sourceIndex = queueKeys.indexOf(from.key); val targetIndex = queueKeys.indexOf(to.key)
+        if (sourceIndex >= 0 && targetIndex >= 0) audio.move(sourceIndex, targetIndex)
+    }
     val initialHeaderSpace = with(androidx.compose.ui.platform.LocalDensity.current) { 44.dp.roundToPx() }
     var groupHeaderSpace by remember(initialHeaderSpace) { mutableIntStateOf(initialHeaderSpace) }
     val shown = model.tracks.filter { (source == "all" || it.text("source_type") == source) &&
@@ -79,7 +86,7 @@ import kotlinx.coroutines.flow.first
         (expansion[title] ?: (tracks.any { it.optInt("id") == audio.trackId } || audio.trackId == null && title == groups.keys.firstOrNull()))
     val catalogKey = groups.map { (title, tracks) -> title to tracks.map { it.optInt("id") } }
     LaunchedEffect(group, source, query, section, audio.trackId, audio.queueIndex, catalogKey) {
-        if (scroll) {
+        if (scroll && !(section == "queue" && queueDragging)) {
             var target = 0
             if (section == "queue") target = (audio.queueIndex + 1).coerceAtLeast(0)
             else {
@@ -119,7 +126,7 @@ import kotlinx.coroutines.flow.first
                 }
                 Box {
                     IconButton(onClick = { filtersOpen = true }, Modifier.size(44.dp)) { Icon(Icons.Outlined.Tune, "Фильтры музыки", Modifier.size(20.dp)) }
-                    DropdownMenu(filtersOpen, { filtersOpen = false }) {
+                    DropdownMenu(filtersOpen, { filtersOpen = false }, containerColor = popupSurfaceColor()) {
                         Text("Группировка", Modifier.padding(horizontal = 16.dp, vertical = 6.dp), style = MaterialTheme.typography.labelSmall)
                         listOf("none" to "Все треки", "folder" to "По папкам", "artist" to "Исполнитель", "album" to "Альбом").forEach { (id, title) ->
                             DropdownMenuItem(text = { Text(title) }, trailingIcon = { if (group == id) Icon(Icons.Outlined.Check, null) },
@@ -141,13 +148,16 @@ import kotlinx.coroutines.flow.first
         audio.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
         model.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
         val trackRow: @Composable (JSONObject) -> Unit = { track -> MusicTrackRow(model, track, shown) { deleting = it } }
-        val queueRow: @Composable (Int) -> Unit = { index -> QueueTrackRow(audio, index) }
         if (scroll) {
             LazyColumn(Modifier.weight(1f).fillMaxWidth().testTag("playlist-list"), state = listState, verticalArrangement = Arrangement.spacedBy(0.dp)) {
                 if (section == "queue") {
                     if (audio.queue.isEmpty()) item { PlaylistEmpty("Очередь пока пуста", "Добавьте трек через меню ⋯") }
                     else item { TextButton(onClick = audio::clearQueue, contentPadding = PaddingValues(4.dp)) { Text("Очистить очередь", style = MaterialTheme.typography.labelSmall) } }
-                    items(audio.queue.size) { queueRow(it) }
+                    items(audio.queue.size, key = { queueKeys[it] }) { index ->
+                        ReorderableItem(reorder, key = queueKeys[index]) { dragging ->
+                            QueueTrackRow(audio, index, Modifier.draggableHandle(onDragStarted = { queueDragging = true }, onDragStopped = { queueDragging = false }), dragging)
+                        }
+                    }
                 } else {
                     if (shown.isEmpty()) item { PlaylistEmpty("Ничего не найдено", "Попробуйте другое название или источник") }
                     groups.forEach { (title, tracks) ->
@@ -162,7 +172,9 @@ import kotlinx.coroutines.flow.first
             if (section == "queue") {
                 if (audio.queue.isEmpty()) PlaylistEmpty("Очередь пока пуста", "Добавьте трек через меню ⋯")
                 else TextButton(onClick = audio::clearQueue) { Text("Очистить очередь") }
-                audio.queue.indices.forEach { queueRow(it) }
+                ReorderableColumn(list = audio.queue, onSettle = { from, to -> audio.move(from, to) }) { index, _, dragging ->
+                    key(queueKeys[index]) { QueueTrackRow(audio, index, Modifier.draggableHandle(), dragging) }
+                }
             } else {
                 if (shown.isEmpty()) PlaylistEmpty("Ничего не найдено", "Попробуйте другое название или источник")
                 groups.forEach { (title, tracks) -> MusicGroupHeading(title, tracks.size, expanded(title, tracks), { expansion[title] = !expanded(title, tracks) }); if (expanded(title, tracks)) tracks.forEach { trackRow(it) } }
@@ -210,7 +222,7 @@ import kotlinx.coroutines.flow.first
         }, trailingContent = {
             Box {
                 IconButton(onClick = { menu = true }, Modifier.size(40.dp)) { Icon(Icons.Outlined.MoreHoriz, "Действия с треком: $name", Modifier.size(18.dp)) }
-                DropdownMenu(menu, { menu = false }) {
+                DropdownMenu(menu, { menu = false }, containerColor = popupSurfaceColor()) {
                     DropdownMenuItem(text = { Text("Играть") }, leadingIcon = { Icon(Icons.Outlined.PlayArrow, null) }, onClick = { menu = false; audio.play(track, tracks, model.token) })
                     DropdownMenuItem(text = { Text("Следующим") }, leadingIcon = { Icon(Icons.Outlined.SkipNext, null) }, onClick = { menu = false; audio.enqueue(track, next = true) })
                     DropdownMenuItem(text = { Text("В очередь") }, leadingIcon = { Icon(Icons.Outlined.PlaylistAdd, null) }, onClick = { menu = false; audio.enqueue(track) })
@@ -221,22 +233,20 @@ import kotlinx.coroutines.flow.first
 
 }
 
-@Composable private fun QueueTrackRow(audio: AudioController, index: Int) {
+@Composable private fun QueueTrackRow(audio: AudioController, index: Int, modifier: Modifier, dragging: Boolean) {
     val item = audio.queue.getOrNull(index) ?: return
     var menu by remember { mutableStateOf(false) }
     val active = audio.queueIndex == index
     ListItem(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).testTag("queue-$index").semantics { selected = active },
-        colors = ListItemDefaults.colors(containerColor = if (active) MaterialTheme.colorScheme.primary.copy(alpha = .08f) else MaterialTheme.colorScheme.surface),
-        leadingContent = { Text((index + 1).toString().padStart(2, '0'), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) },
+        colors = ListItemDefaults.colors(containerColor = if (dragging) MaterialTheme.colorScheme.surfaceContainerHigh else if (active) MaterialTheme.colorScheme.primary.copy(alpha = .08f) else MaterialTheme.colorScheme.surface),
+        leadingContent = { IconButton(onClick = {}, modifier = modifier.size(40.dp).testTag("drag-queue-$index")) { Icon(Icons.Outlined.DragHandle, "Переместить трек ${index + 1}", Modifier.size(20.dp)) } },
         headlineContent = { Text(item.second, Modifier.fillMaxWidth().clickable { audio.playQueued(index) }.padding(vertical = 8.dp), maxLines = 1, overflow = TextOverflow.Ellipsis,
             style = MaterialTheme.typography.bodyMedium, color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface) },
         trailingContent = {
         Box {
             IconButton(onClick = { menu = true }, Modifier.size(40.dp)) { Icon(Icons.Outlined.MoreHoriz, "Действия в очереди ${index + 1}", Modifier.size(18.dp)) }
-            DropdownMenu(menu, { menu = false }) {
+            DropdownMenu(menu, { menu = false }, containerColor = popupSurfaceColor()) {
                 DropdownMenuItem(text = { Text("Играть") }, onClick = { menu = false; audio.playQueued(index) })
-                DropdownMenuItem(text = { Text("Выше") }, enabled = index > 0, onClick = { menu = false; audio.move(index, index - 1) })
-                DropdownMenuItem(text = { Text("Ниже") }, enabled = index < audio.queue.lastIndex, onClick = { menu = false; audio.move(index, index + 1) })
                 DropdownMenuItem(text = { Text("Убрать") }, onClick = { menu = false; audio.remove(index) })
             }
         }

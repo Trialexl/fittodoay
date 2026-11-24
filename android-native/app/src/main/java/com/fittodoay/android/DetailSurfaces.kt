@@ -46,7 +46,7 @@ import androidx.core.view.WindowCompat
     }
     if (windowWidth < 600.dp) {
         ModalBottomSheet(onDismissRequest = dismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-            containerColor = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+            containerColor = popupSurfaceColor(), contentColor = MaterialTheme.colorScheme.onSurface, shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
             dragHandle = if (compact) null else { { BottomSheetDefaults.DragHandle() } },
             contentWindowInsets = { WindowInsets.safeDrawing }) {
             Column(Modifier.fillMaxWidth().then(if (compact) Modifier.height(windowHeight * .94f) else Modifier.heightIn(max = windowHeight * .88f)).imePadding().testTag(tag).padding(start = if (compact) 14.dp else 20.dp, end = if (compact) 14.dp else 20.dp, top = if (compact) 8.dp else 0.dp, bottom = if (compact) 10.dp else 20.dp),
@@ -54,7 +54,7 @@ import androidx.core.view.WindowCompat
         }
     } else Dialog(onDismissRequest = dismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         BoxWithConstraints(Modifier.fillMaxSize().systemBarsPadding().imePadding().padding(20.dp), contentAlignment = Alignment.Center) {
-            Surface(Modifier.widthIn(max = 760.dp).fillMaxWidth().heightIn(max = maxHeight * .94f), shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surface) {
+            Surface(Modifier.widthIn(max = 760.dp).fillMaxWidth().heightIn(max = maxHeight * .94f), shape = RoundedCornerShape(24.dp), color = popupSurfaceColor(), contentColor = MaterialTheme.colorScheme.onSurface) {
                 Column(Modifier.then(if (compact) Modifier.height(maxHeight * .88f) else Modifier).testTag(tag).padding(if (compact) 18.dp else 24.dp), verticalArrangement = Arrangement.spacedBy(if (compact) 10.dp else 18.dp), content = body)
             }
         }
@@ -84,7 +84,7 @@ import androidx.core.view.WindowCompat
                 Icon(Icons.Outlined.ExpandMore, label, Modifier.size(16.dp))
             }
         }
-        DropdownMenu(open, { open = false }) {
+        DropdownMenu(open, { open = false }, containerColor = popupSurfaceColor()) {
             options.forEach { (id, title) -> DropdownMenuItem(text = { Text(title) }, onClick = { open = false; changed(id) },
                 trailingIcon = { if (id == value) Icon(Icons.Outlined.Check, null, Modifier.size(16.dp)) }) }
         }

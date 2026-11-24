@@ -12,6 +12,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.unit.dp
@@ -95,6 +96,53 @@ class PolishRegressionTest {
         SessionStore(context).write(original)
         compose.runOnUiThread { model.audio.play(local, listOf(local), model.token) }
         compose.waitUntil(45_000) { model.audio.trackId == track.optInt("id") && model.audio.durationMs > 0 }
+    }
+    @Test fun playerIsOnlyVisibleOnTheChecklist() {
+        content { FitApp(model) }
+        compose.onNodeWithTag("mini-player").assertExists()
+        for (screen in Screen.entries.filter { it != Screen.Workout }) {
+            compose.runOnUiThread { model.screen = screen }
+            compose.onNodeWithTag("mini-player").assertDoesNotExist()
+        }
+        compose.runOnUiThread { model.screen = Screen.Workout }
+        compose.onNodeWithTag("mini-player").assertExists()
+        capture("player-checklist-only")
+    }
+    @Test fun inlineChatMentionOpensTheExistingExerciseWindow() {
+        val source = obj("id" to "press", "name" to "Жим лёжа", "description" to "Техника QA")
+        val text = "Попробуйте ЖИМ_ЛЕЖА сегодня."
+        compose.runOnUiThread {
+            model.messages = listOf(obj("id" to 1, "role" to "assistant", "content" to text))
+            model.chatReferences = listOf(obj("exercise" to source))
+        }
+        content { ChatDialog(model) {} }
+        val header = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
+        compose.onNodeWithText("AI-помощник").performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(header) }
+        if (args.getString("polishTheme") == "dark") assertTrue("Dark chat title must remain readable", header.single().layoutInput.style.color.red > .5f)
+        capture("chat-inline-mention")
+        val node = compose.onNodeWithText(text)
+        val results = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
+        node.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(results) }
+        val layout = results.single()
+        node.performTouchInput { click(layout.getBoundingBox(text.indexOf("ЖИМ") + 1).center) }
+        compose.onNodeWithTag("exercise-info-sheet").assertExists()
+        compose.onNodeWithText("Описание", substring = false).assertExists()
+        compose.onNodeWithText("Статистика", substring = false).assertExists()
+        capture("chat-exercise-window")
+    }
+    @Test fun queueReordersByDraggingWithoutMoveMenuButtons() {
+        val library = tracks(3)
+        compose.runOnUiThread { model.audio.play(library.first(), library, model.token) }
+        compose.waitUntil(15_000) { model.audio.queue.size == 3 }
+        content { PlaylistSheet(model) {} }
+        compose.onNodeWithContentDescription("Показать очередь").performClick()
+        val first = compose.onNodeWithTag("queue-0").fetchSemanticsNode().boundsInRoot
+        val second = compose.onNodeWithTag("queue-1").fetchSemanticsNode().boundsInRoot
+        compose.onNodeWithTag("drag-queue-0").performTouchInput { swipe(center, center + Offset(0f, second.center.y - first.center.y + 12f), 700) }
+        compose.waitUntil(15_000) { model.audio.queue.map { it.first } == listOf(2, 1, 3) }
+        compose.onNodeWithContentDescription("Действия в очереди 1").performClick()
+        compose.onNodeWithText("Выше").assertDoesNotExist(); compose.onNodeWithText("Ниже").assertDoesNotExist()
+        capture("queue-drag-order")
     }
     @Test fun asyncCatalogOpensTheCurrentFolderAndScrollsToTheCurrentTrack() {
         val library = tracks()
@@ -208,7 +256,7 @@ class PolishRegressionTest {
         compose.onNodeWithTag("trend-chart-line").performScrollTo()
         capture("analytics-compact")
     }
-    @Test fun automaticWeightFocusAccountsForTheFloatingPlayer() {
+    @Test fun automaticWeightFocusUsesFullViewportOutsideChecklist() {
         compose.runOnUiThread {
             model.screen = Screen.Analytics
             model.weights = (0..30).map { obj("date" to LocalDate.now().minusDays(it.toLong()).toString(), "weight_kg" to 80.0 + it / 10.0) }
@@ -220,8 +268,10 @@ class PolishRegressionTest {
         val panel = compose.onNodeWithTag("analytics-body-weight").fetchSemanticsNode().boundsInRoot
         val dock = compose.onNodeWithTag("floating-player-dock").fetchSemanticsNode().boundsInRoot
         val viewport = compose.onNodeWithTag("page-scroll").fetchSemanticsNode().boundsInRoot
-        if (panel.height <= dock.top - viewport.top) assertTrue("Focused weight chart should clear the floating dock", panel.bottom <= dock.top + 2)
-        else assertTrue("At least the focused chart's center must be visible", panel.center.y < dock.top)
+        compose.onNodeWithTag("mini-player").assertDoesNotExist()
+        val availableBottom = if (dock.height > 0) dock.top else viewport.bottom
+        if (panel.height <= availableBottom - viewport.top) assertTrue("Focused weight chart should fit the viewport", panel.bottom <= availableBottom + 2)
+        else assertTrue("At least the focused chart's center must be visible", panel.center.y < availableBottom)
         capture("weight-focus-floating-dock")
     }
     @Test fun draggingExercisesChangesTheDraftAndCancelDoesNotChangeTheProgram() {

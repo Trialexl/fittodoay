@@ -156,14 +156,14 @@ class MainActivity : ComponentActivity() {
                 Column(Modifier.align(Alignment.BottomCenter).widthIn(max = 960.dp).fillMaxWidth()
                     .onSizeChanged { playerHeight = it.height }.testTag("floating-player-dock")) {
                     MinimizedWorkoutTimer(model)
-                    MiniPlayer(model, backdrop)
+                    if (model.screen == Screen.Workout) MiniPlayer(model, backdrop)
                 }
                 }
             }
         }
         }
         }
-        if (syncInfo) AlertDialog(onDismissRequest = { syncInfo = false }, title = { Text("Синхронизация") },
+        if (syncInfo) AlertDialog(containerColor = popupSurfaceColor(), onDismissRequest = { syncInfo = false }, title = { Text("Синхронизация") },
             text = { Text(model.workoutSync.error ?: if (model.pendingCount > 0) "Результаты сохранены на устройстве. Ожидает отправки: ${model.pendingCount}." else "Показаны данные с устройства. После подключения обновите экран, чтобы получить изменения сервера.") },
             confirmButton = { TextButton(onClick = { model.retryWorkoutSync(); model.refresh(); syncInfo = false }) { Text("Повторить") } },
             dismissButton = { TextButton(onClick = { syncInfo = false }) { Text("Закрыть") } })
@@ -234,7 +234,7 @@ val LocalPageBottomInset = compositionLocalOf { 0.dp }
     Button(onClick, Modifier.fillMaxWidth().heightIn(min = 48.dp), enabled = enabled, shape = RoundedCornerShape(12.dp)) { Text(label) }
 }
 @Composable fun ConfirmDelete(title: String, onDismiss: () -> Unit, onConfirm: () -> Unit) {
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("Удалить $title?") }, text = { Text("Это действие изменит данные на сервере.") },
+    AlertDialog(containerColor = popupSurfaceColor(), onDismissRequest = onDismiss, title = { Text("Удалить $title?") }, text = { Text("Это действие изменит данные на сервере.") },
         confirmButton = { TextButton(onClick = { onConfirm(); onDismiss() }) { Text("Удалить") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } })
 }
 val goals = listOf("strength" to "Сила", "hypertrophy" to "Мышцы", "cut" to "Рельеф", "endurance" to "Выносливость")

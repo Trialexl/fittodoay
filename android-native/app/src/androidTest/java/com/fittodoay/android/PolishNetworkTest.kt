@@ -91,6 +91,29 @@ class PolishNetworkTest {
         if (::server.isInitialized) server.shutdown()
         if (::original.isInitialized) SessionStore(context).write(original)
     }
+    @Test fun programCardDragPersistsAndRejectedMoveRollsBack() {
+        compose.setContent { MaterialTheme(typography = FitTypography) { Page {
+            ModernProgramFolder(model, obj("id" to 1, "name" to "QA"), {}, {}, {}, { _ -> }, { _, _ -> }, { _ -> }, { _ -> }, { _ -> })
+        } } }
+        compose.onNodeWithTag("program-drag-1").performScrollTo()
+        val first = compose.onNodeWithTag("program-order-1").fetchSemanticsNode().boundsInRoot
+        val second = compose.onNodeWithTag("program-order-2").fetchSemanticsNode().boundsInRoot
+        compose.onNodeWithTag("program-drag-1").performTouchInput { swipe(center, center + Offset(0f, second.center.y - first.center.y + 12f), 700) }
+        compose.waitUntil(20_000) { orders.isNotEmpty() && !model.busy }
+        assertEquals(listOf(2, 1, 3), model.templates.first().array("template_exercises").map { it.optInt("id") })
+        compose.waitForIdle()
+        val directory = File(context.filesDir, "polish-review").apply { mkdirs() }
+        androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot().let { image ->
+            File(directory, "program-card-drag.png").outputStream().use { image.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }; image.recycle()
+        }
+        reject = true
+        compose.runOnUiThread { model.reorder(model.templates.first(), 0, 1) }
+        compose.waitUntil(20_000) { !model.busy }
+        assertNotNull(model.error)
+        assertEquals(listOf(2, 1, 3), model.templates.first().array("template_exercises").map { it.optInt("id") })
+        compose.onNodeWithText("Переместить выше").assertDoesNotExist()
+        compose.onNodeWithText("Переместить ниже").assertDoesNotExist()
+    }
     @Test fun aDragIsSavedThroughReorderApiAndRemainsAfterReload() {
         var closed = false
         compose.setContent { MaterialTheme(typography = FitTypography) { DayDialog(JSONObject(day.toString()), model) { closed = true } } }

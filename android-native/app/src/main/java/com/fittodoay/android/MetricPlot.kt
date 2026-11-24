@@ -146,7 +146,7 @@ fun plotDate(date: String): String = runCatching { java.time.LocalDate.parse(dat
             if (lines.size > 3) TextButton(onClick = { allSeries = true }, contentPadding = PaddingValues(0.dp)) { Text("Все серии · ${lines.size}", style = MaterialTheme.typography.bodySmall) }
         }
     }
-    if (allSeries) ModalBottomSheet(onDismissRequest = { allSeries = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    if (allSeries) ModalBottomSheet(containerColor = popupSurfaceColor(), contentColor = MaterialTheme.colorScheme.onSurface, onDismissRequest = { allSeries = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Text("Серии графика", Modifier.padding(horizontal = 20.dp, vertical = 8.dp), style = MaterialTheme.typography.titleMedium)
         LazyColumn(Modifier.fillMaxWidth().heightIn(max = 480.dp).navigationBarsPadding()) {
             item { TextButton(onClick = { focus = null; allSeries = false }, Modifier.padding(horizontal = 12.dp)) { Text("Показать все") } }

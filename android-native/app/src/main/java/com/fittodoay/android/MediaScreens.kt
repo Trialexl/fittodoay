@@ -127,7 +127,7 @@ private suspend fun prepareUpload(context: Context, uri: Uri, maxMb: Int): Pair<
     }
     video?.let { file ->
         androidx.compose.ui.window.Dialog(onDismissRequest = { video = null }) {
-            Surface {
+            Surface(color = popupSurfaceColor(), contentColor = MaterialTheme.colorScheme.onSurface) {
                 Column(Modifier.padding(12.dp)) {
                     LocalTechniqueVideo(file)
 
@@ -137,7 +137,7 @@ private suspend fun prepareUpload(context: Context, uri: Uri, maxMb: Int): Pair<
         }
     }
     delete?.let { id -> ConfirmDelete("проверку", { delete = null }) { model.delete("/api/technique-reviews/$id/") } }
-    selected?.let { review -> AlertDialog(onDismissRequest = { selected = null }, title = { Text("Результат проверки") }, text = {
+    selected?.let { review -> AlertDialog(containerColor = popupSurfaceColor(), onDismissRequest = { selected = null }, title = { Text("Результат проверки") }, text = {
         Column(Modifier.heightIn(max = 500.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (!review.isNull("detected_exercise_confidence")) Text("Уверенность: ${"%.0f".format(review.optDouble("detected_exercise_confidence") * 100)}%")
             Text(review.text("summary")); review.optJSONObject("result_json")?.let { TechniqueResult(it) }

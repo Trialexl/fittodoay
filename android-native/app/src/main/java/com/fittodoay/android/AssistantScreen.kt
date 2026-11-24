@@ -105,7 +105,7 @@ import org.json.JSONObject
     var exerciseInfo by remember { mutableStateOf<JSONObject?>(null) }
     var history by remember { mutableStateOf(false) }
     if (model.draftLoading) {
-        Dialog(onDismissRequest = dismiss) { Surface(shape = MaterialTheme.shapes.large) {
+        Dialog(onDismissRequest = dismiss) { Surface(shape = MaterialTheme.shapes.large, color = popupSurfaceColor(), contentColor = MaterialTheme.colorScheme.onSurface) {
             Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Text("Открываем диалог…"); LinearProgressIndicator(Modifier.fillMaxWidth()); TextButton(onClick = dismiss) { Text("Закрыть") }
             }
@@ -151,7 +151,7 @@ import org.json.JSONObject
                 }
             }
         }
-        Surface(Modifier.fillMaxSize()) {
+        Surface(Modifier.fillMaxSize(), color = popupSurfaceColor(), contentColor = MaterialTheme.colorScheme.onSurface) {
             Box(Modifier.fillMaxSize().systemBarsPadding().imePadding(), contentAlignment = Alignment.TopCenter) {
             Column(Modifier.widthIn(max = 840.dp).fillMaxSize().padding(horizontal = 16.dp, vertical = if (imeVisible) 8.dp else 20.dp), verticalArrangement = Arrangement.spacedBy(if (imeVisible) 6.dp else 12.dp)) {
                 Row { Text("AI-помощник", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge); TextButton(onClick = dismiss) { Text("Закрыть") } }
@@ -176,7 +176,7 @@ import org.json.JSONObject
                         Card(modifier = Modifier.fillMaxWidth(if (userMessage) .92f else 1f), colors = CardDefaults.cardColors(containerColor = if (userMessage) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface, contentColor = MaterialTheme.colorScheme.onSurface)) {
                             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 Text(if (userMessage) "Вы" else "Помощник", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text(message.text("content"), style = MaterialTheme.typography.bodyMedium)
+                                ExerciseMentionText(message, model.chatReferences) { exerciseInfo = JSONObject(it.toString()).put("stats_folder_id", model.chatProgram) }
                                 val actions = message.array("actions")
                                 val mentioned = model.chatReferences.mapNotNull { reference ->
                                     val source = reference.optJSONObject("exercise") ?: reference.optJSONObject("custom_exercise")

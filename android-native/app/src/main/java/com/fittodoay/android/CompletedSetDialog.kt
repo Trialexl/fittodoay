@@ -30,7 +30,7 @@ import org.json.JSONObject
     Dialog(onDismissRequest = { if (model.workoutSaving == 0) dismiss() }, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         BoxWithConstraints(Modifier.fillMaxSize().systemBarsPadding().imePadding().padding(8.dp)) {
             val compact = maxWidth < 640.dp
-            Surface(Modifier.align(if (compact) Alignment.BottomCenter else Alignment.Center).widthIn(max = 512.dp).fillMaxWidth().heightIn(max = maxHeight).testTag("completed-set-dialog"), shape = RoundedCornerShape(if (compact) 18.dp else 20.dp)) {
+            Surface(Modifier.align(if (compact) Alignment.BottomCenter else Alignment.Center).widthIn(max = 512.dp).fillMaxWidth().heightIn(max = maxHeight).testTag("completed-set-dialog"), color = popupSurfaceColor(), contentColor = MaterialTheme.colorScheme.onSurface, shape = RoundedCornerShape(if (compact) 18.dp else 20.dp)) {
                 Column(Modifier.padding(if (compact) 18.dp else 24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     Row(verticalAlignment = Alignment.Top) {
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {

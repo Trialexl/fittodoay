@@ -119,7 +119,7 @@ import java.time.LocalDate
     var deleting by remember { mutableStateOf(false) }
     var name by remember { mutableStateOf(folder.text("name")) }
     var comment by remember { mutableStateOf(folder.text("comment")) }
-    AlertDialog(onDismissRequest = dismiss, title = { Text("Программа") }, text = {
+    AlertDialog(containerColor = popupSurfaceColor(), onDismissRequest = dismiss, title = { Text("Программа") }, text = {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) { model.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }; Field("Название", name, { name = it }); Field("Комментарий", comment, { comment = it })
             Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) { Switch(active, { active = it }, enabled = !model.busy); Text(if (active) "Активна" else "Выключена") }
             if (folder.has("id")) TextButton(onClick = { deleting = true }, enabled = !model.busy) { Text("Удалить программу", color = MaterialTheme.colorScheme.error) }
@@ -157,7 +157,7 @@ fun scheduleLabel(day: JSONObject): String {
     var rest by remember { mutableStateOf(exercise.text("rest_override", initial?.text("default_rest", "60") ?: "60")) }
     var note by remember { mutableStateOf(exercise.text("note")) }
     var active by remember { mutableStateOf(exercise.optBoolean("is_active", true)) }
-    AlertDialog(onDismissRequest = dismiss, title = { Text("Упражнение") }, text = {
+    AlertDialog(containerColor = popupSurfaceColor(), onDismissRequest = dismiss, title = { Text("Упражнение") }, text = {
         Column(Modifier.heightIn(max = 500.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             model.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             if (source == null) {
@@ -194,7 +194,7 @@ fun scheduleLabel(day: JSONObject): String {
 @Composable fun CustomExerciseDialog(model: AppModel, dismiss: () -> Unit) {
     var name by remember { mutableStateOf("") }; var description by remember { mutableStateOf("") }; var muscles by remember { mutableStateOf("") }
     var weight by remember { mutableStateOf(true) }; var time by remember { mutableStateOf(false) }
-    AlertDialog(onDismissRequest = dismiss, title = { Text("Своё упражнение") }, text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    AlertDialog(containerColor = popupSurfaceColor(), onDismissRequest = dismiss, title = { Text("Своё упражнение") }, text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         model.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         Field("Название", name, { name = it }); Field("Описание", description, { description = it }); Field("Мышцы", muscles, { muscles = it })
         Row { Checkbox(weight, { weight = it }); Text("С весом", Modifier.padding(top = 12.dp)) }; Row { Checkbox(time, { time = it }); Text("На время", Modifier.padding(top = 12.dp)) }

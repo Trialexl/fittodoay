@@ -82,7 +82,7 @@ class AudioController(context: Context) {
         val target = position.coerceIn(0, durationMs.coerceAtLeast(0))
         it.seekTo(target); positionMs = target
     }
-    fun move(from: Int, to: Int) = ready { if (from in 0 until it.mediaItemCount && to in 0 until it.mediaItemCount) it.moveMediaItem(from, to) }
+    fun move(from: Int, to: Int) = ready { if (from in 0 until it.mediaItemCount && to in 0 until it.mediaItemCount) { it.moveMediaItem(from, to); sync() } }
     fun remove(index: Int) = ready { if (index in 0 until it.mediaItemCount) it.removeMediaItem(index) }
     fun playQueued(index: Int) = ready { if (index in 0 until it.mediaItemCount) { error = null; it.seekTo(index, 0); it.prepare(); it.play() } }
     fun clearQueue() = ready { it.stop(); it.clearMediaItems(); sync() }

@@ -648,7 +648,15 @@ class AppModel @JvmOverloads constructor(application: Application, private val b
         val order = template.array("template_exercises").map { it.getInt("id") }.toMutableList()
         if (to !in order.indices) return@run
         order.add(to, order.removeAt(from))
-        api.call("/api/programs/template-exercises/reorder/", "POST", obj("template" to template.getInt("id"), "order" to JSONArray(order)))
+        val account = token
+        val rows = template.array("template_exercises").associateBy { it.getInt("id") }
+        val updated = JSONObject(template.toString()).put("template_exercises", JSONArray(order.map { rows.getValue(it) }))
+        templates = templates.map { if (it.optInt("id") == template.optInt("id")) updated else it }
+        try { api.call("/api/programs/template-exercises/reorder/", "POST", obj("template" to template.getInt("id"), "order" to JSONArray(order))) }
+        catch (error: Exception) {
+            if (token == account) templates = templates.map { if (it === updated) template else it }
+            throw error
+        }
         load()
     }
     fun saveDay(day: JSONObject, fields: JSONObject, order: List<Int>, saved: () -> Unit) = run {

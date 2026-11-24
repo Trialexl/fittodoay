@@ -68,7 +68,7 @@ import androidx.compose.ui.platform.LocalDensity
         }
         finally { loading = false }
     }
-    AlertDialog(onDismissRequest = dismiss, title = { Text("Выбор даты") }, text = {
+    AlertDialog(containerColor = popupSurfaceColor(), onDismissRequest = dismiss, title = { Text("Выбор даты") }, text = {
         Column(Modifier.testTag("workout-calendar").verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 IconButton(enabled = month > calendar.startMonth, onClick = { scope.launch { calendar.animateScrollToMonth(month.minusMonths(1)) } }) { Icon(Icons.Outlined.ChevronLeft, "Предыдущий месяц") }

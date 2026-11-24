@@ -19,6 +19,7 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import org.json.JSONObject
+import sh.calvin.reorderable.*
 
 @Composable fun ModernProgramLibrary(model: AppModel, selectedId: Int?, select: (Int) -> Unit, create: () -> Unit) {
     FitCard(Modifier.testTag("program-library"), padding = 12.dp) {
@@ -89,7 +90,7 @@ import org.json.JSONObject
                     IconButton(onClick = { addExercise(day) }, modifier = Modifier.size(48.dp)) { Icon(Icons.Outlined.Add, "Добавить упражнение", Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary) }
                     Box {
                         IconButton(onClick = { menu = true }, modifier = Modifier.size(48.dp)) { Icon(Icons.Outlined.Edit, "Настроить шаблон", Modifier.size(17.dp), tint = MaterialTheme.colorScheme.primary) }
-                        DropdownMenu(menu, { menu = false }) {
+                        DropdownMenu(menu, { menu = false }, containerColor = popupSurfaceColor()) {
                             DropdownMenuItem(text = { Text("Изменить день") }, onClick = { menu = false; editDay(day) })
                             DropdownMenuItem(text = { Text("Удалить день") }, onClick = { menu = false; delete("/api/programs/templates/${day.getInt("id")}/") })
                         }
@@ -99,11 +100,13 @@ import org.json.JSONObject
                     Switch(day.optBoolean("is_active"), { model.save("/api/programs/templates/", obj("is_active" to it), day.getInt("id")) }, enabled = !model.busy, modifier = Modifier.heightIn(min = 48.dp))
                     Text(if (day.optBoolean("is_active")) "День включён" else "День выключен", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                if (expanded) day.array("template_exercises").forEachIndexed { index, exercise ->
+                if (expanded) ReorderableColumn(list = day.array("template_exercises"), onSettle = { from, to -> if (!model.busy) model.reorder(day, from, to) }) { index, exercise, dragging ->
+                    key(exercise.getInt("id")) {
                     val source = exercise.optJSONObject("exercise") ?: exercise.optJSONObject("custom_exercise") ?: JSONObject()
                     var actions by remember { mutableStateOf(false) }
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(Modifier.background(if (dragging) MaterialTheme.colorScheme.surfaceContainerHigh else Color.Transparent).testTag("program-order-${exercise.getInt("id")}"), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        IconButton(onClick = {}, enabled = !model.busy, modifier = Modifier.size(40.dp).testTag("program-drag-${exercise.getInt("id")}").draggableHandle()) { Icon(Icons.Outlined.DragHandle, "Переместить ${source.text("name")}", Modifier.size(20.dp)) }
                         Text("${index + 1}".padStart(2, '0'), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Column(Modifier.weight(1f).clickable { info(exerciseInfoSource(source, folder)) }.padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text(source.text("name"), style = MaterialTheme.typography.titleSmall)
@@ -113,15 +116,14 @@ import org.json.JSONObject
                         }
                         Box {
                             IconButton(onClick = { actions = true }, modifier = Modifier.size(48.dp)) { Icon(Icons.Outlined.Edit, "Редактировать ${source.text("name")}", Modifier.size(17.dp), tint = MaterialTheme.colorScheme.primary) }
-                            DropdownMenu(actions, { actions = false }) {
+                            DropdownMenu(actions, { actions = false }, containerColor = popupSurfaceColor()) {
                                 DropdownMenuItem(text = { Text("Изменить упражнение") }, onClick = { actions = false; editExercise(day, exercise) })
                                 DropdownMenuItem(text = { Text("Техника и описание") }, onClick = { actions = false; info(exerciseInfoSource(source, folder)) })
-                                DropdownMenuItem(text = { Text("Переместить выше") }, enabled = index > 0 && !model.busy, onClick = { actions = false; model.reorder(day, index, index - 1) })
-                                DropdownMenuItem(text = { Text("Переместить ниже") }, enabled = index < day.array("template_exercises").lastIndex && !model.busy, onClick = { actions = false; model.reorder(day, index, index + 1) })
                                 DropdownMenuItem(text = { Text("Удалить упражнение") }, onClick = { actions = false; delete("/api/programs/template-exercises/${exercise.getInt("id")}/") })
                             }
                         }
                     }
+                }
                 }
             }
         }

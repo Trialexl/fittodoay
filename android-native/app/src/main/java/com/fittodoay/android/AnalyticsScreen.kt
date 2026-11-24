@@ -99,7 +99,7 @@ fun analyticsWeightRows(rows: List<JSONObject>, range: String, today: LocalDate 
             model.folders.forEach { folder -> TextButton(onClick = { chat = true; model.openChat(folder.getInt("id"), "post_workout_review", "Коротко разбери статистику выбранной программы и объясни решения анализа. Учитывай разные тренировочные дни, полноту данных и возможный перерыв. Различай план, фактические результаты и предложения.") }, enabled = !model.busy) { Text(folder.text("name")) } }
         }
     }
-    if (settings) ModalBottomSheet(onDismissRequest = { settings = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    if (settings) ModalBottomSheet(containerColor = popupSurfaceColor(), contentColor = MaterialTheme.colorScheme.onSurface, onDismissRequest = { settings = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Text("Параметры графика", style = MaterialTheme.typography.titleLarge)
             CompactSelector("Период", model.range, analyticsRanges) { model.range = it; model.refresh() }

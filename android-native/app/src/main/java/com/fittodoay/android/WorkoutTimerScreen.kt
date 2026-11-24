@@ -84,7 +84,7 @@ private fun timerExercise(state: JSONObject?) = state?.optJSONObject("exercise")
     val seconds = remaining(if (execution) model.executionUntil else model.restUntil)
     val duration = if (execution) state?.text("time")?.toIntOrNull() ?: 1 else model.restDuration
     Surface(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp).testTag("minimized-workout-timer"),
-        shape = RoundedCornerShape(16.dp), color = Color(0xff171d2a), contentColor = TimerInk, border = BorderStroke(1.dp, Color(0x26ffffff))) {
+        shape = RoundedCornerShape(16.dp), color = Color(0xff171d2a).copy(alpha = .94f), contentColor = TimerInk, border = BorderStroke(1.dp, Color(0x26ffffff))) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             TimerDial(seconds, duration, MaterialTheme.colorScheme.primary, Modifier.size(38.dp), mini = true)
             Column(Modifier.weight(1f).clickable { model.collapseWorkoutTimer(false) }.semantics { contentDescription = "Развернуть таймер" }) {
@@ -119,7 +119,7 @@ private fun timerExercise(state: JSONObject?) = state?.optJSONObject("exercise")
         }
     }
     Dialog(onDismissRequest = model::cancelWorkoutTimer, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false, dismissOnClickOutside = false)) {
-        Surface(Modifier.fillMaxSize().testTag("workout-timer-screen"), color = Color(0xff10141d), contentColor = TimerInk) {
+        Surface(Modifier.fillMaxSize().testTag("workout-timer-screen"), color = Color(0xff10141d).copy(alpha = .94f), contentColor = TimerInk) {
             BoxWithConstraints(Modifier.fillMaxSize().background(Brush.radialGradient(listOf(accent.copy(alpha = if (execution) .043f else .09f), Color.Transparent), center = Offset(140f, 600f), radius = 800f)).systemBarsPadding().imePadding()) {
                 val wide = maxWidth > 820.dp || (maxWidth >= 600.dp && maxHeight <= 500.dp)
                 val phoneWidth = maxWidth.value
