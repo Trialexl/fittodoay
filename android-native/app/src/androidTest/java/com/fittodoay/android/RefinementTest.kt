@@ -96,7 +96,7 @@ class RefinementTest {
         val title = device.findObject(androidx.test.uiautomator.By.text("AI-помощник"))
         assertNotNull("The IME must leave the dialog header on screen", title)
         assertTrue("The IME must not pan the header beyond the screen", title.visibleBounds.height() > 0 && title.visibleBounds.top >= 0)
-        compose.onNodeWithText("Отправить", substring = false).assertIsDisplayed()
+        compose.onNodeWithContentDescription("Отправить").assertIsDisplayed()
         assertTrue("The IME must leave space to read the conversation", compose.onNodeWithTag("chat-messages").fetchSemanticsNode().boundsInRoot.height >= 80 * context.resources.displayMetrics.density)
         capture("refinement-chat-keyboard")
         LocalDrafts.get(context, account).flush()

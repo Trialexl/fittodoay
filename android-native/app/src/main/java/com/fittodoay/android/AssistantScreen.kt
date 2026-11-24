@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
 import androidx.compose.ui.platform.testTag
 import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.platform.LocalView
@@ -221,7 +223,9 @@ import org.json.JSONObject
                 }, label = { Text("Сообщение") }, textStyle = MaterialTheme.typography.bodyMedium, maxLines = if (imeVisible) 3 else 5,
                     keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Send),
                     keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSend = { if (!model.chatBusy && model.threadId != null && input.text.isNotBlank()) submitMessage() }))
-                Button(onClick = ::submitMessage, enabled = !model.chatBusy && model.threadId != null && input.text.isNotBlank(), modifier = Modifier.heightIn(min = 56.dp), contentPadding = PaddingValues(horizontal = 12.dp)) { Text("Отправить", style = MaterialTheme.typography.labelMedium) }
+                FilledIconButton(onClick = ::submitMessage, enabled = !model.chatBusy && model.threadId != null && input.text.isNotBlank(), modifier = Modifier.size(56.dp)) {
+                    Icon(Icons.AutoMirrored.Outlined.Send, "Отправить", Modifier.size(24.dp))
+                }
                 }
             }
         }
